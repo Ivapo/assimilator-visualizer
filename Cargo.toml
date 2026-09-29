@@ -1,0 +1,37 @@
+[package]
+name = "assimilator-video"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Renders a video of one Assimilator simulation run"
+repository = "https://github.com/Ivapo/assimilator-visualizer"
+publish = false
+default-run = "assimilator-video"
+
+[dependencies]
+# The engine, pinned (vis-001 §2.2.2). The rev is moved on purpose, by the user, in a
+# commit of its own that re-runs the Phase 1 gates; scripts/fixture.sh reads it from here.
+assimilator-config = { git = "https://github.com/Ivapo/assimilator.git", rev = "1c15330" }
+assimilator-core = { git = "https://github.com/Ivapo/assimilator.git", rev = "1c15330" }
+assimilator-geometry = { git = "https://github.com/Ivapo/assimilator.git", rev = "1c15330" }
+# Must be the engine's version: a ProjectConfig is deserialized from its serde_yaml::Value.
+serde_yaml = "0.9"
+
+bevy = { version = "0.19", default-features = false, features = [
+    "std",
+    "multi_threaded",
+    "bevy_asset",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+] }
+arrow-array = "60"
+arrow-schema = "60"
+parquet = { version = "60", default-features = false, features = ["arrow", "zstd"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde_json = "1"
+
+[profile.dev.package."*"]
+debug = "line-tables-only"
