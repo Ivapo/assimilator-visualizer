@@ -2,3 +2,7 @@
 
 # Rules
 
+- **[inputs](inputs.md)** — generated 2026-09-28 · 4 sources · 46/50 lines
+  What the renderer reads from a run and from where, how FCD rows become placed points, and which checks fail before the first frame.
+- **[render](render.md)** — generated 2026-09-28 · 6 sources · 60/60 lines
+  The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
