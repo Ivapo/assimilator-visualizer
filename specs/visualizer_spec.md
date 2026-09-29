@@ -907,3 +907,11 @@ Phase 1: it changes what Phase 1 draws, and nothing else.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction
     and its cause, as Phase 1 did.
   - Write this phase's `shipped` date.
+  - *Gates 1–11 passed (2026-09-29, build on branch `phase-2`).* Every prediction held as
+    written, and none was missed. The results are in `specs/reviews/vis-001.md`.
+    - The measured `r′` is 0.970–1.050, median 1.018, inside gate 8's bound.
+    - 0 first or last turn-path segments are shorter than 1e-9 m (§2.8.3).
+    - The default render took 144 s.
+    - The reconciliation's `--help` item needed no change: only `src/clock.rs`'s unit
+      test said 8970.
+    - Gate 12, the user's check, is open, so `shipped` is not yet written.

@@ -11,7 +11,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-09-28
+generated: 2026-09-29
 ---
 
 # Render
@@ -38,8 +38,8 @@ generated: 2026-09-28
   `total_width` wide. Its centreline is sampled with `interpolate_with_lateral(link, s,
   0.0)` at `s = L·i/n`, `n = ceil(L / 1 m)`, and the edges are offset along the right
   normal `(cos h, −sin h)`.
-- **Road material** is unlit and not culled. **Vehicles:** a pool of unit cuboids, one
-  per slot up to the largest snapshot; a frame fills them in `vehicle_id` order.
+- **Road material** is unlit and not culled. **Vehicles:** a pool of unit cuboids, up
+  to the most drawn at once, filled in `vehicle_id` order; where is `rules/motion.md`.
   - Each box is scaled to length × 1.8 m × 1.5 m and centred on the placed point, lifted
     0.01 m per rank in `vehicle_id` order within the frame (up to 1.09 m at urban_grid's
     peak of 110). The depth test, not Bevy's binned draw order, decides overlaps: the
@@ -65,8 +65,8 @@ generated: 2026-09-28
   `poll(Wait)` until the observer has the readback (at most 200 updates). The readback
   is the lossless frame, `W·H·4` bytes, top row first.
 - Three empty frames are rendered at start-up so assets and pipelines settle.
-- `Job` (lib) exposes `render_frame(n)`, `render_at(t)`, `render_empty()`, `camera()`
-  and `k()`. Gates 3 and 7 measure through these.
+- `Job` (lib) exposes `render_frame(n)`, `render_at(t)`, `render_empty()`, `camera()`,
+  `k()`, `boxes_at(t)` and `motion_report()`. The gates measure through these.
 
 ## Output
 - `ffmpeg -f rawvideo -pix_fmt rgba -s WxH -r fps -i - -c:v libx264 -pix_fmt yuv420p

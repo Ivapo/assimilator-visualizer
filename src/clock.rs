@@ -27,15 +27,19 @@ mod tests {
 
     #[test]
     fn fixture_defaults() {
-        // FCD 0.1 s … 299.1 s, accumulated in 0.1 s steps.
-        let mut to = 0.1_f64;
-        for _ in 0..2990 {
+        // The fixture's FCD: 9.1 s … 299.1 s, accumulated in 0.1 s steps.
+        let mut from = 0.1_f64;
+        for _ in 0..90 {
+            from += 0.1;
+        }
+        let mut to = from;
+        for _ in 0..2900 {
             to += 0.1;
         }
-        let d = to - 0.1;
+        let d = to - from;
         let s = default_speedup(d);
         assert!((s - 1.0).abs() < 1e-12);
-        assert_eq!(frame_count(d, 30, s), 8970);
+        assert_eq!(frame_count(d, 30, s), 8700);
     }
 
     #[test]

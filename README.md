@@ -5,6 +5,9 @@ a harness can call.
 
 Phase 1 (vis-001, `specs/visualizer_spec.md`) draws every FCD vehicle as a box moving
 along its link, seen top-down, rendered headless with Bevy and encoded by ffmpeg.
+Phase 2 makes the motion smooth between the 1 Hz FCD samples: boxes brake and
+accelerate as the run did, follow the engine's turn path through each junction, slide
+between lanes, and disappear at their last row.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
@@ -58,7 +61,7 @@ Nothing is written into the engine checkout.
 ```
 scripts/fixture.sh                                              # once
 scripts/gates.sh                                                # gates 1, 2, 4
-cargo test --release --test gates -- --ignored --test-threads=1 --nocapture   # gates 3, 7 + determinism
+cargo test --release --test gates -- --ignored --test-threads=1 --nocapture   # gates 3, 6–11 + determinism
 ```
 
 ## License
