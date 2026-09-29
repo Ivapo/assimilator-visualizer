@@ -266,3 +266,71 @@ fn gate7_box_length() {
         assert!(e <= TOL_PX, "extent error {e:.3} px > {TOL_PX}");
     }
 }
+
+/// Regression check for gate 2 (§2.3 determinism). Every frame that shows a snapshot
+/// with overlapping boxes (same link and lane, centres closer than their mean length) is
+/// rendered twice in a row in one process, at the gate-2 settings (defaults,
+/// 1920×1080), and the two readbacks must be identical. Overlapping boxes are where an
+/// unstable draw order shows: they occur at approach ends, where a box frozen during its
+/// junction transit (OQ-2) is reached by the next vehicle.
+#[test]
+#[ignore = "needs scripts/fixture.sh"]
+fn determinism_overlap_frames() {
+    let _ = fixture();
+    let mut j = Job::prepare(&RenderOptions {
+        project: project(),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from: None,
+        to: None,
+        speedup: None,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+    })
+    .expect("prepare");
+    let overlapping: Vec<bool> = j
+        .fcd
+        .snapshots
+        .iter()
+        .map(|s| {
+            let rows = &j.fcd.rows[s.start..s.end];
+            rows.iter().enumerate().any(|(i, a)| {
+                rows[i + 1..].iter().any(|b| {
+                    a.link == b.link
+                        && a.lane == b.lane
+                        && (a.position - b.position).abs() < (a.length + b.length) / 2.0
+                })
+            })
+        })
+        .collect();
+    let frames: Vec<u64> = (0..j.clock.frames)
+        .filter(|&n| {
+            let t = j.clock.time_of(n);
+            let i = j.fcd.snapshots.partition_point(|s| s.time <= t + 1e-6);
+            i > 0 && overlapping[i - 1]
+        })
+        .collect();
+    let snaps = overlapping.iter().filter(|&&o| o).count();
+    let mut bad = Vec::new();
+    for &n in &frames {
+        let a = j.render_frame(n).unwrap();
+        let b = j.render_frame(n).unwrap();
+        if a != b {
+            bad.push(n);
+        }
+    }
+    eprintln!(
+        "determinism: {snaps} overlap snapshots, {} frames rendered twice, {} differ {:?}",
+        frames.len(),
+        bad.len(),
+        &bad[..bad.len().min(10)]
+    );
+    assert!(
+        bad.is_empty(),
+        "{} frames differ between two renders",
+        bad.len()
+    );
+}

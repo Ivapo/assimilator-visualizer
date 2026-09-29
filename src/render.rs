@@ -195,7 +195,12 @@ impl Renderer {
                     // Local +X along the heading: rotate by 90° − heading about +Y.
                     let yaw = (90.0 - b.at.heading).to_radians() as f32;
                     *ent.get_mut::<Transform>().unwrap() = Transform {
-                        translation: Vec3::new(x, (scene::BOX_HEIGHT / 2.0) as f32 + 0.05, z),
+                        // Rank `i` in vehicle_id order sets the depth order (scene::RANK_LIFT).
+                        translation: Vec3::new(
+                            x,
+                            (scene::BOX_HEIGHT / 2.0 + 0.05 + i as f64 * scene::RANK_LIFT) as f32,
+                            z,
+                        ),
                         rotation: Quat::from_rotation_y(yaw),
                         scale: Vec3::new(
                             b.length as f32,

@@ -6,6 +6,13 @@ use crate::place::Placement;
 /// Vehicle box width and height, metres, for every vehicle (the engine has no width).
 pub const BOX_WIDTH: f64 = 1.8;
 pub const BOX_HEIGHT: f64 = 1.5;
+/// Vertical lift per rank in `vehicle_id` order among a frame's vehicles, metres. Where
+/// boxes overlap, the depth test, not submission order, decides which shows: Bevy's opaque
+/// pass bins draws and does not keep their order stable, so equal-height boxes would
+/// resolve differently from frame to frame. The camera looks straight down
+/// orthographically and nothing is lit, so the lift moves no pixel; the higher
+/// `vehicle_id` wins an overlap.
+pub const RANK_LIFT: f64 = 0.01;
 /// Camera margin around the strips' bounding box, metres.
 pub const MARGIN: f64 = 20.0;
 /// Longest step between strip samples, metres.
