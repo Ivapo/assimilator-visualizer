@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # vis-001 Phase 1 exit gates 1, 2 and 4, on the fixture of scripts/fixture.sh.
-# Gates 3 and 7: cargo test --test gates -- --ignored --test-threads=1 --nocapture
+# Gates 3 and 7, and the determinism regression check behind gate 2:
+#   cargo test --release --test gates -- --ignored --test-threads=1 --nocapture
+# Needs ffmpeg/ffprobe, duckdb (the FCD's time span, read independently of the renderer)
+# and python3.
 # Gate 5 is recorded by hand in specs/reviews/vis-001.md; gate 6 is a human watching.
 set -uo pipefail
 
@@ -40,11 +43,22 @@ print(f"gate1 stderr: {n} progress lines then done — ok")
 PY
 }
 
-# Gate 1 — defaults. The spec predicts N = 8970 for FCD 0.1 … 299.1 s at speedup 1.
-N_DEFAULT=${N_DEFAULT:-8970}
+# Gate 1 — defaults. N is checked against §2.4's formula with D taken from the fixture
+# FCD's own min and max `time`, read with duckdb (independent of the renderer's reader).
+# The spec's prediction was N = 8970 (FCD "0.1 … 299.1 s"); that span was never measured.
+read -r T_MIN T_MAX < <(duckdb -noheader -csv -separator ' ' \
+    -c "select min(time), max(time) from '$PROJ/fcd/baseline_42.parquet'") \
+    || { echo "FAIL: cannot read the FCD time span with duckdb"; exit 1; }
+N_DEFAULT=$(python3 -c "
+import math
+d = $T_MAX - $T_MIN
+s = d / min(max(d, 30.0), 300.0)
+print(math.ceil(d * 30 / s - 1e-6))")
+echo "gate1 formula: FCD time $T_MIN … $T_MAX, D = $(python3 -c "print($T_MAX - $T_MIN)"), N = $N_DEFAULT"
 t0=$(date +%s)
 render default || fail "gate1 default render exited $?"
-echo "gate1 default: rendered in $(( $(date +%s) - t0 )) s"
+dt=$(( $(date +%s) - t0 ))
+echo "gate1 default: rendered $N_DEFAULT frames in $dt s ($(python3 -c "print(round($N_DEFAULT / max($dt, 1), 1))") frames/s)"
 check_video default 1920 1080 30 "$N_DEFAULT"
 
 # Gate 1 — explicit arguments: D = 60, N = ceil(60·24/2) = 720.
