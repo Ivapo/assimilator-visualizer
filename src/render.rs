@@ -23,15 +23,20 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::view::Msaa;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 
+use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
 
 /// One box to draw.
 #[derive(Debug, Clone, Copy)]
 pub struct VehicleBox {
+    pub vehicle_id: u64,
     pub at: Placed,
     pub length: f64,
+    /// FCD speed, linear between rows; sets the colour.
     pub speed: f64,
+    /// Where the vehicle is on its track (vis-001 §2.8).
+    pub track: TrackPos,
 }
 
 /// How many updates a readback may take before it is an error.
