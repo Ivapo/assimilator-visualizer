@@ -1,0 +1,59 @@
+---
+title: inputs
+sources:
+  - src/inputs.rs
+  - src/fcd.rs
+  - src/place.rs
+  - Cargo.toml
+covers: >
+  What the renderer reads from a run and from where, how FCD rows become placed
+  points, and which checks fail before the first frame.
+max_lines: 50
+generated: 2026-09-28
+---
+
+# Inputs
+
+**What is true right now.** Corrected freely against the sources above.
+
+## Files (read in place, never written)
+- `<project>/project.yaml` → `assimilator_config::parse_and_check` →
+  `serde_yaml::from_value::<ProjectConfig>` → `resolve_scenario(&project, scenario,
+  project_dir).network`. No `--set` overrides. The network is the project as it is at
+  render time.
+- `results.db`: default `<project>/results.db`, or `--results`. It is opened as
+  `file:<abs>?mode=ro&immutable=1` with SQLite's read-only and URI flags. It must hold a
+  `runs` row for (scenario, seed) with `status = 'completed'`; otherwise the error is
+  "no completed run". No KPI is read.
+- FCD: default `fcd/<scenario>_<seed>.parquet` beside `results.db`, or `--fcd`.
+  - Columns are selected by name and their types are checked: `time` f64, `vehicle_id`
+    u64, `link_id` Utf8 (LargeUtf8 is also accepted), `lane` u32, `position` f64, `speed`
+    f64.
+  - `vehicle_length` f64 is optional and sets the box length. Without it the length is
+    4.5 m. `acceleration` and `vehicle_class` are not read.
+  - A missing column or a wrong type is a "schema mismatch" error. CSV FCD is not
+    supported.
+
+## Window and snapshots
+- The default window is the first to the last FCD `time` in the file.
+- The whole file is read, then cut to the snapshots in `[from, to]` plus the last one at
+  or before `from`. There is no row-group pruning.
+- Rows are sorted by (`time`, `vehicle_id`) and grouped into snapshots by equal `time`.
+- The snapshot for sim time `t` is the latest one with `time ≤ t + 1e-6`. FCD times build
+  up from 0.1 s steps (for example 60.100000000000584).
+
+## Placement (the engine's code, engine rev pinned in `Cargo.toml`)
+- `NetworkData::from_config(&network)` → `LinkGeometryIndex::from_network_config` →
+  `interpolate(link_id, position, lane)`, giving x, y in metres and a heading in degrees
+  (0 = north, clockwise).
+- Every `link_id` in the window must be a link of the resolved network. Every row in the
+  window is placed up front. An unknown link, or a row the engine cannot place, is an
+  error before the first frame.
+- `link_length` is `NetworkData::link_length`, the junction-trimmed length that FCD
+  `position` is measured along.
+
+## Checks before the first frame (order)
+ffmpeg on `PATH` → even, positive width and height; positive fps and speedup →
+project/scenario → `results.db` and the completed run → the FCD file exists → FCD schema
+→ `to > from` → every link known and every row placed. An error prints one line
+(`error: …`), exits 1, and creates no output file.

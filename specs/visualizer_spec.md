@@ -11,7 +11,7 @@ last_updated: 2026-09-28
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
     reviewed: 2026-09-28
-    shipped: null
+    shipped: 2026-09-28
     cut: null
     by: null
 
@@ -176,6 +176,19 @@ same frames **on the same machine, GPU and driver** — the claim gate 2 checks,
 wider one. Each
 frame is read back and written as raw RGBA to the stdin of an `ffmpeg` child process.
 Phase 1 uses `libx264`; hardware encoders are a later option.
+
+*Correction (2026-09-28, Phase 1 close-out).* A fixed draw order does not make frames
+deterministic in Bevy. Its opaque pass bins draws and does not keep their order stable
+between frames. So where boxes overlap at equal height, the box that shows varied from
+frame to frame, and gate 2 failed.
+- What makes frames deterministic is the depth order. Each box is lifted 0.01 m per rank
+  in `vehicle_id` order among the vehicles of its frame, and the higher id wins an
+  overlap.
+- The camera is orthographic straight down and nothing is lit, so the lift moves no
+  pixel.
+- The overlapping boxes are themselves an OQ-2 artefact: a box frozen at the approach end
+  is reached by the next vehicle. Phase 2 handles it.
+- The measurements are in `specs/reviews/vis-001.md`.
 
 ### 2.4 CLI
 
@@ -443,3 +456,22 @@ moving along its link.*
     engine access and how cargo fetches the private git dependency, and
     `scripts/fixture.sh`. It must say that the gates run only with engine access.
   - Write this phase's `shipped` date.
+  - *Correction (2026-09-28, close-out) to gate 1's prediction.* The fixture's FCD runs
+    from **9.1 s**, when the first vehicle spawns, to 299.1 s, not from 0.1 s; that span
+    was never measured. So D = 290 s, the default speedup is 1 and **N = 8700**, not 8970.
+    Gate 1 checks N against §2.4's formula, with D taken from the fixture FCD's own
+    min/max `time`. The gate text above is left as written.
+  - *Gate 6 passed (2026-09-28): a human check, by the user.* The user watched
+    `scratch/out/default.mp4` at full frame, and a 4× close-up of the centre junction for
+    t = 150–190 s.
+    - Boxes stay on the roads and in their lanes: eastbound on the south strip,
+      northbound on the east strip, both lanes used, and one lane on the one-lane link
+      `L_J11_J01`. There is no flicker at queues.
+    - Known and expected for Phase 1:
+      - only links are drawn, with no junction surfaces;
+      - motion steps once per second (1 Hz FCD, no interpolation until Phase 2);
+      - boxes hold at the approach end and jump across junctions (OQ-2);
+      - the fixed full-network camera makes cars about 8 px long at 1080p.
+    - The fixture description in step 3 ("2 lanes × 3.5 m per link") is slightly off:
+      47 of urban_grid's 48 links have 2 lanes, and `L_J11_J01` has 1. No gate depended
+      on it.

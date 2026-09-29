@@ -1,0 +1,4 @@
+[net]
+# The engine dependency is a private GitHub repo; cargo's built-in git client cannot
+# authenticate to it, the git CLI (with the user's credentials) can.
+git-fetch-with-cli = true
