@@ -30,7 +30,8 @@ generated: 2026-09-28
     u64, `link_id` Utf8 (LargeUtf8 is also accepted), `lane` u32, `position` f64, `speed`
     f64.
   - `vehicle_length` f64 is optional and sets the box length. Without it the length is
-    4.5 m. `acceleration` and `vehicle_class` are not read.
+    4.5 m. The engine at the pin writes it (asm-020 Phase 3), and older files lack it.
+    `acceleration` and `vehicle_class` (`Dictionary(Int32, Utf8)`) are not read.
   - A missing column or a wrong type is a "schema mismatch" error. CSV FCD is not
     supported.
 
