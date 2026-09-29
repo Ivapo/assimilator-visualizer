@@ -5,7 +5,7 @@ a harness can call. Rust, Bevy (headless), ffmpeg. The engine is `../assimilator
 harness is `../assimilator-harness`; both are **read-only** from this repo, and other
 sessions work in them. What this project needs from either is written down as a request
 in a spec's open questions, never done there. The seed brief is
-`~/dev/ivapo/sim-3D-visualizer/idea.md`.
+`~/dev/ivapo/Orchtr-assimilator-visualizer/idea.md`.
 
 **Never run the engine inside its repo** (a run writes `results.db` and `fcd/` into the
 project). Copy a project to a scratch folder and run it there.
