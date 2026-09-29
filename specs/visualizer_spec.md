@@ -143,16 +143,35 @@ drafted and reviewed. Each ends with a video.
 - **OQ-1** — Reuse the engine's placement (`assimilator-geometry`, git-pinned) or
   re-implement it on `assimilator-config` alone? Reuse gives the engine's numbers; it
   costs build size and couples this repo to engine internals that are not a published
-  surface. *(design call)*
-- **OQ-2** — What does FCD hold while a vehicle is inside a junction: the incoming link
+  surface. This repo is public and the engine repo is private, so reuse means a git
+  dependency that no one without engine access can fetch, including any future CI;
+  re-implementing has no such dependency. *(design call)*
+- ~~**OQ-2** — What does FCD hold while a vehicle is inside a junction: the incoming link
   with `position` past its end, the outgoing link, or nothing? The GUI places such a
   vehicle on a turn path (`crates/geometry/src/frame_collect.rs:interpolate_turn_path`),
   which FCD does not record. Phase 1 must at least not fail on it. *(needs-input: read
-  the engine; a Phase 2 decision)*
-- **OQ-3** — FCD has no `vehicle_class` or `vehicle_length`, though
+  the engine; a Phase 2 decision)*~~ **Answered by asm-020 §15.4** (engine `ad73b75`).
+  While a micro vehicle is in a junction, its rows stay on the approach link and entry
+  lane with `position` frozen at its value on entry: `≥ link_length − length/2 − 0.1`
+  for most vehicles, and up to the stop-line offset + 5 m short of that after a
+  gap-acceptance release. `speed` and `acceleration` stay live. The next row after the
+  transit is on the departure link at `s = excess`. Meso has no junction interior.
+  Consequence for Phase 1: a box holds at the approach end, then jumps onto the
+  departure link. That is acceptable, and Phase 1 must not fail on it. Drawing turns is
+  a Phase 2 decision. If Phase 2 measures that turns derived from the network are not
+  good enough, it takes that evidence to the engine as a request against asm-020 OQ-4,
+  which keeps turn paths out of FCD until a consumer asks.
+- ~~**OQ-3** — FCD has no `vehicle_class` or `vehicle_length`, though
   `crates/core/src/output_data.rs:VehicleSnapshot` carries both. Phase 1 draws one box
   size. Showing buses and trucks needs the engine to write the two columns — an engine
-  request, not done here. *(needs-input: engine)*
+  request, not done here. *(needs-input: engine)*~~ **Answered by asm-020 §15–§16,
+  pending the engine build.** asm-020 Phase 3 (reviewed, not built) appends
+  `vehicle_class` (Arrow `Dictionary(Int32, Utf8)`) and `vehicle_length` (`Float64`, m)
+  after the seven columns of §2.1, which do not change. Micro writes each vehicle's
+  sampled length; meso writes the class's representative mean (asm-020 §15.3). Files
+  written before that phase lack both columns (asm-020 §15.6). The names and the shape
+  are decided (asm-020 OQ-1/OQ-2, resolved at engine `2f2fa58`). The engine has no
+  vehicle width (asm-020 OQ-3), so width stays this repo's constant.
 - **OQ-4** — FCD is off in agent runs (`run_scenario` forces it off, asm-001 §10). How a
   harness run gets FCD for a video is a harness and engine decision. *(deferred by
   evidence: roadmap Phase 6)*
@@ -170,19 +189,28 @@ moving along its link.*
   - A Rust binary crate `assimilator-video` with the `render` command of §2.4.
   - Resolve and read `network.yaml` and the FCD Parquet (§2.1). `results.db` is opened
     only to confirm the run exists (a `runs` row for scenario and seed); no KPI is read.
-  - Read FCD for the time window only, using row-group statistics on `time`.
+  - Read FCD for the time window only, using row-group statistics on `time`. Select
+    columns by name, never by position. `vehicle_length`, when present, sets each
+    box's length; otherwise it is 4.5 m (OQ-3). `vehicle_class` is ignored.
   - Place each row per §2.2 (the choice follows OQ-1). A row whose `link_id` is not in
     the network is an error. Frames use the nearest FCD sample at or before the frame
-    time; no interpolation (roadmap Phase 2).
+    time; no interpolation (roadmap Phase 2). A vehicle in a junction holds at the end
+    of its approach link, then jumps onto the departure link (OQ-2); that is not an
+    error.
   - Scene: each link drawn as a flat grey strip of the link's total lane width; each
-    vehicle as a box 4.5 × 1.8 × 1.5 m colored by speed; fixed top-down orthographic
+    vehicle as a box of its length (above) × 1.8 × 1.5 m colored by speed, 1.8 m wide
+    for every vehicle; fixed top-down orthographic
     camera fitted to the network's bounding box; plain background.
   - Headless Bevy → raw RGBA → `ffmpeg` (`libx264`, yuv420p) per §2.3. ffmpeg must be on
     `PATH`; its absence is an error before any frame is rendered.
-  - A test run: copy a bundled engine example with junctions (for example
-    `configs/bundled-examples/urban_grid`) into a scratch folder outside both repos, turn
-    FCD on, run it with the engine CLI, and keep the copy as this repo's fixture
-    (or a script that recreates it). Never run inside the engine repo.
+  - A test run, made by a script in this repo: it copies a bundled engine example with
+    junctions (for example `configs/bundled-examples/urban_grid`) from the pinned engine
+    checkout (OQ-5) into `scratch/` (gitignored), turns FCD on and runs the engine CLI
+    there. No engine data is committed to this repo. Never run inside the engine repo.
+    The same script derives a second FCD file from the run's by appending a
+    `vehicle_length` column (`Float64`, a few distinct values keyed on `vehicle_id`)
+    with pyarrow, so gate 7 needs no engine build. Once asm-020 Phase 3 ships, the
+    engine writes that column itself.
 - **Exit gate:**
   1. `render` on the fixture writes an MP4 that `ffprobe` reports with the requested
      width, height, fps and a frame count equal to `ceil((to − from) · fps / speedup)`.
@@ -194,6 +222,11 @@ moving along its link.*
      error line, and write no MP4.
   5. The `target/` sizes of §2.5 are recorded in the review file.
   6. A human watches the MP4 and confirms the vehicles move along the roads.
+  7. The run's FCD, which has no `vehicle_class` or `vehicle_length`, renders with
+     every box 4.5 m long, as before this change. The derived file renders
+     with each box's length from `vehicle_length`: for two vehicles of different
+     length chosen by the test, the box's extent along its heading is within 2 px of
+     that length at the frame's scale.
 - **Close-out:** seed `rules/inputs.md` (what is read, from where) and `rules/render.md`
   (clock, pipeline, CLI); a README with the command and its prerequisites (Rust, ffmpeg);
   write this phase's `shipped` date.
