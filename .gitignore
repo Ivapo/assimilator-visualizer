@@ -1,2 +1,6 @@
 target/
 *.mp4
+# Engine run outputs and scratch run folders (never commit; copied engine data stays out)
+results.db
+fcd/
+scratch/
