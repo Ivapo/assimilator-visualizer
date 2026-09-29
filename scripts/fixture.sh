@@ -32,7 +32,7 @@ mkdir -p "$SCRATCH"
 # 2. Engine CLI at the pin.
 if [ "${FORCE:-0}" = 1 ] || [ ! -x "$SCRATCH/engine/bin/assimilator" ]; then
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
-        cargo install --git "$url" --rev "$rev" --locked assimilator-cli --root "$SCRATCH/engine"
+        cargo install --force --git "$url" --rev "$rev" --locked assimilator-cli --root "$SCRATCH/engine"
 fi
 
 # 3. urban_grid at the same rev.
