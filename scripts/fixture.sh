@@ -6,7 +6,8 @@
 #    builds in a temporary target directory, so nothing is written to ../assimilator.
 # 3. Exports urban_grid at the same rev with `git archive` (read-only on the checkout).
 # 4. Runs the engine there with FCD on.
-# 5. Derives the test FCD files with this repo's fcd-derive binary.
+# 5. Derives the test FCD files with this repo's fcd-derive binary. The engine's FCD has
+#    vehicle_class and vehicle_length (asm-020 Phase 3); `lengths` overwrites the latter.
 #
 # Needs read access to the private engine repo. ENGINE_CHECKOUT names a local clone for
 # step 3 (default ../assimilator). Steps already done are skipped; FORCE=1 redoes them.
@@ -57,4 +58,7 @@ DERIVE="$ROOT/target/release/fcd-derive"
 mkdir -p "$SCRATCH/derived"
 "$DERIVE" lengths --input "$FCD" --output "$SCRATCH/derived/lengths.parquet"
 "$DERIVE" unknown-link --input "$FCD" --output "$SCRATCH/derived/unknown_link.parquet"
+# A pre-asm-020 file (no class or length), for gate 7's fallback case.
+"$DERIVE" drop-columns --input "$FCD" --output "$SCRATCH/derived/no_class_length.parquet" \
+    --column vehicle_class --column vehicle_length
 echo "fixture: ready in $SCRATCH"

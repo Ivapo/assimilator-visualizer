@@ -27,6 +27,7 @@ bevy = { version = "0.19", default-features = false, features = [
 ] }
 arrow-array = "60"
 arrow-schema = "60"
+arrow-select = "60"
 parquet = { version = "60", default-features = false, features = ["arrow", "zstd"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 clap = { version = "4", features = ["derive"] }

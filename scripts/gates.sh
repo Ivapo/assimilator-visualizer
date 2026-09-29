@@ -68,8 +68,10 @@ check_video explicit 1280 720 24 720
 
 # Gate 2 — the same inputs twice give the same decoded frames.
 render default2 || fail "gate2 second render exited $?"
-ffmpeg -v error -i "$OUT/default.mp4" -f framemd5 "$OUT/default.framemd5"
-ffmpeg -v error -i "$OUT/default2.mp4" -f framemd5 "$OUT/default2.framemd5"
+# No stale hash file can be compared: delete both first, and -y in case one reappears.
+rm -f "$OUT/default.framemd5" "$OUT/default2.framemd5"
+ffmpeg -y -v error -i "$OUT/default.mp4" -f framemd5 "$OUT/default.framemd5"
+ffmpeg -y -v error -i "$OUT/default2.mp4" -f framemd5 "$OUT/default2.framemd5"
 if cmp -s "$OUT/default.framemd5" "$OUT/default2.framemd5"; then
     echo "gate2: $(grep -vc '^#' "$OUT/default.framemd5") frame hashes equal"
 else

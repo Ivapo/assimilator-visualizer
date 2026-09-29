@@ -31,6 +31,20 @@ fn run_fcd() -> PathBuf {
 fn lengths_fcd() -> PathBuf {
     root().join("scratch/derived/lengths.parquet")
 }
+/// The run's FCD without `vehicle_class` and `vehicle_length`, as a pre-asm-020 file.
+fn no_length_fcd() -> PathBuf {
+    root().join("scratch/derived/no_class_length.parquet")
+}
+
+/// Whether the Parquet file at `path` has a column `name`.
+fn has_column(path: &Path, name: &str) -> bool {
+    let f = std::fs::File::open(path).expect("open FCD");
+    parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(f)
+        .expect("read FCD")
+        .schema()
+        .field_with_name(name)
+        .is_ok()
+}
 
 /// A single-vehicle subset of `src`, written by the fixture's derivation binary.
 fn subset(src: &Path, vehicle: u64, tag: &str) -> PathBuf {
@@ -228,6 +242,8 @@ fn gate3_position() {
 fn gate7_one(src: &Path, r: Row, want_m: f64, label: &str) -> f64 {
     let tag = if src == lengths_fcd() {
         "g7len"
+    } else if src == no_length_fcd() {
+        "g7nolen"
     } else {
         "g7run"
     };
@@ -256,11 +272,31 @@ fn gate7_box_length() {
     let b = fx.mid_link(|r| r.vehicle_id != a.vehicle_id);
     let short = fx.mid_link(|r| r.vehicle_id % 3 == 0);
     let long = fx.mid_link(|r| r.vehicle_id % 3 == 2);
+    // (a) the engine's own column; (b) the derived lengths; (c) no column, the fallback.
+    assert!(
+        has_column(&run_fcd(), "vehicle_length"),
+        "run's FCD has no vehicle_length"
+    );
+    assert!(has_column(&lengths_fcd(), "vehicle_length"));
+    assert!(!has_column(&no_length_fcd(), "vehicle_length"));
+    assert!(!has_column(&no_length_fcd(), "vehicle_class"));
     let errs = [
-        gate7_one(&run_fcd(), a, fcd::DEFAULT_LENGTH, "run-fcd A"),
-        gate7_one(&run_fcd(), b, fcd::DEFAULT_LENGTH, "run-fcd B"),
+        gate7_one(&run_fcd(), a, 4.5, "run-fcd column A"),
+        gate7_one(&run_fcd(), b, 4.5, "run-fcd column B"),
         gate7_one(&lengths_fcd(), short, 2.0, "derived 2.0 m"),
         gate7_one(&lengths_fcd(), long, 12.0, "derived 12.0 m"),
+        gate7_one(
+            &no_length_fcd(),
+            a,
+            fcd::DEFAULT_LENGTH,
+            "no column A (fallback)",
+        ),
+        gate7_one(
+            &no_length_fcd(),
+            b,
+            fcd::DEFAULT_LENGTH,
+            "no column B (fallback)",
+        ),
     ];
     for e in errs {
         assert!(e <= TOL_PX, "extent error {e:.3} px > {TOL_PX}");
