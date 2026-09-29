@@ -15,7 +15,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 2 — Correct motion: smooth video from 1 Hz FCD"
-    reviewed: null
+    reviewed: 2026-09-29
     shipped: null
     cut: null
     by: null
@@ -271,25 +271,26 @@ drafted and reviewed. Each ends with a video.
    meshes, a cached scene bundle; `render` makes no network calls.
 5. **Data** — links colored by speed or flow; HUD with clock, legend, one chart;
    signal states from the plans (moved from item 2, 2026-09-29).
+6. **Harness contract (v1)** — `check`, supported schema version ranges, stable
+   `scene.toml`, harness-side docs, a Linux build check.
 
 ### 2.8 Motion between samples (Phase 2)
 
 FCD comes at 1 Hz and the video runs at 30 fps or more, so a frame almost never falls on
 a sample. Phase 1 drew the last snapshot. Phase 2 draws each vehicle where the samples
 around the frame's time say it is. Every rule below works on one vehicle's rows, in
-`time` order, taken from the **whole file**, so an interval or a junction that crosses
-`--from` or `--to` is built the same way as one inside the window. The window only picks
-the frames. `Δt` is the time between two rows. It is 1.0 s everywhere in the fixture, but
-no rule assumes that.
+`time` order, taken from the **whole file**, so an interval or junction that crosses
+`--from` or `--to` is built as one inside the window; the window only picks the frames.
+`Δt` is the time between two rows: 1.0 s in the fixture, assumed by no rule.
 
 #### 2.8.1 Along a link: monotone cubic Hermite
 
 Two consecutive rows `i`, `i+1` on the same link, outside a junction span (§2.8.2), give
 `position` `s_i → s_{i+1}` and `speed` `v_i → v_{i+1}`. With `u = (t − t_i)/Δt`, the
 position is the cubic Hermite curve through the two positions with end tangents
-`m_i = v_i·Δt` and `m_{i+1} = v_{i+1}·Δt`. So the box leaves a sample at the sample's
-speed and arrives at the next at its speed, and braking and acceleration show. A linear
-blend would move at `Δs/Δt` throughout.
+`m_i = v_i·Δt` and `m_{i+1} = v_{i+1}·Δt`, so the box leaves and reaches each sample at
+its speed, and braking and acceleration show. A linear blend moves at `Δs/Δt`
+throughout.
 
 Monotonicity is guaranteed by clamping the tangents (Fritsch and Carlson, 1980):
 - `Δs = s_{i+1} − s_i`. FCD speeds are never negative, so `m ≥ 0`.
@@ -298,18 +299,17 @@ Monotonicity is guaranteed by clamping the tangents (Fritsch and Carlson, 1980):
 - **`Δs > 0`:** with `α = m_i/Δs` and `β = m_{i+1}/Δs`, if `α² + β² > 9` both tangents are
   scaled by `3/√(α² + β²)`. For `α, β ≥ 0` and `α² + β² ≤ 9`, the cubic is non-decreasing
   on `[0, 1]`, so the box never moves backwards.
-- **Zero speed at one end** is a zero tangent: the box eases out of a stop, or into one,
-  and does not overshoot it.
-- A clamped interval arrives at a lower speed than FCD's at that end. The position is
-  still exact at both samples.
-- **`Δs < 0`** (never seen in the fixture) is drawn as `Δs = 0`: the box holds at `s_i`,
-  and it is counted. A box never moves backwards, even when that costs a jump.
+- **Zero speed at one end** is a zero tangent: the box eases into or out of a stop.
+  A clamped interval meets its samples exactly, at a lower speed than FCD's.
+- **`Δs < 0`** (never seen in the fixture) is drawn as `Δs = 0`: the box holds at `s_i`
+  and jumps back to `s_{i+1}` at `t_{i+1}`, so the next sample is still shown exactly.
+  That jump is the one backward move the design allows, and each is counted.
 
 The world position is the engine's placement at the interpolated `s`:
 `LinkGeometryIndex::interpolate_with_lateral(link, s, lateral)` with the lateral offset
-of §2.8.4. With no lane change, that equals `interpolate(link, s, lane)`. Rows are still
-placed exactly by §2.2.1. A frame at a sample's time shows the sample, except for the
-frozen rows inside a junction span, which §2.8.2 replaces on purpose.
+of §2.8.4, which with no lane change equals `interpolate(link, s, lane)`. A frame at a
+sample's time shows the sample, except the frozen rows inside a junction span, which
+§2.8.2 replaces on purpose.
 
 #### 2.8.2 Through a junction: the engine's turn path, timed by the live speed
 
@@ -335,8 +335,10 @@ engine's own resolution of a route pair (asm-045 §2.1).
      The engine does the same in
      `crates/core/src/systems/junction_transit.rs:run_junction_transit_execution`. The
      difference to the FCD departure lane is then a lateral slide (§2.8.4);
-  3. `NetworkData::turn_path(n, m.id)`, the movement's centreline, with a slide at each
-     end.
+  3. `NetworkData::turn_path(n, m.id)`, the movement's centreline. The box slides from
+     the entry lane to the centreline over `[t_A, t_{A+1}]`, and from the centreline to
+     `D`'s lane over `[t_{D−1}, t_D]` (§2.8.4). A slide that shares an interval with a
+     lane slide is added to it.
 - `Transparent` (no `JunctionConfig`): no turn path. The box goes straight from the
   approach end to the departure start.
 - `None`, or no path in 1–3: **no movement matches.** The box follows the straight chord
@@ -346,9 +348,8 @@ engine's own resolution of a route pair (asm-045 §2.1).
 **The geometry** is one path: the approach link from `s_A` to its end `L_a`
 (`NetworkData::link_length`, §2.2) in the entry lane, then the turn path, then the
 departure link from 0 to `s_D`. Its length is `G = (L_a − s_A) + len(turn path) + s_D`.
-- In the fixture the per-lane paths start and end exactly on the engine's placement of
-  the link ends (0.000 m gap in 421 of 421, measured).
-- The heading turns by at most 3.3° at a join (measured).
+In the fixture the per-lane paths meet the engine's placement of the link ends with a
+0.000 m gap (421 of 421), and the heading turns by at most 3.3° at a join (measured).
 
 **The timing** comes from the live speed. `speed` stays live while `position` is frozen
 (asm-020 §15.4).
@@ -356,20 +357,24 @@ departure link from 0 to `s_D`. Its length is `G = (L_a − s_A) + len(turn path
   trapezoid rule). `I = I(t_D)`.
 - The distance along the path at time `t` is `d(t) = G · I(t) / I`. Where `I` is under
   1 mm, time is used instead: `d(t) = G · (t − t_A)/(t_D − t_A)`.
-- The span therefore starts at row `A`'s placement and ends exactly at row `D`'s. It
-  moves only while the vehicle moves, and it waits where the vehicle waits (for a gap, or
-  in a queue inside the junction).
+- So the span starts at row `A`'s placement, ends exactly at row `D`'s, and waits where
+  the vehicle waits (for a gap, or in a queue inside the junction).
 
 **When `G` and `I` disagree**, continuity wins. The ratio `r = G / I` scales the
-displayed speed for the whole span, so the box never jumps at `A` or `D`. `r` is recorded
-for every span.
-- In the fixture `r` is 1.024–1.196, median 1.094 (422 spans). `G − I` is 1.0–3.7 m,
-  median 2.8 m, which is about the half-length (2.25 m) plus 0.1 m that the frozen
-  `position` stops short of the link end (OQ-2). OQ-8 asks whether to take that constant
-  out before scaling.
-- `r` outside `[0.8, 1.25]` is **out of band**. It is drawn the same way and counted, and
-  it is evidence for §2.8.6. The band is set wider than the fixture's range, not tuned to
-  it.
+displayed speed for the whole span, so the box never jumps at `A` or `D`. In the fixture
+`r` is 1.024–1.196, median 1.094 (422 spans), and `G − I` is 1.0–3.7 m.
+
+Most of that gap is the frozen shortfall `L_a − p_f`, which the engine itself jumps
+on entry and never drives (OQ-8). The box still covers it, so `r` stays the display
+scale. But the shortfall grows with vehicle length (a 12 m truck on a short span gives
+`r` near 1.3 on correct geometry), so the band test takes it out:
+- `r′ = (G − (L_a − p_f)) / I` compares the rebuilt path with the distance the engine
+  drove. The residual `e = G − (L_a − p_f) − I` is −1.24 to +1.39 m in the fixture; its
+  top is one engine step at the speed limit (13.89 m/s × 0.1 s), which the approach
+  clamp can swallow, and the rest is the 1 Hz trapezoid.
+- `r′` outside `[0.8, 1.25]` is **out of band**: drawn the same way, counted, and
+  evidence for §2.8.6. The edges are a judgement, not derived from the data: a path
+  20–25 % off the distance driven is a wrong path, not noise.
 
 The heading along the path is the tangent of the piece the box is on: the link's heading
 from `interpolate_with_lateral`, the turn path's segment tangent, or the chord.
@@ -384,11 +389,16 @@ Decided by the user, 2026-09-29.
 - So Phase 2 uses the engine's path data as it is and copies only the walk, about 50
   lines: find the segment by accumulated length, interpolate linearly, and give the
   heading of the segment (0 = north, clockwise).
-- The copy names the engine function and rev it came from. A unit test runs it against
-  points of the engine's path that the test builds from the data by hand.
+- The copy names the engine function and rev it came from.
 - OQ-7 asks the engine to make the walk public. When the pin moves past that change, the
   copy is deleted.
 - Rejected: blocking Phase 2 on that engine change.
+
+*Note (2026-09-29, review round 1).* The premise is half true: the same walk is public
+as `crates/core/src/spatial_conflict.rs:interpolate_pos`, and
+`crates/core/src/spatial_conflict.rs:interpolate_heading` picks the same segment but
+returns radians, `atan2(dy, dx)`. The copy stands until the user revisits it; Phase 2
+tests it against those two functions.
 
 #### 2.8.4 Lane changes: a sideways slide
 
@@ -421,12 +431,13 @@ The engine keeps turn paths out of FCD until a consumer asks (asm-020 OQ-4). Thi
 rebuilds each transit from the network instead. Evidence goes to the engine as a request
 against asm-020 OQ-4 **only if this proves not good enough**, namely if:
 - the user's visual check (Phase 2 gate 12) rejects the junction motion; or
-- a real run gives spans with no matching movement, or `r` out of band often enough to
-  show.
+- a real run gives spans with no matching movement, or `r′` out of band often enough
+  to show.
 
-The evidence is the counts and the `r` distribution that Phase 2 records.
-6. **Harness contract (v1)** — `check`, supported schema version ranges, stable
-   `scene.toml`, harness-side docs, a Linux build check.
+The evidence is the counts and the `r′` distribution that Phase 2 records. Phase 2
+prints none of it (stderr carries only progress, §2.4), so on a real run it is read
+through `Job::motion_report()`; showing it without the library is roadmap item 6's
+`check`.
 
 ## 3. Open questions
 
@@ -494,15 +505,27 @@ The evidence is the counts and the `r` distribution that Phase 2 records.
   public method on `LaneTurnPath` that does the same, would let the copy go. This is an
   engine request (asm-001 §10 owns that side), not done here. It does not block Phase 2.
   When the pin moves past the change, the copy is deleted. *(needs-input: engine;
-  non-blocking)*
-- **OQ-8** — Is the gap between `G` and `I` (§2.8.2) the frozen `position`'s shortfall
+  non-blocking)* *Note (2026-09-29, review round 1):* the position half is already
+  public as `crates/core/src/spatial_conflict.rs:interpolate_pos`, and the heading half
+  as `interpolate_heading` in another convention (§2.8.3 note). Whether the copy is
+  still wanted is the user's call.
+- ~~**OQ-8** — Is the gap between `G` and `I` (§2.8.2) the frozen `position`'s shortfall
   from the link end, a constant to take out before scaling? In the fixture, `G − I`
   minus `(L_a − p_f)` is −1.2 to +1.4 m, median +0.5 m, so the half-length explains most
   of the gap but not all of it. Taking it out would bring `r` nearer 1, but it needs to
   know whether the engine's `JunctionTransit::s_on_path` measures the centre or the front.
   Phase 2 scales and records `r`, which is correct either way; this question only
   refines it. *(answerable-from-code: engine
-  `crates/core/src/systems/junction_transit.rs`; non-blocking, a Phase 2 review item)*
+  `crates/core/src/systems/junction_transit.rs`; non-blocking, a Phase 2 review item)*~~
+  **ANSWERED 2026-09-29 (review round 1, engine `df8aec0`): the centre, and the
+  shortfall is the engine's own jump.** Kinematics clamps an approaching centre at
+  `L_a − length/2`; `run_junction_transit_execution` enters at `≥ L_a − length/2 − 0.1`
+  and starts `s_on_path` at `speed·dt` from the path's start. `s_on_path` is a centre:
+  the rear is `s_on_path − half_length`, the GUI draws the centre there, and on exit
+  `Position.s = excess`. So `L_a − p_f` is never driven. The box still covers it and
+  `r = G/I` is unchanged, but the band test moves to `r′` (§2.8.2), since otherwise it
+  measures vehicle length. The `r` predictions do not change; `r′` was not measured,
+  and gate 8 bounds it from recorded numbers.
 
 ## 4. Implementation phases
 
@@ -714,175 +737,163 @@ between samples at the video's frame rate. They brake and accelerate as the run 
 follow the engine's turn path through each junction instead of holding and jumping
 (OQ-2), and slide between lanes.*
 
-Drafted 2026-09-29. The design is §2.8, and the decisions behind it are recorded there.
-Phase 2 is strictly after Phase 1: it changes what Phase 1 draws, and nothing else.
+Drafted 2026-09-29; the design and its decisions are §2.8. Phase 2 is strictly after
+Phase 1: it changes what Phase 1 draws, and nothing else.
 
 - **Scope:**
-  - **Motion (`src/motion.rs`, new).** It builds each vehicle's track from its rows in
-    the whole file, before the first frame:
-    - the along-link intervals, as monotone Hermite curves (§2.8.1);
-    - the junction spans: movement, turn path, `G`, `I` and `r` (§2.8.2);
-    - the lane slides (§2.8.4);
-    - the drawn interval (§2.8.5).
-
-    It then answers "where is vehicle `v` at time `t`" with a placed point (x, y,
-    heading) or not drawn. It also keeps a **motion report**:
-    - the number of along-link intervals and of clamped ones;
-    - backward samples;
-    - spans by how their path was found (§2.8.2 steps 1–3, transparent, no movement);
-    - every span's `r`, and how many are out of band;
-    - lane slides.
+  - **Motion (`src/motion.rs`, new).** Before the first frame it builds each vehicle's
+    track from its rows in the whole file: the along-link Hermite intervals (§2.8.1),
+    the junction spans with movement, path, `G`, `I`, `r` and `r′` (§2.8.2), the lane
+    slides (§2.8.4) and the drawn interval (§2.8.5). It answers "where is vehicle `v` at
+    time `t`", or "not drawn". It keeps a **motion report**: along-link intervals and
+    clamped ones, `Δs < 0` intervals, spans by how their path was found (§2.8.2 steps
+    1–3, transparent, no movement), every span's `r` and `r′`, spans out of band, and
+    lane slides.
   - **The turn-path walk (`src/turn_path.rs`, new).** It is the copy of §2.8.3, with a
     header naming `crates/geometry/src/frame_collect.rs:interpolate_turn_path` at
-    `df8aec0` and OQ-7, and a unit test.
+    `df8aec0` and OQ-7. **Its test uses the engine's public walk as the oracle:** on
+    every `lane_turn_path` (each movement's `from_lanes` × `to_lanes`) and `turn_path`
+    of the fixture, at `s` from −1 m to `length + 1` m in 0.1 m steps plus every vertex,
+    the position equals `spatial_conflict::interpolate_pos` to 1e-9 m, and the heading
+    equals `(90° − interpolate_heading in degrees) mod 360` to 1e-9° (wrapped
+    difference) wherever the segment is longer than 1e-9 m. That catches a swapped heading convention, the wrong
+    segment at a vertex (the engine's `>=` keeps the incoming one) and missing clamping.
   - **Placement (`src/place.rs`).** It gains what motion needs from the engine: a
     link's `to_node`, `resolve_route_pair`, `lane_turn_path`, `resolve_departure_lane`,
-    `turn_path`, `lane_offset`, and `interpolate_with_lateral` (already there). Rows are
-    still placed by §2.2.1. Every row is still placed up front and checked as in
-    Phase 1, and so is every span's movement lookup. Nothing new can fail on the inputs:
-    a missing movement is drawn (§2.8.2) and counted, not an error.
+    `turn_path`, `lane_offset`, and `interpolate_with_lateral` (already there). Every row
+    in the file, not only the window's, and every span's movement lookup is done before
+    the first frame. Nothing new can fail: a missing movement is drawn and counted.
   - **Reading (`src/fcd.rs`).** It keeps every row of each vehicle, grouped by
     `vehicle_id` in `time` order, as well as the window's snapshots. The snapshots are
     still used for `--from`'s default and by the determinism check.
-  - **The frame (`src/lib.rs`).** `Job::boxes_at(t)` returns the vehicles drawn at `t`
-    (§2.8.5), each at its motion position, with its length and its FCD speed
-    interpolated linearly for the colour. `Job::motion_report()` exposes the report.
-    The depth lift and draw order of §2.3 are unchanged.
-  - **Unchanged:**
-    - the CLI and its defaults (§2.4), including `--fps` (30);
-    - stderr, which carries only the progress lines, so the motion report is not
-      printed;
-    - the clock, the scene, the camera and the output.
-- **Exit gate.** Every gate runs on Phase 1's fixture (`scripts/fixture.sh`, engine
-  `df8aec0`, urban_grid, baseline, seed 42), on the development machine, at the defaults
-  unless a gate says otherwise. At the defaults, `h = speedup/fps = 1/30` s of sim time
-  per frame.
-  - **How the predictions were made.** They were measured on 2026-09-29, before any
-    building, with two throwaway scripts that are not committed. The method is in
-    `specs/reviews/vis-001.md`.
-    - A probe against the engine's `NetworkData` at `df8aec0` gave every span's
-      movement, path, `G` and join gaps.
-    - An arc-length model of §2.8 at 30 fps gave the per-frame steps, speeds, overlaps
-      and drawn counts. The model uses arc length plus the lateral offset, not placed
-      world points. urban_grid's 57 link geometries are all two-point straight lines,
-      so along a link the two are equal. On a turn path the chord is at most the arc.
-    - The model reproduces Phase 1's overlap count exactly (gate 9), which is the check
-      on its metric.
-  - **Kinematic gates (6–10) measure through the library.** They use `Job::boxes_at(t)`
-    and `Job::motion_report()` at every frame time, and do not read pixels.
-  - **The observable and Phase 1's gates that still apply:**
-  1. **Video contract** (Phase 1 gate 1, unchanged). With the defaults, `ffprobe`
-     reports `1920,1080,30/1,8700`, and stderr is exactly 8700 progress lines, then
-     `done`. N is checked against §2.4 with D = 290 s from the FCD's own time span, as
-     in Phase 1. The explicit run gives `1280,720,24/1,720`, with stderr to match. The
-     default render's wall time is recorded, with no prediction; Phase 1 took 140 s.
-  2. **Determinism** (Phase 1 gate 2, unchanged). Two default renders give equal
-     `framemd5` hashes. `tests/gates.rs:determinism_overlap_frames` still renders its
-     3510 frames twice. Prediction: 0 differ.
-  3. **Placement.** This is Phase 1 gate 3, with its junction case replaced. Each case
-     is a single-vehicle subset, with `--from` set to the row's time, measured at
-     3840×2160 with `k ≤ 0.6`, within 2 px:
-     - **lane 0 and lane 1**: Phase 1's two mid-link rows, at their own placement. The
-       Hermite curve passes through its samples, so the Phase 1 values are predicted:
-       0.050 and 0.016 px.
-     - **in a junction** (replaces "frozen at the approach end"): vehicle 1 at t = 64.1 s.
-       Its span runs from row 60.1 s on `L_W0_J00` to row 66.1 s on `L_J00_J01`, entry
-       and departure lane 0. `G` = 31.210 m and `I` = 28.428 m, so `r` = 1.098.
-       - Prediction: the centroid is on the per-lane turn path, 11.60 m along its
-         24.50 m. That is 13.87 m (about 24 px) past the approach-end point Phase 1 drew
-         at that time.
-       - The test computes the expected point from the FCD rows and `NetworkData` alone,
-         with the §2.8.2 formula and its own walk of the path. It does not call
-         `src/motion.rs`.
-  4. **Input errors** (Phase 1 gate 4, unchanged). A missing FCD file, an unknown
-     `link_id` and ffmpeg missing from `PATH` each exit non-zero with one stderr line, no
-     progress line and no file.
-  5. **Build size** (Phase 1 gate 5). The `target/` sizes and build times are recorded
-     next to Phase 1's.
+  - **The frame (`src/lib.rs`, `src/render.rs`).** `Job::boxes_at(t)` returns one entry
+    per vehicle drawn at `t` (§2.8.5), in `vehicle_id` order: `vehicle_id`; the placed
+    point (x, y, heading); its length; its FCD speed, interpolated linearly, for the
+    colour; and its **track position**. That is the piece it is on (a link, or a turn
+    path keyed by approach link, departure link, entry lane and the path's own
+    departure lane, or a chord), the distance along that piece, the lateral offset, and `odo`, the distance
+    along the drawn path since `t_first` with lateral motion excluded.
+    `Job::motion_report()` exposes the report. Drawing, the depth lift and the draw
+    order of §2.3 are unchanged.
+  - **Unchanged:** the CLI and its defaults (§2.4), including `--fps` 30; stderr, which
+    carries only progress lines, so the report is not printed; the clock, scene, camera
+    and output.
+- **Exit gate.** Every gate runs on Phase 1's fixture (engine `df8aec0`, urban_grid,
+  baseline, seed 42), on the development machine, at the defaults unless a gate says
+  otherwise. At the defaults, `h = speedup/fps = 1/30` s of sim time per frame.
+  - **The predictions** were measured on 2026-09-29, before building, by a probe
+    against the engine's `NetworkData` at `df8aec0` (movements, paths, `G`, join gaps)
+    and an arc-length model of §2.8 at 30 fps (steps, speeds, overlaps, drawn counts).
+    The method is in `specs/reviews/vis-001.md`. urban_grid's 57 link geometries are
+    all two-point straight lines, so arc length and world distance agree along a link.
+    The model reproduces Phase 1's overlap count exactly (gate 9).
+  - **Gates 6–10 measure through the library,** with `Job::boxes_at(t)` and
+    `Job::motion_report()` at every frame time, not through pixels. "The rows around"
+    a frame pair at `t`, `t + h` are the vehicle's rows from the last at or before `t`
+    to the first at or after `t + h`.
+  - **Phase 1's gates that still apply:**
+  1. **Video contract** (Phase 1 gate 1). Defaults: `1920,1080,30/1,8700` and 8700
+     progress lines, then `done`, with N from §2.4 and D = 290 s from the FCD. Explicit
+     run: `1280,720,24/1,720`. The default render's wall time is recorded, with no
+     prediction (Phase 1: 140 s).
+  2. **Determinism** (Phase 1 gate 2). Two default renders give equal `framemd5`
+     hashes, and `tests/gates.rs:determinism_overlap_frames` still gives 0 of 3510
+     frames differing. Its frames were chosen for Phase 1's overlaps, which Phase 2
+     predicts away (gate 9), so it now guards only against a regression.
+  3. **Placement** (Phase 1 gate 3, with its junction case replaced). Single-vehicle
+     subsets, `--from` at the row's time, 3840×2160 with `k ≤ 0.6`, within 2 px:
+     - **lane 0 and lane 1**: Phase 1's two mid-link rows. The Hermite curve passes
+       through its samples, so the prediction is Phase 1's 0.050 and 0.016 px.
+     - **in a junction**: vehicle 1 at t = 64.1 s, in its span from row 60.1 s on
+       `L_W0_J00` to row 66.1 s on `L_J00_J01`, lanes 0 and 0, `G` = 31.210 m,
+       `I` = 28.428 m, `r` = 1.098. Prediction: on the per-lane turn path, 11.60 m along
+       its 24.50 m, 13.87 m (about 24 px) past where Phase 1 drew it. The test computes
+       the point from the FCD rows and `NetworkData` with the §2.8.2 formula and
+       `spatial_conflict::interpolate_pos`, not through `src/motion.rs` or
+       `src/turn_path.rs`.
+  4. **Input errors** (Phase 1 gate 4, unchanged): missing FCD, unknown `link_id`,
+     ffmpeg not on `PATH`.
+  5. **Build size** (Phase 1 gate 5): recorded next to Phase 1's.
   - **Motion:**
-  6. **No jumps.** For each vehicle drawn in two consecutive frames, let `step` be the
-     distance between its placed centres. The gate requires `step ≤ v_ref·h + λ + ε`:
-     - `v_ref` is the largest FCD speed among the rows around the two frames. Inside a
-       span it is the span's largest speed × its `r`.
-     - `λ = 1.5·|Δoffset|·h/Δt` while a lane slide is active, and 0 otherwise.
-     - `ε = 0.05 m`. It covers the Hermite curve rising above the larger end speed
-       (predicted at most 0.018 m) about three times over.
-     - Also, no step moves backwards along the vehicle's path.
+  6. **No jumps.** For each vehicle drawn in two consecutive frames, the distance
+     between its placed centres is at most `v_ref·h + λ + ε`:
+     - `v_ref` is the largest FCD speed among the rows around the pair. Where the pair
+       is inside a span, that span's rows count with their speed × `r`.
+     - `λ = 1.5·|Δoffset|·h/Δt` where the rows around the pair differ in lane, or a
+       span's path lane differs from its entry or departure row's (steps 2–3), else 0. `Δoffset` comes from the rows'
+       lanes, not the implementation's slide state, so a snapped change is not excused.
+     - `ε = 0.05 m`, about three times the fixture's largest Hermite rise above the
+       larger end speed (0.018 m). It is sized to this fixture: with both end speeds 0
+       and `Δs > 0` the rise has no general bound.
+     - `odo` never decreases by more than 1e-9 m, except at a counted `Δs < 0` interval.
+       The tolerance is float noise only: without the tangent clamp, 312 of the 317
+       clamped intervals step backwards, by at most 5.5 mm.
 
-     Phase 1's behaviour fails this by metres: a 1 Hz step at 13.9 m/s is 13.9 m in one
-     frame, and a junction jump is 15–40 m.
+     This fails a 1 Hz step (13.9 m in one frame at 13.89 m/s), a junction hold and
+     jump (15–40 m), and a snapped lane change (3.5 m against a bound of about 0.69 m).
+     A linear sideways slide passes; only gate 12 sees it.
 
-     Predictions:
-     - the largest step is 0.519 m, in a span (the network's 13.89 m/s × `h` alone is
-       0.463 m);
-     - the largest longitudinal excess over `v_ref·h` is 0.018 m along a link, and 0 in
-       spans, which are exact by construction;
-     - the largest lateral step is 0.175 m;
-     - backward steps: 0.
+     Predictions: largest step 0.519 m, in a span; largest longitudinal excess over
+     `v_ref·h` 0.018 m along a link and 0 in spans; largest lateral step 0.175 m;
+     `odo` decreases 0 times; `Δs < 0` intervals 0.
   7. **Braking and acceleration show.** At each sample of an unclamped along-link
-     interval, the one-frame speed next to the sample is compared with FCD's
-     `speed` there:
-     - after the start sample, `|(x(t_i + h) − x(t_i))/h − v_i|`;
-     - before the end sample, the same with `t_{i+1} − h` and `v_{i+1}`.
-
-     Both must be at most 0.25 m/s.
-
-     Predictions:
-     - 19 508 along-link intervals, of which 317 (1.6%) are clamped and excluded,
-       leaving 19 191;
-     - the largest error is 0.136 m/s after the start sample and 0.130 m/s before the
-       end sample.
-
-     A linear blend fails this at 4 759 intervals, with errors up to 3.0 m/s. So this
-     gate, and not gate 6, is what tells the Hermite curve apart from linear motion.
+     interval, the one-frame speed next to the sample, measured on `odo`, is compared
+     with FCD's `speed` there: `|(odo(t_i + h) − odo(t_i))/h − v_i|` after the start
+     sample, and the same with `t_{i+1} − h` and `v_{i+1}` before the end sample. Both
+     must be at most 0.25 m/s. On placed centres instead of `odo`, the slide alone would
+     push 4 lane-change intervals near a stop over (worst 0.342 m/s).
+     - Why 0.25 m/s: a one-frame difference is off by about `|a|·h/2`, and the tolerance
+       is that error at `|a|` = 15 m/s², 2.5 times the fixture's largest FCD
+       `|acceleration|` (6.0 m/s²). It is tied to `h`: at `--fps 60` it would halve.
+     - Predictions: 19 508 along-link intervals, 317 (1.6 %) clamped and excluded,
+       19 191 measured; largest error 0.136 m/s after the start sample and 0.130 m/s
+       before the end sample.
+     - A linear blend fails at 4 759 intervals on the start side (5 098 at either end),
+       with errors up to 3.0 m/s. This gate, not gate 6, is what tells the Hermite curve
+       from linear motion.
   8. **Junctions.** The motion report shows:
      - 422 spans, all through a `JunctionConfig`;
      - 421 by §2.8.2 step 1, 1 by step 2 (vehicle 103, `L_W0_J00 → L_J00_J01`, entry
        lane 0; FCD's departure lane is 1 and the engine's is 0), 0 by step 3, 0
        transparent, 0 with no matching movement;
-     - `r` of 1.024–1.196, median 1.094, and 0 spans out of band.
+     - `r` of 1.024–1.196, median 1.094;
+     - **0 spans out of band.** `r′` was not measured. The prediction is a bound from
+       recorded numbers: `r′ − 1 = e/I`, `|e| ≤ 1.39` m, and `I ≥ G − 3.73 ≥ 10.6 − 3.73 =
+       6.87` m (the shortest turn path is 10.6 m), so `r′` lies in 0.82–1.20. The build
+       records the measured range.
 
-     At each span's two ends, the placed centre is continuous: the position at `t_A` and
-     at `t_D` equals the row's placement to within 1 mm.
-  9. **Overlaps.** At each frame, two drawn vehicles overlap when both conditions hold:
-     - they are on the same link in the same lane (lateral offset rounded to a lane),
-       or on the same turn path (same approach, departure and entry lane);
-     - their centres along it are closer than half the sum of their lengths.
-     - Phase 1's count on the same metric, per snapshot, is 354 pairs in 117 of 291
-       snapshots. That is the count in `specs/reviews/vis-001.md`, reproduced by the
-       model.
-     - Phase 2 prediction: **0** overlapping pairs in 8700 frames.
-     - Pairs straddling a join (one box at a link's end, the other at its turn path's
-       start) are not counted; the metric is one-dimensional.
-  10. **Who is drawn.** At every frame, the drawn set is the vehicles with
-      `t_first − 1e-6 ≤ t ≤ t_last + 1e-6` (§2.8.5). Prediction: 640 861 vehicle-frames
-      over the 8700 frames.
-  11. **Box length** (Phase 1 gate 7, unchanged). The three cases are measured at a
-      row's time. Prediction: Phase 1's values, 0.281 / 0.090 / 0.102 / 0.244 px.
+     At each span's two ends the placed centre is continuous: the position at `t_A` and
+     at `t_D` equals that row's placement to within 1 mm.
+  9. **Overlaps.** At each frame, two drawn vehicles overlap when their track positions
+     are on the same piece (a link with lateral offset rounded to the same lane, or a
+     turn path) and their distances along it differ by less than half the sum of their
+     lengths; pairs across a join are not counted. Phase 1 on this metric: 354 pairs in
+     117 of 291 snapshots, reproduced by the model. Prediction: **0** pairs in 8700
+     frames.
+  10. **Who is drawn.** At every frame the drawn set is the vehicles with
+      `t_first − 1e-6 ≤ t ≤ t_last + 1e-6` (§2.8.5). Prediction: 640 861 vehicle-frames.
+  11. **Box length** (Phase 1 gate 7, unchanged), measured at a row's time. Prediction:
+      Phase 1's 0.281 / 0.090 / 0.102 / 0.244 px.
   - **The user's check:**
   12. **The user watches** the default MP4 at full frame, and a close-up of the centre
       junction for t = 150–190 s, and confirms that the motion is visibly smooth at
-      30 fps:
-      - no once-a-second stepping;
-      - boxes slow down into queues and pull away from them;
-      - boxes follow a curve through each junction, with no hold and no jump;
-      - lane changes slide;
-      - no box moves backwards.
-
-      This is the bar the user set, and it is the check that §2.8.6's fallback hangs
-      on.
-- **Not predicted, and so not gated:** render time (gate 1 records it), and the outcome
-  of gate 12. OQ-8 may change `r`, but no gate depends on its answer.
+      30 fps: no once-a-second stepping; boxes slow into queues and pull away; boxes
+      follow a curve through each junction with no hold and no jump; lane changes slide;
+      no box moves backwards. This is the user's bar, and §2.8.6's fallback hangs on it.
+- **Not predicted, and so not gated:** render time (gate 1 records it), the measured
+  `r′` range (gate 8 bounds it), and the outcome of gate 12.
 - **Close-out (standing plan steps, §3 of the methodology):**
-  - **Commit plan:** the phase is one branch and one push. There are commits for motion
-    and the turn-path walk, for the gates, and for the close-out.
+  - **Commit plan:** one branch and one push, with commits for motion and the turn-path
+    walk, for the gates, and for the close-out.
   - **Reconciliation:**
     - a new `rules/motion.md` for §2.8 as built (`rules/render.md` is at its 60-line
       cap);
-    - `rules/inputs.md`, "Window and snapshots", gains the per-vehicle rows;
+    - `rules/inputs.md`: "Window and snapshots" gains the per-vehicle rows, and
+      "Placement" says every row in the file is placed up front;
     - `rules/render.md`, "Vehicles", points at `motion.md`;
+    - `src/clock.rs` and `--help` stop saying 8970 frames;
     - the README gains a line on what the motion shows;
     - no `CLAUDE.md` stanza change.
-  - Record the gate results in `specs/reviews/vis-001.md`, and any missed prediction
-    with its cause, as Phase 1 did.
+  - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction
+    and its cause, as Phase 1 did.
   - Write this phase's `shipped` date.
