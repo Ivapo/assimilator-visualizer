@@ -11,7 +11,7 @@ last_updated: 2026-09-28
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
     reviewed: 2026-09-28
-    shipped: null
+    shipped: 2026-09-28
     cut: null
     by: null
 
@@ -461,3 +461,17 @@ moving along its link.*
     was never measured. So D = 290 s, the default speedup is 1 and **N = 8700**, not 8970.
     Gate 1 checks N against §2.4's formula, with D taken from the fixture FCD's own
     min/max `time`. The gate text above is left as written.
+  - *Gate 6 passed (2026-09-28): a human check, by the user.* The user watched
+    `scratch/out/default.mp4` at full frame, and a 4× close-up of the centre junction for
+    t = 150–190 s.
+    - Boxes stay on the roads and in their lanes: eastbound on the south strip,
+      northbound on the east strip, both lanes used, and one lane on the one-lane link
+      `L_J11_J01`. There is no flicker at queues.
+    - Known and expected for Phase 1:
+      - only links are drawn, with no junction surfaces;
+      - motion steps once per second (1 Hz FCD, no interpolation until Phase 2);
+      - boxes hold at the approach end and jump across junctions (OQ-2);
+      - the fixed full-network camera makes cars about 8 px long at 1080p.
+    - The fixture description in step 3 ("2 lanes × 3.5 m per link") is slightly off:
+      47 of urban_grid's 48 links have 2 lanes, and `L_J11_J01` has 1. No gate depended
+      on it.
