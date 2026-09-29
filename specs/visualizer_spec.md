@@ -5,12 +5,12 @@ note: >
   What the visualizer is for: it renders a 3D video of one Assimilator simulation run,
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
-status: draft
+status: accepted
 last_updated: 2026-09-28
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
-    reviewed: null
+    reviewed: 2026-09-28
     shipped: null
     cut: null
     by: null
@@ -59,40 +59,121 @@ Rejected candidates for the observable:
 
 ### 2.1 Inputs are a run's files, read in place
 
-The engine writes one run as (engine `rules/project-schema.md`):
-- `<project>/network.yaml` — the network. Metric coordinates, `metadata.map_origin`
-  `[lng, lat]`. Parsed by `crates/config/src/network.rs:NetworkConfig`.
-- `<project>/results.db` — SQLite with the run tables (`runs`, `detector_intervals`,
-  `trips`, …). Created in `crates/output/src/results_db.rs:ResultsDbWriter::new`.
-- `<project>/fcd/<scenario>_<seed>.parquet` — FCD, zstd. Schema from
+A run is described by these files (engine `rules/project-schema.md`):
+- `<project>/project.yaml` and the files its scenario names — the network the run used
+  is the **scenario's resolved network**: its `network:` file with `network_override`
+  and inline `overrides` applied, as `crates/config/src/project.rs:resolve_scenario`
+  returns it in `ResolvedScenario::network` (a `crates/config/src/network.rs:NetworkConfig`,
+  metric coordinates, `metadata.map_origin` `[lng, lat]`). Harness treatments always
+  carry `overrides`, so reading `<project>/network.yaml` directly would place their
+  vehicles on the wrong network. The engine CLI loads it the same way
+  (`crates/output/src/runner.rs:load_project_scenario`). `results.db` does not record the network
+  (`runs.resolved_config` holds only the scenario name and sim params,
+  `crates/output/src/runner.rs:run_to_results_db`), so the project is resolved as it is
+  at render time; a project edited after the run renders against the edited network.
+- `results.db` — SQLite with the run tables (`runs`, `detector_intervals`, `trips`, …),
+  created in `crates/output/src/results_db.rs:ResultsDbWriter::new`, at the engine CLI's
+  `-o` path (default `results.db` in the working directory). Default here:
+  `<project>/results.db`; `--results` overrides it.
+- `fcd/<scenario>_<seed>.parquet`, in the directory that holds `results.db`
+  (`run_to_results_db` puts `fcd/` beside the database) — FCD, zstd. Schema from
   `crates/output/src/results_db.rs:FcdParquetWriter::new`: `time` f64, `vehicle_id` u64,
-  `link_id` utf8, `lane` u32, `position` f64, `speed` f64, `acceleration` f64. One batch
-  per written step, rows in time order.
+  `link_id` utf8, `lane` u32, `position` f64, `speed` f64, `acceleration` f64. Rows in
+  time order. `position` is the vehicle **centre** along the link (asm-020 §15.4).
 
-The visualizer reads these files and never writes into the project directory. The
-legacy CSV FCD (`time, vehicle_id, link_id, lane_idx, s, speed, acceleration`) is not
-supported in Phase 1.
+The visualizer reads these files and never writes into the project directory:
+`results.db` is opened read-only with SQLite's `immutable=1` URI parameter, which also
+keeps a WAL database from growing `-shm`/`-wal` files beside it. `immutable=1` ignores
+a leftover `-wal` file, so the renderer reads a finished run only. A `-wal` file left
+by a crash or by a writer that is still open is out of scope. The legacy CSV FCD
+(`time, vehicle_id, link_id, lane_idx, s, speed, acceleration`) is not supported in
+Phase 1.
 
 ### 2.2 FCD has no coordinates; placement uses the network
 
-A row gives a link, a lane and a distance along the link. The world position is the
-point at `position` along the link's `geometry` polyline, moved sideways by the lane
-offset; the heading is the polyline's tangent there. The engine already does this for its
-own GUI in `crates/geometry/src/geo_util.rs:LinkGeometryIndex::interpolate`.
+A row gives a link, a lane and a distance along the link. The world position is not
+simply "`position` along the link's `geometry` polyline plus the lane offset". FCD
+`position` is measured along the **junction-trimmed** link: `NetworkData::from_config`
+(`crates/core/src/network_data.rs:NetworkData::from_config`) generates a polygon for
+each junction and trims each link's polyline at it (waypoint ends exempt), and
+`crates/core/src/network_data.rs:NetworkData::link_length` is the trimmed length. The
+engine's GUI placement,
+`crates/geometry/src/geo_util.rs:LinkGeometryIndex::from_network_config`, then
+- places along that trimmed polyline (`NetworkData::trimmed_geometry`), falling back to
+  the raw `geometry`;
+- shifts a link that has an opposing link (same nodes, reversed) to the right by
+  `total_width/2 + median_gap/2`, plus the link's `lateral_offset`
+  (`crates/geometry/src/network_json.rs:offset_polyline`);
+- rescales `s` from the centreline length to the offset polyline's length, and clamps
+  it to the polyline;
+- moves sideways by the lane's centre offset
+  (`crates/config/src/network.rs:LinkConfig::lane_center_offsets`).
 
-**Proposed: reuse the engine's placement, do not rewrite it.** Depend on
-`assimilator-config` and `assimilator-geometry` as git dependencies pinned to an engine
-commit. Argument: the harness boundary's placement rule (asm-001 §10) — if getting it
-wrong gives a wrong number, it belongs in the engine. A second implementation of lane
-offsets would drift from the engine's. Cost: `assimilator-geometry` depends on
-`assimilator-core` and `assimilator-models`, so the build grows (disk is tight, §2.5).
-See OQ-1.
+`LinkGeometryIndex::interpolate(link, s, lane)` returns `x`, `y` (metres) and a heading
+(degrees, 0 = north, clockwise) at the segment's tangent.
+
+#### 2.2.1 Placement is the engine's code, reused (decision, recorded — OQ-1)
+
+Decided by the user, 2026-09-28. Phase 1 depends on `assimilator-config`,
+`assimilator-core` and `assimilator-geometry` as git dependencies at one pinned engine
+rev (§2.2.2), and places a row with exactly this chain:
+`resolve_scenario(...).network` → `NetworkData::from_config(&network)` →
+`LinkGeometryIndex::from_network_config(&network, &nd)` → `interpolate(link_id,
+position, lane)`. It does not re-implement any part of it.
+
+Why:
+- The placement is a number, and asm-001 §10 puts numbers in the engine. Matching FCD
+  `position` needs the junction polygons and the trimming, which is about 1,200–1,300
+  lines of engine code (`from_network_config`, `interpolate`, `offset_polyline`, the
+  lane offsets, and in `NetworkData::from_config` the junction-polygon pass,
+  `generate_junction_polygon`, the trim functions and their polygon helpers; counted at
+  engine `1c15330`). A port would drift from it.
+- Re-implementing "on `assimilator-config` alone" buys nothing: `assimilator-config` is
+  in the same private repo, so it is the same private git dependency, and it does not
+  hold the trimming.
+- Override resolution comes with it (`resolve_scenario`, §2.1).
+
+Costs, accepted:
+- **The repo is public and the dependency is private.** No one without engine access
+  can build it, so no gate runs outside this machine (Phase 1, "Who can run the gates").
+  The route to a public build is an engine request, OQ-6.
+- **Build size.** Through `assimilator-core` the build also pulls
+  `assimilator-demand`, `-network` (petgraph), `-models`, `hecs`, `rayon` and `rand`, all
+  pure Rust and small next to Bevy. `crates/project` (git2) is not needed. §2.5 records
+  the size.
+- **Coupling to engine internals** that are not a published surface. Moving the pin
+  (§2.2.2) can break the build; that is when it is found.
+
+Rejected:
+- Porting the placement onto a local serde model of `network.yaml`. It builds publicly,
+  but it duplicates about 1.2k lines plus override resolution, and it would need a gate
+  of its own against the engine's placement.
+- Waiting for the engine to publish placement as data (OQ-6) before Phase 1.
+
+#### 2.2.2 One engine rev, moved on purpose (decision, recorded — OQ-5)
+
+Decided by the user, 2026-09-28.
+- **The pin is engine `1c15330`.** That is engine main on 2026-09-28: one specs-only
+  commit after `ab3e92a`, which merged asm-008 Phase 3 and re-baselined trajectories.
+  It is also where the harness worktree `../assimilator-wt/harness` sits.
+- **The rev is written in one place:** the `rev =` of the engine git dependencies in
+  `Cargo.toml`. The fixture script (Phase 1) reads it from there and builds the engine
+  CLI at that rev, so the code that places vehicles and the engine that made the FCD
+  are the same commit.
+- **The user moves it, on purpose,** in a commit of its own that re-runs the Phase 1
+  gates. It never follows engine main or the harness pin automatically.
+- **The expected move** is to the merge of asm-020 Phase 3 (the FCD `vehicle_class`
+  and `vehicle_length` columns). After that, gate 7 can use the engine's column instead
+  of the derived file.
 
 ### 2.3 Headless render with a fixed clock
 
 Bevy renders to an offscreen texture; no window in `render` mode. Frame `n` shows sim
 time `t0 + n · speedup / fps`. The frame count is fixed by the time window, the speed-up
-and the fps, never by wall-clock time, so the same inputs give the same frames. Each
+and the fps, never by wall-clock time. With draw order fixed (links in the network's
+order, vehicles by `vehicle_id`, never `HashMap` iteration), the same inputs give the
+same frames **on the same machine, GPU and driver** — the claim gate 2 checks, and no
+wider one. Each
 frame is read back and written as raw RGBA to the stdin of an `ffmpeg` child process.
 Phase 1 uses `libx264`; hardware encoders are a later option.
 
@@ -100,15 +181,28 @@ Phase 1 uses `libx264`; hardware encoders are a later option.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
-                         [--fcd <file>] [--from <s>] [--to <s>] [--speedup <x>]
-                         [--fps <n>] [--width <px>] [--height <px>]
+                         [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
+                         [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
 ```
 
-- `--fcd` overrides the path in §2.1.
-- Progress: one JSON object per line on stderr (`{"frame": n, "of": N}`); a final
-  `{"done": "<out>"}`. Nothing else on stderr except errors.
-- Exit 0 only when the MP4 is complete. Non-zero for any error, with one line naming it
-  (missing file, schema mismatch, unknown link id in FCD, ffmpeg missing or failed).
+- `--results` and `--fcd` override the paths in §2.1.
+- Defaults. The window runs from `--from`, the first FCD `time` in the file, to
+  `--to`, the last one. `--fps` is 30. `--width`×`--height` is 1920×1080; both must be
+  even (libx264 with yuv420p), and an odd value is an error. `--speedup` defaults to
+  `D / clamp(D, 30, 300)` with `D = to − from` in seconds, so the default video lasts
+  the run's window clamped to 30 s–5 min (§1): a 1 h run plays at 12× in 5 min, and a
+  10 s run plays at 1/3 speed over 30 s. An explicit `--speedup` wins, and the video's
+  length then follows from it. The frame count is `N = ceil(D · fps / speedup − 1e-6)`.
+  The epsilon keeps a `D` accumulated from 0.1 s steps (a hair over a whole number)
+  from adding a frame.
+- Progress: one JSON object per line on stderr (`{"frame": n, "of": N}`, n from 1),
+  then a final `{"done": "<out>"}`. Nothing else goes to stderr except the error line:
+  Bevy's `LogPlugin` is disabled and wgpu logging is off.
+- Exit 0 only when the MP4 is complete. Any error exits non-zero with one line naming it:
+  missing file, schema mismatch, an unknown link id in FCD, no completed run, ffmpeg
+  missing or failed. Every check that can fail on the inputs (files, schema, `runs`
+  row, every `link_id` in the window, ffmpeg on `PATH`) runs **before the first frame**.
+  So an input error prints no progress line and creates no output file.
 - `scene.toml`, `check` and `prepare` are later phases (§2.7).
 
 ### 2.5 Build footprint
@@ -140,12 +234,17 @@ drafted and reviewed. Each ends with a video.
 
 ## 3. Open questions
 
-- **OQ-1** — Reuse the engine's placement (`assimilator-geometry`, git-pinned) or
+- ~~**OQ-1** — Reuse the engine's placement (`assimilator-geometry`, git-pinned) or
   re-implement it on `assimilator-config` alone? Reuse gives the engine's numbers; it
   costs build size and couples this repo to engine internals that are not a published
   surface. This repo is public and the engine repo is private, so reuse means a git
   dependency that no one without engine access can fetch, including any future CI;
-  re-implementing has no such dependency. *(design call)*
+  re-implementing has no such dependency. *(design call)*~~ **RESOLVED 2026-09-28
+  (user): reuse**, recorded in §2.2.1. The premise was partly wrong.
+  `assimilator-config` is in the same private repo, so re-implementing on it has the
+  same dependency. It also does not hold the junction trimming that FCD `position`
+  depends on; that is in `assimilator-core` (review round 1, finding 1). The route to a
+  build without the private dependency is OQ-6.
 - ~~**OQ-2** — What does FCD hold while a vehicle is inside a junction: the incoming link
   with `position` past its end, the outgoing link, or nothing? The GUI places such a
   vehicle on a turn path (`crates/geometry/src/frame_collect.rs:interpolate_turn_path`),
@@ -175,9 +274,19 @@ drafted and reviewed. Each ends with a video.
 - **OQ-4** — FCD is off in agent runs (`run_scenario` forces it off, asm-001 §10). How a
   harness run gets FCD for a video is a harness and engine decision. *(deferred by
   evidence: roadmap Phase 6)*
-- **OQ-5** — Which engine commit do the Phase 1 test runs and any git dependency pin
+- ~~**OQ-5** — Which engine commit do the Phase 1 test runs and any git dependency pin
   to, and who moves it? The harness pins a detached engine worktree; this repo could pin
-  a git rev in `Cargo.toml` instead. *(design call)*
+  a git rev in `Cargo.toml` instead. *(design call)*~~ **RESOLVED 2026-09-28 (user):
+  engine `1c15330`**, written once as the `rev =` in `Cargo.toml`. The fixture script
+  builds the engine CLI at the same rev. The user moves the pin on purpose, in a commit
+  that re-runs the Phase 1 gates. Recorded in §2.2.2.
+- **OQ-6** — Can the engine publish its placement as data, so that a build of this repo
+  needs no private dependency? For example: per-link trimmed and offset polylines, the
+  centreline length and the lane centre offsets, written beside the FCD or by a CLI
+  command. This would be an engine request (asm-001 §10 owns that side), not done here.
+  It is not needed for Phase 1, which reuses the code (§2.2.1). It blocks a public build
+  and any CI. *(needs-input: engine; deferred by evidence to roadmap Phase 6, the Linux
+  build check)*
 
 ## 4. Implementation phases
 
@@ -186,47 +295,151 @@ drafted and reviewed. Each ends with a video.
 moving along its link.*
 
 - **Scope:**
-  - A Rust binary crate `assimilator-video` with the `render` command of §2.4.
-  - Resolve and read `network.yaml` and the FCD Parquet (§2.1). `results.db` is opened
-    only to confirm the run exists (a `runs` row for scenario and seed); no KPI is read.
-  - Read FCD for the time window only, using row-group statistics on `time`. Select
-    columns by name, never by position. `vehicle_length`, when present, sets each
-    box's length; otherwise it is 4.5 m (OQ-3). `vehicle_class` is ignored.
-  - Place each row per §2.2 (the choice follows OQ-1). A row whose `link_id` is not in
-    the network is an error. Frames use the nearest FCD sample at or before the frame
-    time; no interpolation (roadmap Phase 2). A vehicle in a junction holds at the end
-    of its approach link, then jumps onto the departure link (OQ-2); that is not an
-    error.
-  - Scene: each link drawn as a flat grey strip of the link's total lane width; each
-    vehicle as a box of its length (above) × 1.8 × 1.5 m colored by speed, 1.8 m wide
-    for every vehicle; fixed top-down orthographic
-    camera fitted to the network's bounding box; plain background.
-  - Headless Bevy → raw RGBA → `ffmpeg` (`libx264`, yuv420p) per §2.3. ffmpeg must be on
-    `PATH`; its absence is an error before any frame is rendered.
-  - A test run, made by a script in this repo: it copies a bundled engine example with
-    junctions (for example `configs/bundled-examples/urban_grid`) from the pinned engine
-    checkout (OQ-5) into `scratch/` (gitignored), turns FCD on and runs the engine CLI
-    there. No engine data is committed to this repo. Never run inside the engine repo.
-    The same script derives a second FCD file from the run's by appending a
-    `vehicle_length` column (`Float64`, a few distinct values keyed on `vehicle_id`)
-    with pyarrow, so gate 7 needs no engine build. Once asm-020 Phase 3 ships, the
-    engine writes that column itself.
-- **Exit gate:**
-  1. `render` on the fixture writes an MP4 that `ffprobe` reports with the requested
-     width, height, fps and a frame count equal to `ceil((to − from) · fps / speedup)`.
-  2. Rendering the same inputs twice gives the same decoded frames (compare frame
-     hashes from `ffmpeg -f framemd5`).
-  3. For three FCD rows chosen by the test, the rendered vehicle's pixel position is
-     within 2 px of the position computed by the placement code for that row.
-  4. Missing FCD, an unknown `link_id`, and missing ffmpeg each exit non-zero with one
-     error line, and write no MP4.
+  - **The crate.** A Rust crate `assimilator-video`, a library with a thin binary that
+    runs the `render` command of §2.4. The engine crates `assimilator-config`,
+    `assimilator-core` and `assimilator-geometry` are git dependencies at the rev of
+    §2.2.2. The library exposes three things:
+    - rendering one frame to its RGBA buffer, the lossless readback before encoding;
+    - the camera's world-to-pixel transform;
+    - its metres per pixel, `k`.
+
+    Gates 3 and 7 measure through these, not through the MP4. The crate's `serde_yaml`
+    must be the engine's version (0.9), because a `ProjectConfig` is deserialized from
+    the engine's `serde_yaml::Value`.
+  - **Inputs (§2.1).**
+    - Load the project as `load_project_scenario` does, without `--set` overrides
+      (which reach no network path) and without depending on `assimilator-output`:
+      - `crates/config/src/version.rs:parse_and_check` on `<project>/project.yaml`;
+      - deserialize a `ProjectConfig`;
+      - `resolve_scenario(&project, scenario, project_dir)`.
+    - Take its `.network`.
+    - Open `results.db` read-only and immutable. Require a `runs` row for scenario and
+      seed whose `status` is `completed`; any other status is the "no completed run"
+      error. No KPI is read.
+  - **Reading FCD.**
+    - Select columns by name, never by position.
+    - Read the rows in `[from, to]`, plus the last snapshot at or before `from`. Row-group
+      statistics on `time` may skip row groups outside the window. This is an
+      optimisation only: the fixture's FCD is a single row group, so no gate observes it.
+    - `vehicle_length`, when present, sets each box's length; otherwise the length is
+      4.5 m (OQ-3). `vehicle_class` is ignored.
+  - **Placement.**
+    - Place each row with the chain of §2.2.1.
+    - Every `link_id` in the window is checked against the network before the first
+      frame. One that is missing is an error.
+    - Frame `n` (from 0) shows sim time `t_n = from + n · speedup / fps`, using the
+      **snapshot** at the latest FCD `time ≤ t_n`: exactly the vehicles in that
+      snapshot, each at its row. A vehicle absent from that snapshot is not drawn, so a
+      vehicle that has left the network disappears.
+    - There is no interpolation (roadmap Phase 2).
+    - A vehicle in a junction holds at the end of its approach link, then jumps onto the
+      departure link (OQ-2). That is not an error.
+  - **Scene.**
+    - **Roads.** Each link is a flat grey strip of `LinkConfig::total_width`, centred on
+      the **same trimmed and offset polyline that placement uses**. The engine keeps
+      that polyline private (`LinkPolyline::points`), so the strip is sampled through
+      `LinkGeometryIndex::interpolate_with_lateral(link, s, 0.0)`, at `s` from 0 to
+      `NetworkData::link_length(link)` in steps of at most 1 m, plus the end point.
+      Drawing on the raw `geometry` would put the boxes of an opposing pair's outer lane
+      off the road: urban_grid's pairs share one centreline and sit 3.75 m to either
+      side of it.
+    - **Vehicles.** Each vehicle is a box of its length × 1.8 m (width, for every
+      vehicle) × 1.5 m (height), centred on the placed point (`position` is the centre,
+      §2.1), turned to the placed heading, and coloured by speed. The speed colours are
+      never the road grey or the background colour.
+    - **Camera.** Top-down orthographic, fitted to the bounding box of the drawn strips
+      plus a 20 m margin on every side, so `k = max(bw / width, bh / height)`.
+    - **Background.** Plain.
+    - **Draw order** is fixed (§2.3).
+  - **Output.**
+    - Headless Bevy → raw RGBA → `ffmpeg` (`libx264`, yuv420p) per §2.3.
+    - ffmpeg writes `<out>.partial`, which is renamed to `<out>` only after ffmpeg exits
+      0. So a failure leaves no file at `<out>`.
+    - Inputs are validated before the first frame (§2.4), and that includes ffmpeg being
+      on `PATH`.
+  - **The fixture script,** `scripts/fixture.sh`. It writes only under `scratch/`
+    (gitignored) and never inside the engine repo. No engine data is committed here.
+    It:
+    1. reads the engine rev and git URL from `Cargo.toml`;
+    2. builds the engine CLI at that rev with
+       `cargo install --git <url> --rev <rev> --locked assimilator-cli --root scratch/engine`.
+       Cargo builds in a temporary target directory and keeps only the binary, so there
+       is no engine worktree and no `target/` in `../assimilator`;
+    3. exports `configs/bundled-examples/urban_grid` at the same rev with `git -C
+       ${ENGINE_CHECKOUT:-../assimilator} archive <rev>` into `scratch/urban_grid`
+       (9 signalized junctions, 2 lanes × 3.5 m per link, every link in an opposing
+       pair). `git archive` only reads the checkout;
+    4. runs `scratch/engine/bin/assimilator run -c scratch/urban_grid -s baseline -o
+       scratch/urban_grid/results.db --set simulation.output.fcd.enabled=true`.
+       `--set` builds the nested mapping (`crates/config/src/project.rs:apply_set_overrides`);
+       urban_grid's `simulation:` block has no `output:` key. FCD lands in
+       `scratch/urban_grid/fcd/`;
+    5. derives the test FCD files with a small Rust binary in this repo, using the
+       arrow and parquet crates the renderer already needs (no Python). The binary
+       writes:
+       - `vehicle_length` appended as `Float64`, 2.0, 8.0 or 12.0 m by
+         `vehicle_id mod 3` (for gate 7);
+       - one row's `link_id` replaced by an id absent from the network (for gate 4);
+       - single-vehicle subsets on request (for gates 3 and 7).
+
+    Once asm-020 Phase 3 ships and the pin moves (§2.2.2), the engine writes
+    `vehicle_length` itself.
+  - **Who can run the gates.** Every gate needs this machine: the engine is private, and
+    the build depends on it (§2.2.1), so without engine access the crate does not
+    compile and no gate runs, not even 4 or 5. The README says so. OQ-6 is the route
+    to a public build.
+- **Exit gate.** All gates run on the fixture above, on the development machine.
+  - **Scale for gates 3 and 7.** These gates render at 3840×2160 and first assert
+    `k ≤ 0.6 m/px`.
+    - Why 0.6 (re-derived 2026-09-28, review round 2): urban_grid's nodes span
+      1200 m × 1200 m. The drawn strips' bounding box is also 1200 m, because each
+      offset is perpendicular to its own link and never pushes a strip past the outer
+      endpoints. With the margin that is 1240 m, and at a height of 2160 px
+      `k ≈ 0.574`.
+    - So 2 px ≤ 1.2 m, about half the smallest error these gates exist to catch:
+      drawing the box's front instead of its centre (2.25 m, ≈3.9 px). A wrong lane
+      (3.5 m, ≈6.1 px) and a missing opposing-pair offset (3.75 m, ≈6.5 px) are caught
+      with more margin.
+    - Positions are measured on the lossless readback: the pixels that differ from the
+      same frame rendered with no vehicles, weighted by their difference. So neither
+      MSAA edges nor yuv420p and x264 enter the error.
+  1. `render` on the fixture with defaults writes an MP4. `ffprobe` reports
+     1920×1080, 30 fps and `N` frames, with `N`, `D` and the default speedup per §2.4.
+     For the fixture, FCD runs from 0.1 s to 299.1 s, so the default speedup is 1 and
+     `N = 8970`. Stderr is exactly `N` progress lines (`frame` 1…`N`, `of`
+     `N`) and then the `done` line. The same holds for one run with explicit `--from`,
+     `--to`, `--speedup`, `--fps`, `--width` and `--height`.
+  2. Rendering the same inputs twice on this machine gives the same decoded frames: the
+     frame hashes from `ffmpeg -f framemd5` are equal.
+  3. The test chooses three FCD rows: one on lane 0, one on lane 1, and one frozen at the
+     end of an approach link during a junction transit (OQ-2). For each:
+     - render frame 0 with `from` set to that row's `time`, from a single-vehicle subset
+       of the FCD;
+     - the weighted centroid of the vehicle's pixels must be within 2 px of
+       `LinkGeometryIndex::interpolate(link_id, position, lane)` projected by the
+       camera.
+  4. Each of these cases exits non-zero, writes exactly one stderr line and no progress
+     line, and leaves no file at `--out`:
+     - the FCD file is missing;
+     - the derived file has an unknown `link_id`;
+     - ffmpeg is missing from `PATH`.
   5. The `target/` sizes of §2.5 are recorded in the review file.
-  6. A human watches the MP4 and confirms the vehicles move along the roads.
-  7. The run's FCD, which has no `vehicle_class` or `vehicle_length`, renders with
-     every box 4.5 m long, as before this change. The derived file renders
-     with each box's length from `vehicle_length`: for two vehicles of different
-     length chosen by the test, the box's extent along its heading is within 2 px of
-     that length at the frame's scale.
-- **Close-out:** seed `rules/inputs.md` (what is read, from where) and `rules/render.md`
-  (clock, pipeline, CLI); a README with the command and its prerequisites (Rust, ffmpeg);
-  write this phase's `shipped` date.
+  6. A human watches the default MP4 and confirms that the vehicles move along the
+     roads, in their lanes, on the right-hand strip of each pair.
+  7. Box length, on single-vehicle subsets, measuring each box's extent along its
+     heading:
+     - **Run's FCD** (no `vehicle_class` or `vehicle_length`): for two vehicles chosen
+       by the test, the extent is within 2 px of 4.5 m.
+     - **Derived file:** for a 2.0 m vehicle and a 12.0 m vehicle, the extent is within
+       2 px of each vehicle's own length.
+
+     The lengths differ from 4.5 m and from each other by at least 2.5 m (≈4.3 px),
+     more than twice the 2 px tolerance. So an implementation that ignores
+     `vehicle_length`, or confuses the two lengths, fails.
+- **Close-out:**
+  - Seed `rules/inputs.md` (what is read, and from where) and `rules/render.md` (clock,
+    pipeline, CLI).
+  - Write a README with the command and its prerequisites: Rust, ffmpeg and ffprobe,
+    engine access and how cargo fetches the private git dependency, and
+    `scripts/fixture.sh`. It must say that the gates run only with engine access.
+  - Write this phase's `shipped` date.
