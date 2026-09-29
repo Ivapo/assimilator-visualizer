@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "assimilator-config"
 version = "0.1.0"
-source = "git+https://github.com/Ivapo/assimilator.git?rev=1c15330#1c15330735454945d76ec500ae92155a1d3c2d33"
+source = "git+https://github.com/Ivapo/assimilator.git?rev=df8aec0#df8aec0a76bd7cc264dd9e310583c749723a3cb2"
 dependencies = [
  "anyhow",
  "indexmap",
@@ -279,7 +279,7 @@ dependencies = [
 [[package]]
 name = "assimilator-core"
 version = "0.1.0"
-source = "git+https://github.com/Ivapo/assimilator.git?rev=1c15330#1c15330735454945d76ec500ae92155a1d3c2d33"
+source = "git+https://github.com/Ivapo/assimilator.git?rev=df8aec0#df8aec0a76bd7cc264dd9e310583c749723a3cb2"
 dependencies = [
  "anyhow",
  "assimilator-config",
@@ -297,7 +297,7 @@ dependencies = [
 [[package]]
 name = "assimilator-demand"
 version = "0.1.0"
-source = "git+https://github.com/Ivapo/assimilator.git?rev=1c15330#1c15330735454945d76ec500ae92155a1d3c2d33"
+source = "git+https://github.com/Ivapo/assimilator.git?rev=df8aec0#df8aec0a76bd7cc264dd9e310583c749723a3cb2"
 dependencies = [
  "anyhow",
  "assimilator-config",
@@ -312,7 +312,7 @@ dependencies = [
 [[package]]
 name = "assimilator-geometry"
 version = "0.1.0"
-source = "git+https://github.com/Ivapo/assimilator.git?rev=1c15330#1c15330735454945d76ec500ae92155a1d3c2d33"
+source = "git+https://github.com/Ivapo/assimilator.git?rev=df8aec0#df8aec0a76bd7cc264dd9e310583c749723a3cb2"
 dependencies = [
  "assimilator-config",
  "assimilator-core",
@@ -324,7 +324,7 @@ dependencies = [
 [[package]]
 name = "assimilator-models"
 version = "0.1.0"
-source = "git+https://github.com/Ivapo/assimilator.git?rev=1c15330#1c15330735454945d76ec500ae92155a1d3c2d33"
+source = "git+https://github.com/Ivapo/assimilator.git?rev=df8aec0#df8aec0a76bd7cc264dd9e310583c749723a3cb2"
 dependencies = [
  "assimilator-config",
  "serde",
@@ -333,7 +333,7 @@ dependencies = [
 [[package]]
 name = "assimilator-network"
 version = "0.1.0"
-source = "git+https://github.com/Ivapo/assimilator.git?rev=1c15330#1c15330735454945d76ec500ae92155a1d3c2d33"
+source = "git+https://github.com/Ivapo/assimilator.git?rev=df8aec0#df8aec0a76bd7cc264dd9e310583c749723a3cb2"
 dependencies = [
  "anyhow",
  "assimilator-config",
