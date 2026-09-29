@@ -126,9 +126,9 @@ rev (§2.2.2), and places a row with exactly this chain:
 `LinkGeometryIndex::from_network_config(&network, &nd)` → `interpolate(link_id,
 position, lane)`. It does not re-implement any part of it.
 
-*Note (2026-09-29, Phase 2 draft).* A row is still placed with exactly this chain. Phase 2
-adds one narrow copy outside it: the arc-length walk along a turn path, because the
-engine's own walk is private (§2.8.3, OQ-7).
+*Note (2026-09-29, Phase 2).* A row is still placed with exactly this chain. Phase 2 adds
+the walk along a turn path, also the engine's code: the public functions of
+`assimilator-core`'s `spatial_conflict` module, reused and not copied (§2.8.3).
 
 Why:
 - The placement is a number, and asm-001 §10 puts numbers in the engine. Matching FCD
@@ -379,26 +379,31 @@ scale. But the shortfall grows with vehicle length (a 12 m truck on a short span
 The heading along the path is the tangent of the piece the box is on: the link's heading
 from `interpolate_with_lateral`, the turn path's segment tangent, or the chord.
 
-#### 2.8.3 The turn-path walk is copied (decision, recorded — OQ-7)
+#### 2.8.3 The turn-path walk is reused, not copied (decision, recorded)
 
-Decided by the user, 2026-09-29.
-- The engine walks a turn path to arc length `s` in
-  `crates/geometry/src/frame_collect.rs:interpolate_turn_path`, which is private at
-  `df8aec0`. The path data is public (`LaneTurnPath`, `TurnPathInfo` in
-  `crates/core/src/network_data.rs`).
-- So Phase 2 uses the engine's path data as it is and copies only the walk, about 50
-  lines: find the segment by accumulated length, interpolate linearly, and give the
-  heading of the segment (0 = north, clockwise).
-- The copy names the engine function and rev it came from.
-- OQ-7 asks the engine to make the walk public. When the pin moves past that change, the
-  copy is deleted.
-- Rejected: blocking Phase 2 on that engine change.
-
-*Note (2026-09-29, review round 1).* The premise is half true: the same walk is public
-as `crates/core/src/spatial_conflict.rs:interpolate_pos`, and
-`crates/core/src/spatial_conflict.rs:interpolate_heading` picks the same segment but
-returns radians, `atan2(dy, dx)`. The copy stands until the user revisits it; Phase 2
-tests it against those two functions.
+Decided by the user, 2026-09-29, replacing the draft's decision to copy it.
+- A point on a turn path at arc length `s` is
+  `crates/core/src/spatial_conflict.rs:interpolate_pos(&path.path, s)`, and its heading is
+  `crates/core/src/spatial_conflict.rs:interpolate_heading(&path.path, s)`, on the path
+  data of `LaneTurnPath` or `TurnPathInfo` (`crates/core/src/network_data.rs`). Both are
+  public at `df8aec0` and pick the segment by accumulated length the same way. Past
+  either end, the position clamps to the path and the heading is the end segment's.
+- **The one conversion.** `interpolate_heading` returns radians, `atan2(dy, dx)`, counted
+  anticlockwise from east. Phase 2 uses the placement's convention (degrees, 0 = north,
+  clockwise, §2.2), so the heading is `(90° − θ·180/π)`, wrapped to 0–360°.
+- **Dependency: none new.** It is `assimilator-core`, already a git dependency at the
+  pinned rev (§2.2.1), and `spatial_conflict` is a `pub mod` of it. `Cargo.toml` does
+  not change.
+- On a segment shorter than 1e-9 m, `atan2(0, 0)` gives 90° after conversion, where
+  the engine GUI's walk gives 0°. The `>=` segment test never selects such a segment
+  inside a path, only as the first or last one, at the joins. The Phase 2 test records
+  how many first and last segments are that short.
+- **Rejected: copying the walk** (the draft's decision). It rested on the walk being
+  private, and it was only private in one place:
+  `crates/geometry/src/frame_collect.rs:interpolate_turn_path` is a private `fn`, but
+  `spatial_conflict` has the same position walk, line for line, as public functions
+  (review round 1). The copy would have been about 50 lines to keep in step with the
+  engine and an engine request (OQ-7), for no gain.
 
 #### 2.8.4 Lane changes: a sideways slide
 
@@ -499,7 +504,7 @@ through `Job::motion_report()`; showing it without the library is roadmap item 6
   It is not needed for Phase 1, which reuses the code (§2.2.1). It blocks a public build
   and any CI. *(needs-input: engine; deferred by evidence to roadmap Phase 6, the Linux
   build check)*
-- **OQ-7** — Can the engine make its turn-path walk public?
+- ~~**OQ-7** — Can the engine make its turn-path walk public?
   `crates/geometry/src/frame_collect.rs:interpolate_turn_path` is a private `fn` at
   `df8aec0`, so Phase 2 copies it, about 50 lines (§2.8.3). A `pub` on that function, or a
   public method on `LaneTurnPath` that does the same, would let the copy go. This is an
@@ -508,7 +513,9 @@ through `Job::motion_report()`; showing it without the library is roadmap item 6
   non-blocking)* *Note (2026-09-29, review round 1):* the position half is already
   public as `crates/core/src/spatial_conflict.rs:interpolate_pos`, and the heading half
   as `interpolate_heading` in another convention (§2.8.3 note). Whether the copy is
-  still wanted is the user's call.
+  still wanted is the user's call.~~ **WITHDRAWN 2026-09-29 (user): not needed.** The
+  walk is already public in `spatial_conflict`, and Phase 2 reuses it (§2.8.3). No
+  request goes to the engine.
 - ~~**OQ-8** — Is the gap between `G` and `I` (§2.8.2) the frozen `position`'s shortfall
   from the link end, a constant to take out before scaling? In the fixture, `G − I`
   minus `(L_a − p_f)` is −1.2 to +1.4 m, median +0.5 m, so the half-length explains most
@@ -749,18 +756,22 @@ Phase 1: it changes what Phase 1 draws, and nothing else.
     clamped ones, `Δs < 0` intervals, spans by how their path was found (§2.8.2 steps
     1–3, transparent, no movement), every span's `r` and `r′`, spans out of band, and
     lane slides.
-  - **The turn-path walk (`src/turn_path.rs`, new).** It is the copy of §2.8.3, with a
-    header naming `crates/geometry/src/frame_collect.rs:interpolate_turn_path` at
-    `df8aec0` and OQ-7. **Its test uses the engine's public walk as the oracle:** on
-    every `lane_turn_path` (each movement's `from_lanes` × `to_lanes`) and `turn_path`
-    of the fixture, at `s` from −1 m to `length + 1` m in 0.1 m steps plus every vertex,
-    the position equals `spatial_conflict::interpolate_pos` to 1e-9 m, and the heading
-    equals `(90° − interpolate_heading in degrees) mod 360` to 1e-9° (wrapped
-    difference) wherever the segment is longer than 1e-9 m. That catches a swapped heading convention, the wrong
-    segment at a vertex (the engine's `>=` keeps the incoming one) and missing clamping.
   - **Placement (`src/place.rs`).** It gains what motion needs from the engine: a
     link's `to_node`, `resolve_route_pair`, `lane_turn_path`, `resolve_departure_lane`,
-    `turn_path`, `lane_offset`, and `interpolate_with_lateral` (already there). Every row
+    `turn_path`, `lane_offset`, `interpolate_with_lateral` (already there), and a
+    **turn-path point**: `spatial_conflict::interpolate_pos` and `interpolate_heading`
+    with §2.8.3's heading conversion. Its unit test checks:
+    - the conversion: two-point paths heading north, east, south and west give 0°, 90°,
+      180° and 270° to 1e-9°, by wrapped difference;
+    - the wiring, on every `lane_turn_path` of the fixture (each movement's
+      `from_lanes` × `to_lanes`, skipping pairs that return `None`) and every
+      `turn_path`: at `s` = 0, each vertex's accumulated length, and `length`, the point
+      is that vertex to 1e-9 m. It needs the fixture, so it is `#[ignore]`d like
+      `tests/gates.rs`;
+    - and it records how many first and last segments are shorter than 1e-9 m
+      (§2.8.3), with no prediction.
+
+    Every row
     in the file, not only the window's, and every span's movement lookup is done before
     the first frame. Nothing new can fail: a missing movement is drawn and counted.
   - **Reading (`src/fcd.rs`).** It keeps every row of each vehicle, grouped by
@@ -809,8 +820,7 @@ Phase 1: it changes what Phase 1 draws, and nothing else.
        `I` = 28.428 m, `r` = 1.098. Prediction: on the per-lane turn path, 11.60 m along
        its 24.50 m, 13.87 m (about 24 px) past where Phase 1 drew it. The test computes
        the point from the FCD rows and `NetworkData` with the §2.8.2 formula and
-       `spatial_conflict::interpolate_pos`, not through `src/motion.rs` or
-       `src/turn_path.rs`.
+       `spatial_conflict::interpolate_pos` called directly, not through `src/motion.rs`.
   4. **Input errors** (Phase 1 gate 4, unchanged): missing FCD, unknown `link_id`,
      ffmpeg not on `PATH`.
   5. **Build size** (Phase 1 gate 5): recorded next to Phase 1's.
@@ -883,8 +893,8 @@ Phase 1: it changes what Phase 1 draws, and nothing else.
 - **Not predicted, and so not gated:** render time (gate 1 records it), the measured
   `r′` range (gate 8 bounds it), and the outcome of gate 12.
 - **Close-out (standing plan steps, §3 of the methodology):**
-  - **Commit plan:** one branch and one push, with commits for motion and the turn-path
-    walk, for the gates, and for the close-out.
+  - **Commit plan:** one branch and one push, with commits for motion and placement,
+    for the gates, and for the close-out.
   - **Reconciliation:**
     - a new `rules/motion.md` for §2.8 as built (`rules/render.md` is at its 60-line
       cap);
