@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# vis-001 Phase 1 exit gates 1, 2 and 4, on the fixture of scripts/fixture.sh.
-# Gates 3 and 7, and the determinism regression check behind gate 2:
+# vis-001 exit gates 1, 2 and 4 (Phases 1 and 2), on the fixture of scripts/fixture.sh.
+# Gates 3, 6–11 (Phase 2; 3 and 7 in Phase 1), and the determinism regression check
+# behind gate 2:
 #   cargo test --release --test gates -- --ignored --test-threads=1 --nocapture
 # Needs ffmpeg/ffprobe, duckdb (the FCD's time span, read independently of the renderer)
 # and python3.
-# Gate 5 is recorded by hand in specs/reviews/vis-001.md; gate 6 is a human watching.
+# Gate 5 is recorded by hand in specs/reviews/vis-001.md. The human check is Phase 1's
+# gate 6 and Phase 2's gate 12.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
