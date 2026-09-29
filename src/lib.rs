@@ -2,12 +2,15 @@
 //!
 //! The library exposes what the Phase 1 gates measure through: one frame rendered to its
 //! RGBA buffer ([`Job::render_at`]), the camera's world-to-pixel transform
-//! ([`scene::Camera::world_to_pixel`]) and its metres per pixel ([`Job::k`]).
+//! ([`scene::Camera::world_to_pixel`]) and its metres per pixel ([`Job::k`]). Phase 2
+//! adds the boxes at any time with their track positions ([`Job::boxes_at`]) and the
+//! motion report ([`Job::motion_report`]).
 
 pub mod clock;
 pub mod encode;
 pub mod fcd;
 pub mod inputs;
+pub mod motion;
 pub mod place;
 pub mod render;
 pub mod scene;
@@ -18,6 +21,7 @@ use anyhow::{Result, bail};
 
 use crate::fcd::Fcd;
 use crate::inputs::RunPaths;
+use crate::motion::{Motion, MotionReport};
 use crate::place::{Placed, Placement};
 use crate::render::{Renderer, VehicleBox};
 use crate::scene::Camera;
@@ -60,12 +64,13 @@ pub struct Job {
     pub fcd: Fcd,
     pub placed: Vec<Placed>,
     pub placement: Placement,
+    pub motion: Motion,
     renderer: Renderer,
 }
 
 impl Job {
-    /// Run every check that can fail on the inputs, place every row of the window, and
-    /// build the scene. No frame is rendered.
+    /// Run every check that can fail on the inputs, place every row, build every
+    /// vehicle's track from the whole file, and build the scene. No frame is rendered.
     pub fn prepare(o: &RenderOptions) -> Result<Job> {
         if o.width == 0
             || o.height == 0
@@ -122,18 +127,14 @@ impl Job {
             bail!("the scenario's network has no drawable links");
         }
         let camera = Camera::fit(&strips, o.width, o.height);
-        let pool = fcd
-            .snapshots
-            .iter()
-            .map(|s| s.end - s.start)
-            .max()
-            .unwrap_or(0);
-        let renderer = Renderer::new(&strips, camera, pool)?;
+        let motion = Motion::build(&fcd, &placement);
+        let renderer = Renderer::new(&strips, camera, motion.max_drawn())?;
         Ok(Job {
             clock,
             fcd,
             placed,
             placement,
+            motion,
             renderer,
         })
     }
@@ -147,22 +148,26 @@ impl Job {
         self.camera().k
     }
 
-    /// The boxes shown at sim time `t`: exactly the vehicles of the snapshot at the
-    /// latest FCD `time ≤ t`, in `vehicle_id` order.
+    /// The boxes shown at sim time `t`: every vehicle with `t_first − 1e-6 ≤ t ≤
+    /// t_last + 1e-6`, where its track puts it at `t` (vis-001 §2.8), in `vehicle_id`
+    /// order.
     pub fn boxes_at(&self, t: f64) -> Vec<VehicleBox> {
-        match self.fcd.snapshot_at(t) {
-            None => Vec::new(),
-            Some(s) => (s.start..s.end)
-                .map(|i| {
-                    let r = &self.fcd.rows[i];
-                    VehicleBox {
-                        at: self.placed[i],
-                        length: r.length,
-                        speed: r.speed,
-                    }
-                })
-                .collect(),
-        }
+        self.motion
+            .at(t, &self.fcd, &self.placement)
+            .into_iter()
+            .map(|(vehicle_id, tr)| VehicleBox {
+                vehicle_id,
+                at: tr.at,
+                length: tr.length,
+                speed: tr.speed,
+                track: tr.pos,
+            })
+            .collect()
+    }
+
+    /// What motion found in the whole file (§2.8.6's evidence).
+    pub fn motion_report(&self) -> &MotionReport {
+        self.motion.report()
     }
 
     /// Frame `n`'s lossless RGBA readback.

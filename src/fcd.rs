@@ -37,13 +37,23 @@ pub struct Snapshot {
     pub end: usize,
 }
 
+/// One vehicle's rows from the whole file, in `time` order (vis-001 §2.8).
+#[derive(Debug, Clone)]
+pub struct VehicleRows {
+    pub vehicle_id: u64,
+    pub rows: Vec<Row>,
+}
+
 /// The rows of a render window: every snapshot in `[from, to]` plus the last one at or
-/// before `from`.
+/// before `from`; and every vehicle's rows from the whole file, which motion is built
+/// from (§2.8).
 #[derive(Debug, Clone)]
 pub struct Fcd {
     pub links: Vec<String>,
     pub rows: Vec<Row>,
     pub snapshots: Vec<Snapshot>,
+    /// Every row of the file, grouped by vehicle, in `vehicle_id` order.
+    pub vehicles: Vec<VehicleRows>,
     /// First and last `time` in the whole file.
     pub file_span: (f64, f64),
 }
@@ -71,6 +81,7 @@ pub fn read_window(path: &Path, from: f64, to: f64) -> Result<Fcd> {
             .total_cmp(&b.time)
             .then(a.vehicle_id.cmp(&b.vehicle_id))
     });
+    let vehicles = by_vehicle(&rows);
     let snapshots = group(&rows);
     // The last snapshot at or before `from`, else the first one.
     let first = snapshots
@@ -99,6 +110,7 @@ pub fn read_window(path: &Path, from: f64, to: f64) -> Result<Fcd> {
         links,
         rows,
         snapshots,
+        vehicles,
         file_span,
     })
 }
@@ -117,6 +129,24 @@ impl Fcd {
     pub fn rows_of(&self, s: &Snapshot) -> &[Row] {
         &self.rows[s.start..s.end]
     }
+}
+
+/// Rows sorted by (`time`, `vehicle_id`), regrouped per vehicle; a stable sort keeps
+/// each vehicle's rows in `time` order.
+fn by_vehicle(rows: &[Row]) -> Vec<VehicleRows> {
+    let mut sorted = rows.to_vec();
+    sorted.sort_by_key(|r| r.vehicle_id);
+    let mut out: Vec<VehicleRows> = Vec::new();
+    for r in sorted {
+        match out.last_mut() {
+            Some(v) if v.vehicle_id == r.vehicle_id => v.rows.push(r),
+            _ => out.push(VehicleRows {
+                vehicle_id: r.vehicle_id,
+                rows: vec![r],
+            }),
+        }
+    }
+    out
 }
 
 fn group(rows: &[Row]) -> Vec<Snapshot> {

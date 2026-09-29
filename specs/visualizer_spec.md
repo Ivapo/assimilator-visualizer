@@ -16,7 +16,7 @@ phases:
     by: null
   - name: "Phase 2 — Correct motion: smooth video from 1 Hz FCD"
     reviewed: 2026-09-29
-    shipped: null
+    shipped: 2026-09-29
     cut: null
     by: null
 
@@ -907,3 +907,15 @@ Phase 1: it changes what Phase 1 draws, and nothing else.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction
     and its cause, as Phase 1 did.
   - Write this phase's `shipped` date.
+  - *Gates 1–11 passed (2026-09-29, build on branch `phase-2`).* Every prediction held as
+    written, and none was missed. The results are in `specs/reviews/vis-001.md`.
+    - The measured `r′` is 0.970–1.050, median 1.018, inside gate 8's bound.
+    - 0 first or last turn-path segments are shorter than 1e-9 m (§2.8.3).
+    - The default render took 144 s.
+    - The reconciliation's `--help` item needed no change: only `src/clock.rs`'s unit
+      test said 8970.
+    - Gate 12, the user's check, is open, so `shipped` is not yet written.
+  - *Gate 12 passed (2026-09-29): a human check, by the user.* The user watched
+    `scratch/out/default.mp4` and the centre-junction close-up for t = 150–190 s
+    (`scratch/out/closeup_centre_150-190.mp4`), and confirmed that the motion is visibly
+    smooth at 30 fps. Every exit gate has passed: **Phase 2 `shipped: 2026-09-29`.**

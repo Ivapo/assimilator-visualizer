@@ -2,7 +2,9 @@
 
 # Rules
 
-- **[inputs](inputs.md)** — generated 2026-09-28 · 4 sources · 47/50 lines
+- **[inputs](inputs.md)** — generated 2026-09-29 · 4 sources · 50/50 lines
   What the renderer reads from a run and from where, how FCD rows become placed points, and which checks fail before the first frame.
-- **[render](render.md)** — generated 2026-09-28 · 6 sources · 60/60 lines
+- **[motion](motion.md)** — generated 2026-09-29 · 3 sources · 59/60 lines
+  How each vehicle's FCD rows become a position at any time: Hermite along links, junction spans on the engine's turn paths, lane slides, when a vehicle is drawn, and the motion report.
+- **[render](render.md)** — generated 2026-09-29 · 6 sources · 60/60 lines
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
