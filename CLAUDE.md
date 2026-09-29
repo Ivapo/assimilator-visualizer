@@ -13,6 +13,8 @@ project). Copy a project to a scratch folder and run it there.
 **Disk is tight (about 100 GB free).** Keep Bevy features trimmed, don't enable
 `dynamic_linking` by default, and don't create extra worktrees without asking.
 
+**Licensed MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`): every crate sets `license = "MIT OR Apache-2.0"` in its `Cargo.toml`.
+
 ## Development flow
 
 This repo is developed spec-driven. Two artifacts, one job each:
