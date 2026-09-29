@@ -11,9 +11,9 @@ default-run = "assimilator-video"
 [dependencies]
 # The engine, pinned (vis-001 §2.2.2). The rev is moved on purpose, by the user, in a
 # commit of its own that re-runs the Phase 1 gates; scripts/fixture.sh reads it from here.
-assimilator-config = { git = "https://github.com/Ivapo/assimilator.git", rev = "1c15330" }
-assimilator-core = { git = "https://github.com/Ivapo/assimilator.git", rev = "1c15330" }
-assimilator-geometry = { git = "https://github.com/Ivapo/assimilator.git", rev = "1c15330" }
+assimilator-config = { git = "https://github.com/Ivapo/assimilator.git", rev = "df8aec0" }
+assimilator-core = { git = "https://github.com/Ivapo/assimilator.git", rev = "df8aec0" }
+assimilator-geometry = { git = "https://github.com/Ivapo/assimilator.git", rev = "df8aec0" }
 # Must be the engine's version: a ProjectConfig is deserialized from its serde_yaml::Value.
 serde_yaml = "0.9"
 
@@ -27,6 +27,7 @@ bevy = { version = "0.19", default-features = false, features = [
 ] }
 arrow-array = "60"
 arrow-schema = "60"
+arrow-select = "60"
 parquet = { version = "60", default-features = false, features = ["arrow", "zstd"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 clap = { version = "4", features = ["derive"] }

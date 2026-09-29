@@ -2,9 +2,10 @@
 //! (Phase 1, fixture step 5). Columns are found by name; every other column is copied.
 //!
 //! ```text
-//! fcd-derive lengths      --input <fcd> --output <file>   # + vehicle_length 2/8/12 m by vehicle_id mod 3
+//! fcd-derive lengths      --input <fcd> --output <file>   # vehicle_length 2/8/12 m by vehicle_id mod 3 (set or overwritten)
 //! fcd-derive unknown-link --input <fcd> --output <file>   # first row's link_id → an id absent from the network
 //! fcd-derive subset       --input <fcd> --output <file> --vehicle <id>
+//! fcd-derive drop-columns --input <fcd> --output <file> --column <name>...   # e.g. a pre-asm-020 file
 //! ```
 
 use std::fs::File;
@@ -12,10 +13,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use arrow_array::{
-    Array, ArrayRef, BooleanArray, Float64Array, RecordBatch, StringArray, UInt64Array,
-};
+use arrow_array::{ArrayRef, BooleanArray, Float64Array, RecordBatch, StringArray, UInt64Array};
 use arrow_schema::{DataType, Field, Schema};
+use arrow_select::filter::filter_record_batch;
 use clap::{Parser, Subcommand};
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -53,6 +53,14 @@ enum Mode {
         #[arg(long)]
         vehicle: u64,
     },
+    DropColumns {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long = "column", required = true)]
+        columns: Vec<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -62,9 +70,6 @@ fn main() -> Result<()> {
             let out: Vec<RecordBatch> = batches
                 .iter()
                 .map(|b| {
-                    if b.schema().field_with_name("vehicle_length").is_ok() {
-                        bail!("{} already has vehicle_length", input.display());
-                    }
                     let vid = u64_col(b, "vehicle_id")?;
                     let len: Float64Array = vid
                         .iter()
@@ -76,9 +81,15 @@ fn main() -> Result<()> {
                         .iter()
                         .map(|f| f.as_ref().clone())
                         .collect();
-                    fields.push(Field::new("vehicle_length", DataType::Float64, true));
                     let mut cols: Vec<ArrayRef> = b.columns().to_vec();
-                    cols.push(Arc::new(len));
+                    // An engine FCD from asm-020 Phase 3 on already has the column.
+                    match b.schema().index_of("vehicle_length") {
+                        Ok(i) => cols[i] = Arc::new(len),
+                        Err(_) => {
+                            fields.push(Field::new("vehicle_length", DataType::Float64, true));
+                            cols.push(Arc::new(len));
+                        }
+                    }
                     Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), cols)?)
                 })
                 .collect::<Result<_>>()?;
@@ -119,7 +130,7 @@ fn main() -> Result<()> {
                         .iter()
                         .map(|v| Some(v == Some(vehicle)))
                         .collect();
-                    filter_rows(b, &keep)
+                    Ok(filter_record_batch(b, &keep)?)
                 })
                 .collect::<Result<_>>()?;
             if out.iter().all(|b| b.num_rows() == 0) {
@@ -127,46 +138,28 @@ fn main() -> Result<()> {
             }
             write(&output, &out)
         }
-    }
-}
-
-/// Row filter without pulling in arrow-select: rebuild each column from kept indices.
-fn filter_rows(b: &RecordBatch, keep: &BooleanArray) -> Result<RecordBatch> {
-    let idx: Vec<usize> = (0..keep.len()).filter(|&i| keep.value(i)).collect();
-    let cols: Vec<ArrayRef> = b
-        .columns()
-        .iter()
-        .map(|c| take(c.as_ref(), &idx))
-        .collect::<Result<_>>()?;
-    Ok(RecordBatch::try_new(b.schema(), cols)?)
-}
-
-fn take(c: &dyn Array, idx: &[usize]) -> Result<ArrayRef> {
-    use arrow_array::{PrimitiveArray, types::*};
-    fn prim<T: ArrowPrimitiveType>(c: &dyn Array, idx: &[usize]) -> ArrayRef {
-        let a = c.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-        Arc::new(
-            idx.iter()
-                .map(|&i| if a.is_null(i) { None } else { Some(a.value(i)) })
-                .collect::<PrimitiveArray<T>>(),
-        )
-    }
-    Ok(match c.data_type() {
-        DataType::Float64 => prim::<Float64Type>(c, idx),
-        DataType::UInt64 => prim::<UInt64Type>(c, idx),
-        DataType::UInt32 => prim::<UInt32Type>(c, idx),
-        DataType::Int64 => prim::<Int64Type>(c, idx),
-        DataType::Int32 => prim::<Int32Type>(c, idx),
-        DataType::Utf8 => {
-            let a = c.as_any().downcast_ref::<StringArray>().unwrap();
-            Arc::new(
-                idx.iter()
-                    .map(|&i| if a.is_null(i) { None } else { Some(a.value(i)) })
-                    .collect::<StringArray>(),
-            )
+        Mode::DropColumns {
+            input,
+            output,
+            columns,
+        } => {
+            let batches = read(&input)?;
+            let out: Vec<RecordBatch> = batches
+                .iter()
+                .map(|b| {
+                    let mut b = b.clone();
+                    for name in &columns {
+                        let i = b.schema().index_of(name).with_context(|| {
+                            format!("{} has no column {name:?}", input.display())
+                        })?;
+                        b.remove_column(i);
+                    }
+                    Ok(b)
+                })
+                .collect::<Result<_>>()?;
+            write(&output, &out)
         }
-        t => bail!("subset: unsupported column type {t}"),
-    })
+    }
 }
 
 fn u64_col<'a>(b: &'a RecordBatch, name: &str) -> Result<&'a UInt64Array> {

@@ -6,7 +6,7 @@ note: >
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
 status: accepted
-last_updated: 2026-09-28
+last_updated: 2026-09-29
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
@@ -165,6 +165,17 @@ Decided by the user, 2026-09-28.
 - **The expected move** is to the merge of asm-020 Phase 3 (the FCD `vehicle_class`
   and `vehicle_length` columns). After that, gate 7 can use the engine's column instead
   of the derived file.
+- **Moved 2026-09-29 (user): `1c15330` → `df8aec0`.** The reason is the expected move
+  above: asm-020 Phase 3 merged into engine main at `708d35b`, and `df8aec0` is the
+  specs-only commit after it (asm-020 OQ-7 recorded). The same merge deleted
+  `crates/logging`, which this repo never depended on. The build needed no code change.
+  The dependency tree differs only in the rev of the six `assimilator-*` crates (config,
+  core, demand, geometry, models, network). The Phase 1 gates were re-run from scratch
+  at the new pin and all pass; the results are in the Phase 1 close-out and
+  `specs/reviews/vis-001.md`. The last bullet's "gate 7 can use the engine's column
+  instead of the derived file" held only in part: gate 7 now also measures the engine's
+  column, but urban_grid is all cars at 4.5 m, so the derived file stays for the 2.0 m
+  and 12.0 m cases (Phase 1 close-out).
 
 ### 2.3 Headless render with a fixed clock
 
@@ -284,6 +295,9 @@ drafted and reviewed. Each ends with a video.
   written before that phase lack both columns (asm-020 §15.6). The names and the shape
   are decided (asm-020 OQ-1/OQ-2, resolved at engine `2f2fa58`). The engine has no
   vehicle width (asm-020 OQ-3), so width stays this repo's constant.
+  **CLOSED 2026-09-29:** asm-020 Phase 3 was built and merged at engine `708d35b`, and the
+  pin moved to `df8aec0` (§2.2.2). Phase 1's reader already used `vehicle_length` when
+  present, so nothing else changed.
 - **OQ-4** — FCD is off in agent runs (`run_scenario` forces it off, asm-001 §10). How a
   harness run gets FCD for a video is a harness and engine decision. *(deferred by
   evidence: roadmap Phase 6)*
@@ -475,3 +489,32 @@ moving along its link.*
     - The fixture description in step 3 ("2 lanes × 3.5 m per link") is slightly off:
       47 of urban_grid's 48 links have 2 lanes, and `L_J11_J01` has 1. No gate depended
       on it.
+  - *Gates re-run at the new pin (2026-09-29, engine `df8aec0`, §2.2.2).* Every gate was
+    re-run from scratch: clean builds, the engine CLI re-installed, the fixture re-run. All
+    pass.
+    - The fixture FCD now has nine columns. Its seven Phase 1 columns are identical to the
+      run at `1c15330` under DuckDB `EXCEPT ALL` in both directions (0 rows each way,
+      21 557 rows each). Every vehicle is `car` at `vehicle_length` 4.5.
+    - Gates 1, 3, 4 and 7 give Phase 1's values exactly: N = 8700; gate 3 errors 0.050,
+      0.016 and 0.053 px; gate 7 errors 0.281 and 0.090 px at 4.5 m, and 0.102 and
+      0.244 px at 2.0 and 12.0 m.
+    - Gate 2: the default render's decoded frames equal Phase 1's shipped render hash for
+      hash (8700 frames), so gate 6's human check carries over unchanged.
+    - Gate 5: release 2 m 58 s and 1.2 GB, debug 1 m 27 s and 3.5 GB.
+    - **Missed prediction 1: the test tooling broke on the new columns.** `fcd-derive
+      subset`'s hand-written column copy did not handle `vehicle_class`'s
+      `Dictionary(Int32, Utf8)`, so gates 3 and 7 failed. `fcd-derive lengths` refused
+      a file that already had `vehicle_length`, so fixture step 5 stopped. Cause: the
+      tooling was written against the seven-column file and was never exercised on the
+      nine-column schema asm-020 §15.2 had already fixed. Fix (user-approved):
+      `subset` uses arrow's `filter_record_batch`, which handles any column type, and
+      `lengths` overwrites an existing `vehicle_length`.
+    - **Missed prediction 2: gate 7 still needs a derived length file.** §2.2.2 expected
+      the engine's column to replace it. urban_grid has only `car`, so the column is 4.5 m
+      everywhere and cannot show 2.0 m or 12.0 m. Gate 7 now measures three cases:
+      (a) the engine's column as written (4.5 m); (b) the derived 2.0 m and 12.0 m file;
+      (c) a copy without `vehicle_class` and `vehicle_length` (new `fcd-derive
+      drop-columns`), which must render at the 4.5 m fallback. The gate 7 text above is
+      left as written.
+    - `scripts/gates.sh` now deletes the old framemd5 files before gate 2 and runs ffmpeg
+      with `-y`. Without both, a rerun could compare stale hash files.
