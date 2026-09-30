@@ -774,33 +774,26 @@ keeps 60 s (20.8 px), a 3 h run gets 5 min (34.7 px), and a 24 h run 10 min (8.7
 #### 2.10.5 Where it lives, and the frame order
 
 As §2.9.6 set for the rest of `view`, the slider's logic is plain Rust with no Bevy
-types, so tests drive it headless:
-- `src/view/slider.rs` (new): the geometry of §2.10.1 from a window size, `x(t)`, `t(x)`,
-  the hit test and the ticks;
-- `src/view/state.rs`: `ViewInput` gains `pointer`, and `ViewState` gains the scrub
-  (whether it was playing). `ViewState::frame` applies one frame in this order:
-  1. the window size, and from it the bar;
-  2. **bar press:** a press in the hit area starts a scrub and pauses;
-  3. clock (§2.9.1), with space, `←` and `→` ignored while scrubbing;
-  4. **scrub:** `t ← t(x)`; on release (or when the bar disappears) the scrub ends and
-     playing resumes per §2.10.3;
-  5. `Esc`; 6. pan and zoom, making no `Press` for a bar press and ignoring scroll per
-     §2.10.3; 7. click; 8. follow, at the new `t`; 9. `K`.
+types, so tests drive it headless; `src/view/mod.rs` only draws it. The modules are named
+in Phase 4's scope. `ViewState::frame` applies one frame in this order:
+1. the window size, and from it the bar;
+2. **bar press:** a press in the hit area starts a scrub and pauses;
+3. clock (§2.9.1), with space, `←` and `→` ignored while scrubbing;
+4. **scrub:** `t ← t(x)`; on release (or when the bar disappears) the scrub ends and
+   playing resumes per §2.10.3;
+5. `Esc`; 6. pan and zoom, making no `Press` for a bar press and ignoring scroll per
+   §2.10.3; 7. click; 8. follow, at the new `t`; 9. `K`.
 
-  Steps 5–9 are Phase 3's order (§2.9, Phase 3 scope). Scrubbing after the clock and
-  before the follow is what makes the follow re-centre at the scrubbed `t` in the same
-  frame, and makes a `K` in that frame print it.
-- `src/view/mod.rs` only draws: it fills `pointer` from Bevy's `CursorMoved` messages,
-  and each frame places the track, the handle and the ticks as absolutely positioned
-  `bevy_ui` nodes with background colours, from the geometry the state computed.
+Steps 5–9 are Phase 3's order (§2.9, Phase 3 scope). Scrubbing after the clock and before
+the follow is what makes the follow re-centre at the scrubbed `t` in the same frame, and
+makes a `K` in that frame print it.
 
 #### 2.10.6 Build cost: none
 
 The bar is `bevy_ui` nodes (`Node`, `BackgroundColor`), and `bevy_ui` and
 `bevy_ui_render` are already on for the readout (§2.9.7). No feature, crate or
-dependency is added: `Cargo.toml` and `Cargo.lock` do not change, the release build stays
-at 360 crates, and only this crate recompiles. `bevy_egui` (OQ-9's example) is not used.
-Nothing is measured beforehand, since nothing in the dependency graph moves.
+dependency is added (`bevy_egui`, OQ-9's example, is not used), the release build stays
+at 360 crates, and nothing is measured beforehand.
 
 #### 2.10.7 Not in Phase 4
 
