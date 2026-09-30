@@ -4,6 +4,7 @@ sources:
   - src/inputs.rs
   - src/fcd.rs
   - src/place.rs
+  - src/run.rs
   - Cargo.toml
 covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
@@ -53,11 +54,11 @@ generated: 2026-09-29
   placed up front (`place_all` and `Motion::build`). An unknown link, or a row the
   engine cannot place, is an error before the first frame.
 - For motion, `Placement` also wraps the engine's junction movements and turn paths.
-- `link_length` is `NetworkData::link_length`, the junction-trimmed length that FCD
-  `position` is measured along.
+- `link_length` is `NetworkData::link_length`, the junction-trimmed length FCD `position`
+  is measured along.
 
 ## Checks before the first frame (order)
-ffmpeg on `PATH` → even, positive width and height; positive fps and speedup →
-project/scenario → `results.db` and the completed run → the FCD file exists → FCD schema
-→ `to > from` → every link known and every row placed. An error prints one line
-(`error: …`), exits 1, and creates no output file.
+`render`: ffmpeg on `PATH` → even, positive size; positive fps and speedup → `run::load`
+(`view`: positive size, no ffmpeg → `run::load`): project/scenario → `results.db` and the
+completed run → the FCD file exists → FCD schema → `to > from` → every link known and
+every row placed. An error is one line (`error: …`), exit 1, no output file or window.

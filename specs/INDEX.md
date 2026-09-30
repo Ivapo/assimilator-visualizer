@@ -2,5 +2,5 @@
 
 # Specs
 
-- **[visualizer](visualizer_spec.md)** — `vis-001` · accepted · partial
+- **[visualizer](visualizer_spec.md)** — `vis-001` · accepted · done
   What the visualizer is for: it renders a 3D video of one Assimilator simulation run, for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.

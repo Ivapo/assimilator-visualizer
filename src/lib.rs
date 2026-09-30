@@ -7,23 +7,26 @@
 //! motion report ([`Job::motion_report`]).
 
 pub mod clock;
+pub mod draw;
 pub mod encode;
 pub mod fcd;
 pub mod inputs;
 pub mod motion;
 pub mod place;
 pub mod render;
+pub mod run;
 pub mod scene;
+pub mod view;
 
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 
 use crate::fcd::Fcd;
-use crate::inputs::RunPaths;
 use crate::motion::{Motion, MotionReport};
 use crate::place::{Placed, Placement};
 use crate::render::{Renderer, VehicleBox};
+use crate::run::LoadOptions;
 use crate::scene::Camera;
 
 /// What `render` needs, after CLI parsing (vis-001 §2.4).
@@ -91,24 +94,16 @@ impl Job {
         {
             bail!("--speedup must be positive (got {s})");
         }
-        let paths = RunPaths::new(
-            &o.project,
-            &o.scenario,
-            o.seed,
-            o.results.clone(),
-            o.fcd.clone(),
-        );
-        let network = inputs::load_network(&paths.project_dir, &paths.scenario)?;
-        inputs::require_completed_run(&paths.results, &paths.scenario, paths.seed)?;
-        if !paths.fcd.is_file() {
-            bail!("missing file: {}", paths.fcd.display());
-        }
-        let (first, last) = fcd::time_span(&paths.fcd)?;
-        let from = o.from.unwrap_or(first);
-        let to = o.to.unwrap_or(last);
-        if from.is_nan() || to.is_nan() || to <= from {
-            bail!("empty window: --to ({to}) must be after --from ({from})");
-        }
+        let run = run::load(&LoadOptions {
+            project: o.project.clone(),
+            scenario: o.scenario.clone(),
+            seed: o.seed,
+            results: o.results.clone(),
+            fcd: o.fcd.clone(),
+            from: o.from,
+            to: o.to,
+        })?;
+        let (from, to) = (run.from, run.to);
         let d = to - from;
         let speedup = o.speedup.unwrap_or_else(|| clock::default_speedup(d));
         let clock = Clock {
@@ -119,16 +114,15 @@ impl Job {
             frames: clock::frame_count(d, o.fps, speedup),
         };
 
-        let fcd = fcd::read_window(&paths.fcd, from, to)?;
-        let placement = Placement::new(network);
-        let placed = placement.place_all(&fcd)?;
-        let strips = scene::strips(&placement);
-        if strips.is_empty() {
-            bail!("the scenario's network has no drawable links");
-        }
-        let camera = Camera::fit(&strips, o.width, o.height);
-        let motion = Motion::build(&fcd, &placement);
-        let renderer = Renderer::new(&strips, camera, motion.max_drawn())?;
+        let camera = Camera::fit(&run.strips, o.width, o.height);
+        let renderer = Renderer::new(&run.strips, camera, run.motion.max_drawn())?;
+        let run::Run {
+            fcd,
+            placed,
+            placement,
+            motion,
+            ..
+        } = run;
         Ok(Job {
             clock,
             fcd,
@@ -148,21 +142,9 @@ impl Job {
         self.camera().k
     }
 
-    /// The boxes shown at sim time `t`: every vehicle with `t_first − 1e-6 ≤ t ≤
-    /// t_last + 1e-6`, where its track puts it at `t` (vis-001 §2.8), in `vehicle_id`
-    /// order.
+    /// The boxes shown at sim time `t` ([`run::boxes_at`]).
     pub fn boxes_at(&self, t: f64) -> Vec<VehicleBox> {
-        self.motion
-            .at(t, &self.fcd, &self.placement)
-            .into_iter()
-            .map(|(vehicle_id, tr)| VehicleBox {
-                vehicle_id,
-                at: tr.at,
-                length: tr.length,
-                speed: tr.speed,
-                track: tr.pos,
-            })
-            .collect()
+        run::boxes_at(&self.motion, &self.fcd, &self.placement, t)
     }
 
     /// What motion found in the whole file (§2.8.6's evidence).

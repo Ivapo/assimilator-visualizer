@@ -21,7 +21,7 @@ phases:
     by: null
   - name: "Phase 3 — View: a window over a finished run"
     reviewed: 2026-09-29
-    shipped: null
+    shipped: 2026-09-29
     cut: null
     by: null
 
@@ -496,6 +496,11 @@ time, because it has to keep up with a person.
 - **Speed** is a ladder of powers of two, `s` ∈ {1/8, 1/4, 1/2, 1, 2, 4, 8, 16, 32, 64}.
   `+` doubles it and `−` halves it, and each stops at its end of the ladder. `+` is
   the `=` key with or without Shift, or keypad `+`; `−` is `-` or keypad `−`.
+  *Gate 11 note (2026-09-29, the user's check):* `+` did nothing on the user's keyboard,
+  so the user could go down to 1/8× but not back up. The build matched the key's
+  position (`KeyCode::Equal`, the US `=` key), not what it types. Keys are now matched by
+  their logical character (Bevy's `ButtonInput<Key>`): `+` or `=` doubles, `-` halves, on
+  any layout; the keypad keys are matched by position, as before.
 - **Step** pauses and moves `t` by a fixed amount, one per key press (held keys do not
   repeat):
   - `←`/`→`: by exactly `1/30` s of sim time, one frame of `render` at its defaults
@@ -537,7 +542,7 @@ left, `y` down) is over the world point
 `k` and the centre are the whole camera. The window is drawn at its physical resolution,
 and Bevy's orthographic projection is set each frame to `W·k × H·k` metres, so a resize
 keeps the centre and the zoom and shows more or less around them. The road mesh is baked
-relative to the fit's centre `(fx, fy)` (`src/render.rs:road_mesh`: world `(x, y)` → Bevy
+relative to the fit's centre `(fx, fy)` (`src/draw.rs:road_mesh`: world `(x, y)` → Bevy
 `(x − fx, ·, −(y − fy))`), so the camera sits at `(cx − fx, ·, −(cy − fy))`.
 
 #### 2.9.3 Picking and following a vehicle
@@ -566,6 +571,11 @@ One small line of text in the window's top-left corner shows `t` (to 0.01 s, so 
 vehicle followed, if any, with "(not drawn)" when §2.9.3's hold applies. For example:
 `t 64.10 s [9.1–299.1]  ×2  paused  following 103`. It is drawn on the window and never
 enters a keyframe or a `render` frame.
+*Gate 11 note (2026-09-29, the user's check):* the user followed a vehicle and did not
+know how to stop. While following, the readout now adds "— Esc to stop" after
+"following <id>", and after "(not drawn)" on hold: `… following 103 — Esc to stop`. The
+behaviour is unchanged: `Esc`, a drag and `WASD` stop following, and a click that hits no
+box does not.
 
 #### 2.9.5 The keyframe line
 
@@ -749,12 +759,14 @@ Decided by the user, 2026-09-29, on the Phase 3 draft:
   `r = G/I` is unchanged, but the band test moves to `r′` (§2.8.2), since otherwise it
   measures vehicle length. The `r` predictions do not change; `r′` was not measured,
   and gate 8 bounds it from recorded numbers.
-- **OQ-9** — Does `view` need a time slider (a bar to drag through the run, for example
+- ~~**OQ-9** — Does `view` need a time slider (a bar to drag through the run, for example
   with `bevy_egui`)? Phase 3 has keyboard time only: play, speed, and steps by frame or
   by sample (§2.9.1). A slider is another dependency and UI code, and whether it is
   worth that depends on how the keyboard feels on real runs. *(design call; deferred by
   evidence to Phase 3 gate 11, the user's hands-on check. It blocks nothing in Phase 3;
-  if the answer is yes, it is a phase of its own, before or with Phase 4.)*
+  if the answer is yes, it is a phase of its own, before or with Phase 4.)*~~
+  **ANSWERED 2026-09-29 (user, at gate 11): yes, `view` needs a time slider.** It will be
+  a phase of its own; nothing about it is designed here.
 
 ## 4. Implementation phases
 
@@ -1297,6 +1309,16 @@ it reuses unchanged.
       And say whether a time slider is needed (OQ-9), and whether any number here (pan
       speed, zoom step, limits, pick radius, speed ladder) should change. Tuning those is
       iteration, not a spec change (§2.6), unless it changes the keyframe line.
+
+      *Gate 11, first check (2026-09-29, the user): not passed.* There were two findings,
+      and everything else worked. `+` did not work on the user's keyboard (§2.9.1 note),
+      and the readout did not say how to stop following (§2.9.4 note). Both are fixed. The
+      user answered OQ-9: yes, a time slider, as its own phase. Gate 11 is re-checked by
+      the user.
+
+      *Gate 11 passed (2026-09-29, the user's re-check after `5c479fc`).* `+`/`-` and the
+      Esc hint work; everything else was fine at the first check. No number changes. With
+      gates 1–9 passed, **Phase 3 `shipped: 2026-09-29`.**
 - **Not predicted, and so not gated:**
   - **The frame rate** (§2.9.8, decision 2). At close-out, `view --bench 20` runs on the
     fixture at the default window, full zoom-out (up to 92 boxes drawn), and its JSON is
