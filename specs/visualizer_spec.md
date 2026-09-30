@@ -6,7 +6,7 @@ note: >
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
 status: accepted
-last_updated: 2026-09-29
+last_updated: 2026-09-30
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
@@ -22,6 +22,11 @@ phases:
   - name: "Phase 3 — View: a window over a finished run"
     reviewed: 2026-09-29
     shipped: 2026-09-29
+    cut: null
+    by: null
+  - name: "Phase 4 — Time slider: click and drag through the run in view"
+    reviewed: null
+    shipped: null
     cut: null
     by: null
 
@@ -277,8 +282,14 @@ drafted and reviewed. Each ends with a video.
    *Split 2026-09-29 (user) into two phases:*
    - **Phase 3 — `view`** (§2.9, §4): the window, top-down 2D like `render`, and the
      keyframe line (§2.9.5). It ends with no video, which Phase 3 argues for.
-   - **Phase 4 — scripted camera moves for `render`**, not yet drafted. Its keyframes are
-     `view`'s lines (§2.9.5); the file that holds them, and the moves, are Phase 4's.
+   - ~~**Phase 4 — scripted camera moves for `render`**, not yet drafted. Its keyframes are
+     `view`'s lines (§2.9.5); the file that holds them, and the moves, are Phase 4's.~~
+
+   *Revised 2026-09-30 (user), after Phase 3's gate 11 answered OQ-9:*
+   - **Phase 4 — time slider** (§2.10, §4): a bar in `view` to click and drag through the
+     run. It ends with no video, which Phase 4 argues for.
+   - **Phase 5 — scripted camera moves for `render`**, not yet drafted. Its keyframes are
+     `view`'s lines (§2.9.5); the file that holds them, and the moves, are Phase 5's.
 4. **City** — `prepare`: Overture buildings and land use for the network area, chunked
    meshes, a cached scene bundle; `render` makes no network calls.
 5. **Data** — links colored by speed or flow; HUD with clock, legend, one chart;
@@ -463,6 +474,9 @@ moving as §2.8 places them, under a camera and a clock that the user drives. It
 tool, not the observable (§2.7 item 3): what it hands on is a keyframe line (§2.9.5),
 which Phase 4's scripted camera will read.
 
+*Note (2026-09-30):* the scripted camera is now **Phase 5** (§2.7). Where §2.9 and
+Phase 3 say "Phase 4" they mean it; Phase 4 is the time slider (§2.10).
+
 ```
 assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
@@ -576,6 +590,8 @@ know how to stop. While following, the readout now adds "— Esc to stop" after
 "following <id>", and after "(not drawn)" on hold: `… following 103 — Esc to stop`. The
 behaviour is unchanged: `Esc`, a drag and `WASD` stop following, and a click that hits no
 box does not.
+*Phase 4 (2026-09-30):* the readout moves from the top-left corner to just above the
+time slider (§2.10.1). Its text does not change.
 
 #### 2.9.5 The keyframe line
 
@@ -669,6 +685,130 @@ Decided by the user, 2026-09-29, on the Phase 3 draft:
    of 50–75 while other sessions compile would make it flaky. `--bench` stays to record it.
 3. **Steps** are 1/30 s, and one FCD sample with Shift (§2.9.1), as drafted.
 4. **Follow** holds and stays armed when the vehicle is not drawn (§2.9.3), as drafted.
+
+### 2.10 The time slider (Phase 4)
+
+A thin bar along the bottom of `view`'s window spans the run's window `[from, to]`, with a
+handle at `t`. A click anywhere on it sets `t` there; dragging scrubs `t` continuously.
+It answers OQ-9. It is in `view` only: the keys, the keyframe line (§2.9.5) and `render`
+do not change. Agreed with the user on 2026-09-30.
+
+#### 2.10.1 Geometry
+
+In logical pixels (§2.9.2's units: origin top left, `y` down), in a window `W × H`:
+
+| Part | Where |
+|---|---|
+| track | from `x0 = 16` to `x1 = W − 16`, so `L = W − 32`; 4 px tall, centred on `y_bar = H − 14` |
+| handle | 12 × 12 px, centred on `(x(t), y_bar)`; at either end it overhangs the track by 6 px, inside the 16 px inset |
+| ticks | 1 × 10 px, centred on `y_bar`, drawn under the handle (§2.10.4) |
+| hit area | `x ∈ [x0 − 8, x1 + 8]`, `y ∈ [H − 28, H]`: the bottom 28 px, 8 px wider than the track at each end |
+| readout | its bottom edge 30 px above the window's bottom, left edge at `x0`: just above the hit area (moved from §2.9.4's top-left corner) |
+
+At the default 1280×720: `x0 = 16`, `x1 = 1264`, `L = 1248`, `y_bar = 706`, the hit area
+`[8, 1272] × [692, 720]`, and one pixel of track is `290/1248` ≈ 0.232 s of the fixture.
+- **Resize.** The geometry is a function of the window's current logical size, recomputed
+  every frame from `ViewInput::size`. `t` does not change; the handle is redrawn at `x(t)`
+  in the new geometry. A scrub in progress maps the cursor through the new geometry.
+- **Too small.** With `W < 64` or `H < 64` logical pixels there is no bar: nothing is
+  drawn, no hit area exists, and a scrub in progress ends as on release (§2.10.3). The
+  readout keeps its place.
+- **Over the map.** The bar is drawn over the scene, and the fit (§2.9.2) does not change
+  for it, so Phase 3's `k_fit` and gates stand. At the launch fit the hit area covers
+  world `y` below about −272 m in the fixture, the south ends of its southern entry links;
+  a box there is picked after a pan or zoom.
+
+#### 2.10.2 x ↔ t
+
+With `u` the fraction along the track:
+- `x(t) = (1 − u)·x0 + u·x1`, with `u = (t − from)/(to − from)`;
+- `t(x) = (1 − u)·from + u·to`, with `u = clamp((x − x0)/(x1 − x0), 0, 1)`.
+
+Both are written as a two-sided blend, not `from + u·(to − from)`, so each end is exact in
+floating point: `u = 0` gives `from` (or `x0`) and `u = 1` gives `to` (or `x1`) bit for
+bit, whatever rounding `to − from` carries. `to > from` always (`src/run.rs:load`
+rejects an empty window), so `u` is defined. The clamp is the only clamping: a cursor
+left of `x0` gives `from`, and right of `x1` gives `to`. There is no snapping to samples,
+frames or ticks.
+
+#### 2.10.3 Pressing, scrubbing, releasing
+
+- **The bar owns its input.** A left press with the cursor in the hit area starts a
+  **scrub**, and that press never becomes a pan (§2.9.2) or a click (§2.9.3): no
+  `Press` is made for it. A press anywhere else is Phase 3's, even if it later drags over
+  the bar. Scroll with the cursor in the hit area, or during a scrub, does nothing; it
+  zooms everywhere else as before.
+- **Scrubbing.** From the press frame until release, every frame sets `t ← t(x)` with the
+  cursor's `x`. So a click on the bar (press and release in one frame) sets `t` there,
+  and a drag from anywhere on the bar, the handle included, scrubs. The cursor's `x`
+  decides alone; `y` may leave the bar.
+- **Off the window.** Bevy's `Window::cursor_position` is `None` outside the window, so
+  a fast drag past an end could stop short of it. While the button is held, winit on macOS
+  keeps sending `CursorMoved` outside the view (winit 0.30.13,
+  `src/platform_impl/macos/view.rs`, `mouse_motion`), and Bevy passes its position on
+  without bounding it (bevy_winit 0.19.1, `WindowEvent::CursorMoved` in `state.rs`). So
+  `ViewInput` gains `pointer`, the last `CursorMoved` position of the frame, unbounded,
+  and a scrub reads `pointer`, else `cursor`, else holds `t`. Phase 3's pan keeps using
+  `cursor`.
+- **Playback.** The press remembers whether the clock was playing and pauses it. While
+  scrubbing, `t` comes from the cursor only: space, `←` and `→` are ignored; `+` and `−`
+  still change the speed. On release, playing resumes if it was playing and `t < to`;
+  at `to` it stays paused, as reaching `to` does (§2.9.1).
+- **Follow.** A scrub does not stop a follow. Each frame it re-centres on the vehicle
+  when it is drawn at the new `t`, and holds the last centre when it is not, with the
+  follow still armed: §2.9.3's rule for stepping, unchanged. The readout's "(not drawn)"
+  follows it.
+
+#### 2.10.4 Ticks
+
+A tick marks each whole minute of sim time in the window: `t = m·P` for integer `m`, with
+`from ≤ t ≤ to`, at `x(t)`, and `P` = 60 s. When minute ticks would be closer than 8 px
+(`P·L/(to − from) < 8`), `P` is the first of 5, 10, 15, 30 and 60 min, then 2, 3, 6, 12
+and 24 h, that spaces them 8 px or more; if none does, there are no ticks. `P` is
+recomputed with the geometry, so a resize can change it. The ticks are unlabelled.
+
+For the fixture at 1280×720 (`from` = 9.099999999999984, `to` = 299.0999999999995): `P` =
+60 s, 258.2 px apart, four ticks at 60, 120, 180 and 240 s. A 1 h run at the same size
+keeps 60 s (20.8 px), a 3 h run gets 5 min (34.7 px), and a 24 h run 10 min (8.7 px).
+
+#### 2.10.5 Where it lives, and the frame order
+
+As §2.9.6 set for the rest of `view`, the slider's logic is plain Rust with no Bevy
+types, so tests drive it headless:
+- `src/view/slider.rs` (new): the geometry of §2.10.1 from a window size, `x(t)`, `t(x)`,
+  the hit test and the ticks;
+- `src/view/state.rs`: `ViewInput` gains `pointer`, and `ViewState` gains the scrub
+  (whether it was playing). `ViewState::frame` applies one frame in this order:
+  1. the window size, and from it the bar;
+  2. **bar press:** a press in the hit area starts a scrub and pauses;
+  3. clock (§2.9.1), with space, `←` and `→` ignored while scrubbing;
+  4. **scrub:** `t ← t(x)`; on release (or when the bar disappears) the scrub ends and
+     playing resumes per §2.10.3;
+  5. `Esc`; 6. pan and zoom, making no `Press` for a bar press and ignoring scroll per
+     §2.10.3; 7. click; 8. follow, at the new `t`; 9. `K`.
+
+  Steps 5–9 are Phase 3's order (§2.9, Phase 3 scope). Scrubbing after the clock and
+  before the follow is what makes the follow re-centre at the scrubbed `t` in the same
+  frame, and makes a `K` in that frame print it.
+- `src/view/mod.rs` only draws: it fills `pointer` from Bevy's `CursorMoved` messages,
+  and each frame places the track, the handle and the ticks as absolutely positioned
+  `bevy_ui` nodes with background colours, from the geometry the state computed.
+
+#### 2.10.6 Build cost: none
+
+The bar is `bevy_ui` nodes (`Node`, `BackgroundColor`), and `bevy_ui` and
+`bevy_ui_render` are already on for the readout (§2.9.7). No feature, crate or
+dependency is added: `Cargo.toml` and `Cargo.lock` do not change, the release build stays
+at 360 crates, and only this crate recompiles. `bevy_egui` (OQ-9's example) is not used.
+Nothing is measured beforehand, since nothing in the dependency graph moves.
+
+#### 2.10.7 Not in Phase 4
+
+- **A hover readout** (the time under the cursor, shown before a click): deferred. It
+  needs a second text node and a rule for where it sits; the tick marks and the readout
+  above the bar carry the time for now.
+- Tick labels, keyboard focus on the bar, and any slider in `render`'s video (the HUD is
+  roadmap item 5).
 
 ## 3. Open questions
 
@@ -767,6 +907,9 @@ Decided by the user, 2026-09-29, on the Phase 3 draft:
   if the answer is yes, it is a phase of its own, before or with Phase 4.)*~~
   **ANSWERED 2026-09-29 (user, at gate 11): yes, `view` needs a time slider.** It will be
   a phase of its own; nothing about it is designed here.
+  **CLOSED 2026-09-30 (user): answered by Phase 4.** The slider is designed in §2.10 and
+  built by Phase 4, on `bevy_ui`, which the readout already needs; `bevy_egui` is not
+  added, so the premise's "another dependency" does not hold (§2.10.6).
 
 ## 4. Implementation phases
 
@@ -1345,6 +1488,160 @@ it reuses unchanged.
       edits reword to fit, moving detail into `rules/view.md`; `max_lines` is not
       raised;
     - the README gains the `view` command and its keys;
+    - no `CLAUDE.md` stanza change.
+  - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
+    its cause.
+  - Write this phase's `shipped` date.
+
+### Phase 4 — Time slider: click and drag through the run in `view`
+*Produces the observable: no. It is argued for here. The slider is part of `view`, a tool
+(§2.7 item 3); no video comes out of it, and `render`'s video does not change (gate 1).
+It is built before the scripted camera (Phase 5) because the user asked for it at Phase
+3's hands-on check (OQ-9): on a real run, finding a moment by play, speed and steps alone
+is slow, and finding moments is what Phase 5's keyframes need. It is small: one module,
+no dependency, and Phase 3's gates stand unchanged.*
+
+Drafted 2026-09-30; the design is §2.10. Phase 4 is strictly after Phase 3, whose `view`
+it extends.
+
+- **Scope:**
+  - **The slider (`src/view/slider.rs`, new; no Bevy types).** The geometry of §2.10.1
+    from a window size, `None` when `W < 64` or `H < 64`; `x(t)` and `t(x)` exactly as §2.10.2 writes
+    them; the hit test; and the ticks of §2.10.4 as the period `P` and the tick times.
+    The numbers of §2.10.1 and the 8 px tick spacing are named constants.
+  - **The state (`src/view/state.rs`).**
+    - `ViewInput` gains `pointer: Option<(f64, f64)>`, the last `CursorMoved` position of
+      the frame in logical pixels, not bounded to the window (§2.10.3).
+    - `ViewState` gains the scrub: `Option` of whether the clock was playing at the press.
+    - `ViewState::frame` applies §2.10.5's order. Steps 5–9 are Phase 3's code, changed
+      only so that a bar press makes no `Press` and scroll is ignored per §2.10.3.
+    - The existing public API keeps its signatures, so `tests/view.rs` compiles and runs
+      unedited (every `ViewInput` there is built with `..idle()`, and `ViewState` with
+      `new`).
+  - **The window (`src/view/mod.rs`).** `input` fills `pointer` from Bevy's
+    `CursorMoved` messages for the primary window. At start-up it spawns the track, the
+    handle and a pool of tick nodes as absolutely positioned `bevy_ui` `Node`s with a
+    `BackgroundColor`; each frame it sets their positions and sizes from the state's
+    geometry, and hides unused ticks and, when there is no bar, the whole bar (`Display::None`).
+    The readout's node moves to `left: 16 px, bottom: 30 px` (§2.10.1). Colours are
+    iteration, not specification (§2.6).
+  - **Unchanged:** `Cargo.toml` and `Cargo.lock` (§2.10.6), the CLI and `--help`, every
+    key, the keyframe line, `--bench`, and everything `render` runs.
+  - **Tests (`tests/slider.rs`, new).** Gates 4–8 run on constructed windows in plain
+    `cargo test`. Gates 9 and 10 need the fixture and are `#[ignore]`d, like
+    `tests/view.rs`.
+- **Exit gate.** On Phase 1's fixture (engine `df8aec0`, urban_grid, baseline, seed 42),
+  on the development machine (Apple M3, macOS, Retina display). Gates 4–10 drive
+  `ViewState::frame` and the slider functions headless, as Phase 3's gates 4–9 do, at a
+  1280×720 logical window unless a gate says otherwise. Distances in pixels or metres are
+  compared to 1e-9 and times to 1e-9 s; "exactly" means equal as `f64`. The fixture's
+  window is `from` = 9.099999999999984, `to` = 299.0999999999995 (Phase 3's record). The
+  constructed window is `[0, 300]` with Phase 3's `plain_state` fit (centre (0, 0), `k`
+  = 1).
+  - **What must not change:**
+  1. **`render`'s frames.** `scripts/gates.sh` passes, and its Phase 3 gate 1 comparison
+     gives the default render's `framemd5` equal to `scratch/ref-8eb9052.framemd5`.
+     Prediction: 8700 of 8700. `cargo test --release --test gates -- --ignored
+     --test-threads=1` passes 5 of 5 with Phase 2's printed numbers, and `tests/gates.rs`
+     is not edited.
+  2. **`view`'s Phase 3 gates.** `tests/view.rs` is not edited, and `cargo test --release
+     --test view -- --ignored --test-threads=1` passes 10 of 10 (Phase 3 gates 2 and 4–9)
+     with the numbers Phase 3 printed. None of its presses or scrolls is in the hit area:
+     all are at `y` ≤ 360 of 720.
+  3. **Build cost.** `git diff` of `Cargo.toml` and `Cargo.lock` against the Phase 3
+     merge is empty. Prediction: 0 crates added (360 in the release build). The
+     incremental release build's wall time is recorded, not predicted.
+  - **The slider, headless:**
+  4. **Geometry.** At 1280×720: `x0` = 16, `x1` = 1264, `y_bar` = 706, hit area
+     `[8, 1272] × [692, 720]`; (640, 692) and (8, 720) hit, (640, 691.9) and (7.9, 706) do
+     not. At 64×64 the bar exists with `L` = 32; at 63×720 and at 1280×63 there is none.
+     With `t` = 92.3076923076923 on the constructed window, a frame at 1600×900 leaves `t`
+     unchanged and gives `x1` = 1584, `y_bar` = 886 and the handle at
+     `x(t)` = 498.4615384615385.
+  5. **x ↔ t.** On the fixture's window at 1280: `t(16)` is exactly `from` and `t(1264)`
+     exactly `to`; `x(from)` is exactly 16 and `x(to)` exactly 1264; `t(640)` =
+     154.09999999999974. `t(x(t))` = `t` for each of the fixture's 291 snapshot times in
+     the window and the constructed times 0, 150 and 300 on `[0, 300]`. Mid on the
+     constructed window: `t(640)` = 150.
+  6. **Clamping and the pointer.** On the constructed window, press at (640, 706), then
+     move: `pointer` at `x` = 0 gives `t` = 0 exactly; 1280 gives 300 exactly; −50 gives
+     0 and 2000 gives 300 (off the window). With `pointer` `None` and `cursor` at
+     (400, 706), `t` = 92.3076923076923; with both `None`, `t` holds.
+  7. **The bar owns its input.** On the constructed window, with one box (4.5 m, heading
+     90°) at world (0, −346), under pixel (640, 706):
+     - press and release at (640, 706): nothing is picked, `t` = 150, `press` stays
+       `None`;
+     - press at (640, 706) and move 100 px right, then 100 px up off the bar: the centre
+       does not move (0 m, exactly), and `t` follows `x` only (`t(740)` = 174.03846153846155);
+     - with the box at (0, −331), under (640, 691), a click at (640, 691) picks it, and a
+       drag from (640, 691) by (+100, 0) pans the centre by −100 m, and keeps panning when
+       the cursor then moves onto the bar;
+     - 3 scroll lines at (640, 706), and 3 during a scrub at (640, 300), leave `k` = 1;
+       3 lines at (640, 691) zoom to `k` = 1.1^−3.
+  8. **Playback across a drag.** On the constructed window, `Δ` = 1/60 s:
+     - playing at 1×, press at (400, 706) and hold still for 30 frames: `t` =
+       92.3076923076923 in every frame, the clock paused, the readout "paused"; release:
+       playing, and the next frame gives `t` = 92.32435897435897;
+     - paused before the press: paused after the release;
+     - playing, released at (1264, 706): `t` = 300 exactly, and paused;
+     - playing, a click at (640, 706): `t` = 150, still playing;
+     - during a scrub, space, `←` and `→` change neither `t` nor the resume; one `+` makes
+       the speed 2×.
+  9. **A follow survives a scrub** (fixture). Pick vehicle 1 at `t` = 64.1 s as Phase 3
+     gate 7 does, then press on the bar at (400, 706) and drag, one frame per position:
+     - at `x` = 400 (`t` = 98.33076923076906): following, drawn, the centre equal to
+       vehicle 1's placed point from `boxes_at(t)`;
+     - at `x` = 900 (`t` = 214.51666666666634, after vehicle 1's last row at 147.1 s):
+       still following, "(not drawn)" in the readout, the centre unchanged from the frame
+       before;
+     - back at `x` = 400: re-centred on the placed point; after release, still following
+       vehicle 1;
+     - every frame's keyframe line passes Phase 3 gate 9's check (round trip, `follow`
+       only while drawn).
+  10. **Ticks.** The fixture's window at 1280: `P` = 60 s, ticks at 60, 120, 180, 240 s,
+      `x` = 235.04551724137974, 493.25241379310427, 751.4593103448287 and
+      1009.6662068965533. Constructed at 1280: `[0, 3600]` gives `P` = 60 s and 61 ticks,
+      `[0, 10800]` 300 s and 37, `[0, 86400]` 600 s and 145. The fixture's window at 64
+      wide: `P` = 300 s and no tick.
+  - **The user's check:**
+  11. **The user uses the slider** in `view` on the fixture and confirms it is fit for
+      finding moments. What to try:
+      - open it: the bar along the bottom, the handle at the left end, four ticks, the
+        readout just above;
+      - click near the right end, the middle and a tick; the readout's `t` jumps there;
+      - drag the handle slowly and fast both ways; drag past each end and off the window
+        (the handle stops at the end, never beyond);
+      - while playing at 4×, drag and let go: it pauses while held and plays after;
+        drag to the right end and let go: paused at `to`;
+      - follow a vehicle, then scrub back and forth across its life: the camera stays on
+        it while it is drawn and holds with "(not drawn)" when not; `Esc` still stops;
+      - press on the bar and drag up onto the map: no pan; press just above the bar and
+        drag down across it: a pan; scroll over the bar: no zoom;
+      - resize the window, wide and narrow: the bar follows; very small: it goes;
+      - press `K` after a scrub, and read the line.
+
+      And say whether any number (inset, thickness, handle, hit area, the 8 px tick
+      spacing) should change. Tuning them is iteration, not a spec change (§2.6).
+- **Not predicted, and so not gated:**
+  - the frame rate with the bar: `view --bench 20` is recorded at close-out, as Phase 3
+    gate 10;
+  - the incremental build time (gate 3);
+  - how `bevy_ui` rounds the nodes to physical pixels: the drawn handle may sit up to
+    half a physical pixel from `x(t)`; the state's `x(t)` is what gates 4–10 measure;
+  - whether a `CursorMoved` arrives outside the window on another OS (§2.10.3 reads it
+    on macOS only; Linux is roadmap item 6);
+  - the feel of the slider (gate 11).
+- **Close-out (standing plan steps, §3 of the methodology):**
+  - **Commit plan:** one branch (`phase-4`) and one push, with commits for the slider and
+    the state (with gates 4–8), for the window's drawing, for gates 9–10 and the gate run,
+    and for the close-out.
+  - **Reconciliation:**
+    - a new `rules/slider.md` for §2.10 as built: the geometry, x ↔ t, the input rules and
+      the ticks, with `sources` `src/view/slider.rs`, `src/view/state.rs` and
+      `src/view/mod.rs`. `rules/view.md` is at its 60-line cap, so it gains only the new
+      frame order, the readout's new place, and a pointer to `slider.md`, reworded to fit;
+      its `max_lines` is not raised;
+    - the README's `view` section gains the slider;
     - no `CLAUDE.md` stanza change.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
     its cause.
