@@ -29,6 +29,11 @@ phases:
     shipped: 2026-09-30
     cut: null
     by: null
+  - name: "Phase 5 — 3D camera: orbit and tilt in view, keyframed flights in render"
+    reviewed: null
+    shipped: null
+    cut: null
+    by: null
 
 extends: null
 supersedes: null
@@ -221,6 +226,10 @@ frame to frame, and gate 2 failed.
   is reached by the next vehicle. Phase 2 handles it.
 - The measurements are in `specs/reviews/vis-001.md`.
 
+*Note (2026-09-30, Phase 5):* "the lift moves no pixel" holds for the orthographic path
+only. Under Phase 5's perspective the lift is visible, so that path lifts 0.001 m per rank
+instead (§2.11.2); the orthographic path is unchanged.
+
 ### 2.4 CLI
 
 ```
@@ -248,6 +257,8 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   row, every `link_id` in the window, ffmpeg on `PATH`) runs **before the first frame**.
   So an input error prints no progress line and creates no output file.
 - `scene.toml`, `check` and `prepare` are later phases (§2.7).
+- *Phase 5 (2026-09-30):* `render` gains `[--camera <file.toml>]`, a keyframe file
+  (§2.11.4). Without it, everything above is unchanged.
 
 ### 2.5 Build footprint
 
@@ -273,6 +284,8 @@ drafted and reviewed. Each ends with a video.
    drawing code:
    - scripted camera moves for `render`, in `scene.toml`: keyframes, orbit, follow a
      vehicle, zoom to a junction, pan;
+     *(note 2026-09-30, Phase 5)* the keyframes are read from a file given as `render
+     --camera <file.toml>` (§2.11.4), not from `scene.toml`, which stays roadmap item 6's;
    - *(added 2026-09-29)* an interactive `view` command. It opens a Bevy window over a
      **finished** run, with a free camera and time scrubbing, and can save camera paths
      for `render`. Like the preview window of §1, it is a tool and not the observable.
@@ -288,8 +301,14 @@ drafted and reviewed. Each ends with a video.
    *Revised 2026-09-30 (user), after Phase 3's gate 11 answered OQ-9:*
    - **Phase 4 — time slider** (§2.10, §4): a bar in `view` to click and drag through the
      run. It ends with no video, which Phase 4 argues for.
-   - **Phase 5 — scripted camera moves for `render`**, not yet drafted. Its keyframes are
-     `view`'s lines (§2.9.5); the file that holds them, and the moves, are Phase 5's.
+   - ~~**Phase 5 — scripted camera moves for `render`**, not yet drafted. Its keyframes are
+     `view`'s lines (§2.9.5); the file that holds them, and the moves, are Phase 5's.~~
+
+   *Revised 2026-09-30 (user), before drafting Phase 5:*
+   - **Phase 5 — 3D camera** (§2.11, §4): orbit and tilt in `view`, a perspective camera
+     in `view` and in keyframed renders, and flights through `K`'s keyframes in `render`.
+     It comes before item 4, the city, so the camera is built once, and it works on
+     today's roads and boxes. It produces the observable.
 4. **City** — `prepare`: Overture buildings and land use for the network area, chunked
    meshes, a cached scene bundle; `render` makes no network calls.
 5. **Data** — links colored by speed or flow; HUD with clock, legend, one chart;
@@ -495,6 +514,8 @@ assimilator-video view --project <dir> --scenario <name> --seed <n>
   flag's JSON (Phase 3). Closing the window exits 0.
 - **The look is `render`'s** (§2.3): top-down, orthographic, north up. 3D and a tilted
   camera wait for the city phase (§2.7 item 4).
+  *Revised 2026-09-30 (user):* Phase 5 brings them before the city. `view` becomes
+  perspective, starts straight down and north up, and orbits and tilts (§2.11.3).
 
 #### 2.9.1 The view clock: wall-clock driven
 
@@ -558,6 +579,10 @@ and Bevy's orthographic projection is set each frame to `W·k × H·k` metres, s
 keeps the centre and the zoom and shows more or less around them. The road mesh is baked
 relative to the fit's centre `(fx, fy)` (`src/draw.rs:road_mesh`: world `(x, y)` → Bevy
 `(x − fx, ·, −(y − fy))`), so the camera sits at `(cx − fx, ·, −(cy − fy))`.
+
+*Note (2026-09-30, Phase 5):* the camera gains a yaw and a pitch, and the projection
+becomes perspective (§2.11.3). The formulas above are what §2.11.3's reduce to, bit for
+bit, at the start pose (yaw 0, pitch 90).
 
 #### 2.9.3 Picking and following a vehicle
 
@@ -625,6 +650,10 @@ elements of a TOML array, a comma after each), what a `t` outside its render's w
 means, and adds what its scripted moves need as new keys; Phase 3 designs none of that.
 `view` also parses its own line, for the round-trip gate: it accepts exactly the two forms
 above and rejects anything else.
+
+*Note (2026-09-30, Phase 5):* `K` now prints `yaw_deg` and `pitch_deg` as well, lines are
+read as TOML, and the two forms above stay valid unchanged (§2.11.4). The file is
+`render --camera` (§2.11.4).
 
 #### 2.9.6 Sharing code with `render`, whose output does not change
 
@@ -821,6 +850,305 @@ Decided by the user, 2026-09-30, after review round 1 (finding F6), not a scope 
 7. **A window made too small mid-drag ends the drag**: the bar disappears, `t` holds where
    the last scrub frame left it, and playing resumes if it was playing (§2.10.1, gate 8).
 
+### 2.11 The 3D camera (Phase 5)
+
+Key cameras in the style of VISSIM and Aimsun. `view` gains a camera that orbits and tilts
+over the run, and `render` gains a camera that flies through keyframes written from
+`view`'s `K` lines. It comes before the city (roadmap item 4), so the camera is built
+once, and it works on today's roads and boxes. The user's calls that shape it are
+§2.11.8; everything else here is the draft's proposal.
+
+#### 2.11.1 The pose and the projection
+
+A camera **pose** is five numbers:
+- `(cx, cy)`, the **look-at point**, on the ground (`z` = 0) in world metres;
+- `height_m`, the world height visible at the look-at point, as in Phase 3 (§2.9.5);
+- `yaw_deg`, the compass direction the camera faces, 0 = north, clockwise (§2.2's heading
+  convention). It is the direction at the top of the image; 0 is north up;
+- `pitch_deg`, the angle between the view axis and the ground: 90 is straight down, and
+  smaller values tilt toward the horizon. The range is **[25, 90]**.
+
+The projection is perspective with a **vertical field of view `φ` = 45°** (Bevy's
+default, a named constant). The camera sits on the view axis at distance
+`d = height_m / (2·tan(φ/2))` = 1.2071067811865475 × `height_m` from the look-at point.
+In world coordinates (`x` east, `y` north, `z` up), with `s`/`c` the sine and cosine:
+- view axis `a = (s(yaw)·c(pitch), c(yaw)·c(pitch), −s(pitch))`; image up
+  `u = (s(yaw)·s(pitch), c(yaw)·s(pitch), c(pitch))`; image right `r = (c(yaw), −s(yaw), 0)`;
+- eye `E = (cx, cy, 0) − d·a`;
+- a point `X` is at `(x_c, y_c, z_c) = ((X−E)·r, (X−E)·u, (X−E)·a)`, and at pixel
+  `(W/2 + f·x_c/z_c, H/2 − f·y_c/z_c)` in a `W × H` image (origin top left, `y` down),
+  `f = (H/2)/tan(φ/2)`.
+
+What follows from it:
+- **`height_m` keeps its Phase 3 meaning, exactly.** At `pitch_deg` = 90 the ground is the
+  plane at distance `d`, perpendicular to the axis, so a perspective camera shows the same
+  ground rectangle as Phase 3's orthographic one: `height_m` tall and `height_m·W/H` wide.
+  Only the boxes differ, since a box top (1.55 m) is nearer the camera than the road: at
+  the launch fit (`d` = 1 497 m) it is 0.1 % larger, and at `height_m` = 60 m 2.2 %. So a
+  Phase 3 line frames the same area it did.
+- **Degrees have exact multiples of 90°.** Sines and cosines are taken of degrees by one
+  helper that returns 0, ±1 exactly at multiples of 90°. So at the default pose (yaw 0,
+  pitch 90) every formula in §2.11.3 reduces bit for bit to Phase 3's.
+- **Every pixel sees the ground.** The floor of 25° is above `φ/2` = 22.5°, so the top
+  edge of the image looks at least 2.5° below the horizon and the horizon never shows. A
+  cursor always has a ground point, which pan, zoom and pick need (§2.11.3). Lower shots
+  would show a horizon over empty background; they wait for the city (OQ-12).
+- **The far plane** is `20·d`. Bevy's default `far` of 1 000 m would cull the whole
+  network at the launch fit (`d` = 1 497 m). The farthest ground any pixel sees is along
+  the top edge at 25° pitch, `d·sin 25°/sin 2.5°` = 9.69·`d` away, so `20·d` keeps all of
+  it with a margin of two. Bevy's perspective is reverse-Z with an infinite far plane, so
+  `far` only culls; `near` stays at Bevy's 0.1 m.
+
+The pose is plain Rust with no Bevy types (`src/camera.rs`): `project(pose, W, H, X)` and
+its inverse onto a horizontal plane, `ray_to_plane(pose, W, H, pixel, z)`. The Bevy camera
+is built from the pose: a `Transform` at `E` looking at the look-at point with up `u`, and
+a `PerspectiveProjection` of `φ` and `far`, in the scene frame baked relative to the fit's
+centre (§2.9.2: world `(x, y, z)` → Bevy `(x − fx, z, −(y − fy))`).
+
+#### 2.11.2 What each path draws
+
+- **`render` with no `--camera` is Phase 4's path, unchanged:** orthographic, straight
+  down, the fit of Phase 1. Its frames stay byte-identical (§2.11.8 c). It is the only
+  orthographic path left.
+- **`view`, and `render` with `--camera`, are perspective,** at every pose (§2.11.8 b).
+- **The rank lift** (§2.3) moves pixels under perspective, and 0.01 m per rank would float
+  urban_grid's 110th box 1.09 m over the road at a tilt. The perspective path lifts
+  **0.001 m per rank** (0.109 m at 110). The depth buffer resolves it: at the launch fit,
+  one step of Bevy's reverse-Z `Depth32Float` is about 0.16 mm, so 0.001 m is about 6
+  steps. The orthographic path keeps 0.01 m. A keyframed render is gated for determinism
+  the same way (Phase 5 gate 10).
+- **Box faces are shaded** in the perspective path, still unlit: the top keeps today's
+  speed colour, and the sides are fixed fractions of it, as vertex colours on the box mesh,
+  so a tilted box reads as a solid. The fractions are iteration (§2.6). The orthographic
+  path keeps its mesh.
+- Roads, colours, MSAA and everything else in §2.3 and Phase 1 "Scene" are unchanged.
+
+#### 2.11.3 Orbit and tilt in `view`
+
+`view` starts at the default pose: Phase 3's launch fit, yaw 0, pitch 90. The state gains
+`yaw_deg` and `pitch_deg`; `(cx, cy)` and `k` keep their Phase 3 meaning (§2.9.2), with
+`height_m = H·k`.
+
+**Right-drag orbits and tilts** (§2.11.8 a). A right press starts an **orbit**, with no
+4 px threshold: nothing else uses the right button. Until release, each frame sets
+- `yaw_deg ← yaw_press − 0.25·dx`, wrapped to [0, 360): dragging right turns the scene with
+  the cursor, as if it were grabbed;
+- `pitch_deg ← clamp(pitch_press + 0.25·dy, 25, 90)`: dragging up tilts toward the
+  horizon, dragging down back toward straight down,
+
+where `(dx, dy)` is the cursor from the press in logical pixels, read from `pointer`, else
+`cursor`, else held, as a scrub reads it (§2.10.3). 0.25° per pixel is 320° across the
+default window. The look-at point and `k` do not move: the camera orbits about the
+look-at point. A right press in the slider's hit area starts nothing.
+
+**Keys, in fixed steps.** Matched by position, like `WASD`, so they sit next to `WASD` on
+any layout; one step per press, held keys do not repeat:
+- `Q` and `E` turn the yaw by −15° and +15°, wrapped;
+- `R` tilts 5° toward the horizon, `F` 5° toward straight down, clamped to [25, 90]. From
+  90, 13 presses of `R` reach 25 exactly.
+
+They are ignored during an orbit. `Q`, `E`, `R` and `F` are unbound today (§2.9.1,
+§2.9.2, §2.9.3, §2.9.5).
+
+**What stays, generalised to the pose** (§2.11.8 a). Each is Phase 3's rule with the
+cursor's point taken from `ray_to_plane`, and each is Phase 3's formula bit for bit at
+the default pose (§2.11.1):
+- **The cursor's ground point** is `ray_to_plane(pose, W, H, cursor, 0)`, and
+  `ViewState::world` returns it. For a fixed yaw and pitch it is the look-at point plus
+  `k` times a function of the pixel, so pan and zoom keep their Phase 3 shape.
+- **Pan** (left-drag): the ground point under the cursor at the press stays under it:
+  `c ← c_press + g(press) − g(cursor)`, `g` the cursor's ground point relative to the
+  look-at point. `W`/`S` pan along the image's up direction on the ground,
+  `(s(yaw), c(yaw))`, and `A`/`D` along its right, `(c(yaw), −s(yaw))`, at Phase 3's
+  `0.5·W·k` m/s.
+- **Zoom** (scroll) sets `k` as before and keeps the cursor's ground point fixed with
+  Phase 3's `c ← p + (c − p)·k′/k`. This is exact at any pose, since `g` scales with `k`
+  (in arithmetic; in floating point to rounding).
+  The limits `k_min`, `k_max` and the centre bound are unchanged.
+- **Pick** (§2.9.3) casts the cursor's ray to the plane at the boxes' mid-height,
+  `z` = 0.80 m (`BOX_HEIGHT/2` + the 0.05 m base lift), and calls Phase 3's `pick` on
+  that point, radius `8·k`. At a tilt, a click on a box's roof then lands inside its
+  footprint where the ground point would miss it (Phase 5 gate 11). Straight down it
+  moves the click point toward the image centre by `0.8·r/d` for a point `r` metres out:
+  0.68 m at most at the launch fit (the image corner), against a pick radius of
+  `8·k_fit` = 13.8 m, and 0.31 m for Phase 4 gate 7's click at (640, 691), which still
+  lands inside its box (Phase 5 gate 2).
+- **Follow** keeps the pose's yaw, pitch and `k` and moves the look-at point with the
+  vehicle (§2.11.8 g). An orbit or a key step does not stop a follow; a drag, `WASD` and
+  `Esc` still do.
+- The slider, the clock and the readout do not change. The readout does not show the
+  pose; `K` does (§2.11.4).
+
+**Frame order** (§2.10.5, one step added): size and bar; bar press; clock; scrub; `Esc`;
+**orbit and the `Q E R F` steps**; pan and zoom; click; follow; `K`. The pose is set
+before pan and zoom, which read it.
+
+`ViewInput` gains the right button's press and release and the four keys; it still derives
+`Default`, so every existing script leaves them off. On a trackpad, right-drag is a
+two-finger press and drag; whether it needs a second binding is OQ-11.
+
+#### 2.11.4 The keyframe line and the keyframe file
+
+**`K` prints the full camera** (§2.11.8 f): `yaw_deg` and `pitch_deg` are always printed,
+2 decimals, after `height_m`:
+
+```
+{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00, yaw_deg = 0.00, pitch_deg = 90.00 }
+{ t = 200.000, follow = 103, height_m = 60.00, yaw_deg = 90.00, pitch_deg = 45.00 }
+```
+
+Everything else is §2.9.5: when `follow` is printed, the format of each number, the key
+order. **Reading** is TOML's, so it is not Phase 3's exact-form parser:
+- `yaw_deg` and `pitch_deg` are optional. Absent, the camera is straight down, north up
+  (0 and 90), so **every Phase 3 line stays valid unchanged** and means what it meant.
+- Key order and spacing are TOML's to decide, so any order is read. `K` still prints the
+  one order.
+- `Keyframe::parse(line)` reads one line with the same reader as the file, and
+  `format(parse(line)) == line` still holds for every line `K` prints.
+
+**The file** is given to `render` as `--camera <file.toml>`: one key, `keyframes`, an
+array of the lines above, a comma after each:
+
+```toml
+keyframes = [
+  { t = 20.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+  { t = 64.100, follow = 1, height_m = 120.00, yaw_deg = 90.00, pitch_deg = 45.00 },
+]
+```
+
+TOML's `[[keyframes]]` tables are the same data and are read too. `scene.toml` stays
+roadmap item 6's (§2.7); Phase 5 designs no other key.
+
+**Errors.** The file is read and checked after the run is loaded (a `follow` needs the
+vehicles) and before the first frame. Each error is one `error: --camera <file>: …` line,
+exit 1, no progress line and no output file (§2.4). A keyframe is named by its index
+from 1 and its `t`. The errors:
+- the file is missing or is not TOML;
+- `keyframes` is missing or empty, or the file has another top-level key;
+- a keyframe has an unknown key (`deny_unknown_fields`), lacks `t` or `height_m`, has both
+  `x`/`y` and `follow`, has neither, or has `x` without `y` (or `y` without `x`);
+- a value is not a number, or not finite (TOML allows `inf` and `nan`), or `follow` is
+  not an integer ≥ 0;
+- `height_m` ≤ 0, or `pitch_deg` outside [25, 90]. `yaw_deg` is any finite number,
+  taken modulo 360;
+- `t` is not strictly increasing: **out of order** and **duplicate `t`** are both errors,
+  named as such. The file is never sorted for the user;
+- a `follow` whose vehicle is not drawn at the keyframe's `t` (§2.8.5), including one that
+  is not in the FCD at all. `K` never prints such a line (§2.9.5).
+
+What is **not** an error:
+- **One keyframe:** the camera holds that pose for the whole video (or follows).
+- **Keyframes outside `[from, to]`:** the path is built from every keyframe, and the window
+  only picks the frames, as §2.8 does with FCD rows. So one file serves a full render and a
+  close-up of part of it. Before the first keyframe the camera holds the first pose, and
+  after the last it holds the last (following, if that keyframe follows).
+- `--camera` does not change the window, the frame count or any other flag's default.
+  Whether the window should default to the keyframes' span is OQ-10.
+
+#### 2.11.5 The flight through the keyframes
+
+The camera passes through every keyframe at its `t`, on a smooth curve with no corner at a
+keyframe, with eased speed (§2.11.8 d), and it holds exactly through a hold (§2.11.8 e).
+A **hold** is two consecutive keyframes with the same camera. There is no hold field.
+
+Each channel is interpolated in time on its own, from every keyframe:
+- **Scalars:** `ln(height_m)`, `yaw_deg` and `pitch_deg` each get a **monotone cubic
+  Hermite** in time (PCHIP, the Fritsch–Butland weighted harmonic mean of the two secants
+  at an interior keyframe; 0 where they differ in sign or either is 0; 0 at the first and
+  last keyframe). Height is interpolated in log space, so a zoom runs at a steady rate.
+  Yaw is unwrapped first: each keyframe's yaw is the previous one plus the **short way
+  round**, `Δ = 180 − ((180 − (y₁ − y₀)) mod 360)` in (−180°, 180°], so exactly 180° apart
+  turns clockwise. The result is taken modulo 360.
+- **Position** (the look-at point, keyframes that do not `follow`): a **centripetal
+  Catmull–Rom** curve (α = 0.5, Barry–Goldman form) through each **run** of consecutive
+  keyframes whose positions differ, with knots `τ_{j+1} = τ_j + |P_{j+1} − P_j|^½`. At the
+  ends of a run the missing neighbour is the reflection, `2·P₀ − P₁`, with the same knot
+  step. Time maps to `τ` by the same PCHIP, through `(t_j, τ_j)`, with slope 0 at the run's
+  ends. Centripetal Catmull–Rom has no cusp or loop within a segment; `τ` never decreases,
+  so the camera never backs up along the curve.
+
+What that gives, and why:
+- **No corner.** Inside a run the curve is tangent-continuous and `τ` has a positive slope
+  at every interior keyframe, so the velocity is continuous and not zero there. A scalar
+  channel is continuous in value and slope.
+- **Eased speed.** Every channel starts and ends at rest: at the first and last keyframe, at
+  the ends of each run, and at each hold. A move between two keyframes alone is the
+  smoothstep, `3u² − 2u³`.
+- **No overshoot, no drift in a hold.** PCHIP keeps each scalar between its two keyframes'
+  values on every segment. A segment whose two keyframes are equal in a channel is
+  **constant, and returns the keyframe's own value**, not an evaluated cubic (whose basis
+  functions do not sum to exactly 1 in floating point) and not `exp(ln(h))`. At a
+  keyframe's own `t` every channel is that keyframe's value. So a hold is bit-exact, and a
+  partial hold (same place, new height) holds that channel only.
+- **The curve is not the polyline.** Rounding a keyframe means leaving the straight lines
+  between keyframes: on Phase 5 gate 6's 100 m square it swings 7.41 m outside them. It
+  stays tangent-continuous and does not pass the end of a run.
+
+**Follow** (§2.11.8 g). A `follow` keyframe's position is its vehicle's placed point at
+`t`, the point `view` centres on (§2.9.3), which moves:
+- between two keyframes that follow the same vehicle, the look-at point is that vehicle's
+  placed point, exactly. The drawn interval is one interval (§2.8.5) and both ends are
+  drawn (§2.11.4), so the vehicle is drawn throughout;
+- on a segment where either end follows (and not both the same vehicle), the look-at point
+  is `(1 − w)·P_a(t) + w·P_b(t)`, `w` the smoothstep of `(t − t_a)/(t_b − t_a)`, with
+  `P` the keyframe's fixed point or its vehicle's placed point at `t`. At each end the
+  velocity is that end's own (the vehicle's, or 0), so there is no corner. A fixed
+  keyframe next to such a segment ends its Catmull–Rom run, at rest;
+- **a followed vehicle that is not drawn** during a blend (it arrives after, or leaves
+  before, the other end) contributes the placed point of the nearest end of its drawn
+  interval: it is held where it was last seen, as `view` holds (§2.9.3);
+- height, yaw and pitch come from their own channels, as for any keyframe.
+
+The path is built once, before the first frame (`src/keyframes.rs`), and `pose_at(t)`
+answers any frame's pose from it and the loaded run's placed points.
+
+#### 2.11.6 Build cost
+
+- **Bevy: no feature added.** `PerspectiveProjection` is in `bevy_camera` and vertex colours
+  in `bevy_pbr`, both already built.
+- **Reading TOML** adds the `toml` crate (1.x, default features off, with `std`, `parse` and
+  `serde`) and `serde`'s `derive`. `Cargo.lock` gains **2 packages**, `toml` and
+  `serde_spanned`; `toml_parser`, `toml_datetime`, `winnow`, `serde_core`, `serde` and
+  `serde_derive` are already in it (at `67c73e1`). Some of those are built today only as
+  host dependencies of `proc-macro-crate`, so the release build may compile a few twice:
+  **362–365 crates** against Phase 3's 360.
+- Rejected: a hand parser for `K`'s own format, which adds no crate but reads only that
+  format. The file is edited by hand (a comma after each line, a changed number), so it
+  should read as TOML does.
+
+#### 2.11.7 Not in Phase 5
+
+- A horizon, sky or lower shots than 25° (OQ-12); lighting and shadows; any change to
+  §2.6's look beyond the face shading.
+- A chase camera (§2.11.8 g), roll, a per-keyframe field of view, and easing or duration
+  fields in the file.
+- Previewing a keyframe file in `view` (OQ-13); the pose in the readout; a compass.
+- `scene.toml`, `check` and harness-facing documentation of the file (roadmap item 6).
+
+#### 2.11.8 The user's calls (decision, recorded)
+
+Decided by the user, 2026-09-30, before drafting:
+- (a) **`view`:** right-drag orbits (sideways, yaw) and tilts (up and down, pitch); keys do
+  the same in fixed steps. Left-drag pan, scroll zoom, the slider, pick and follow, and
+  `K` all stay.
+- (b) **Perspective always**, with no orthographic toggle, in `view` and in keyframed
+  renders.
+- (c) **`render` with no keyframe file stays byte-identical:** 8700 of 8700 against
+  `scratch/ref-8eb9052.framemd5`. Today's orthographic top-down path is kept as the default
+  for that case only.
+- (d) **`render` with a keyframe file** flies along a smooth curve through all keyframes,
+  with no corner at a keyframe, and with eased speed.
+- (e) **A hold is two keyframes with the same camera** at different times; there is no hold
+  field. The curve must not overshoot or drift during a hold, and that is gated.
+- (f) **The keyframe file** is TOML of the same inline tables `K` prints, with new optional
+  `yaw_deg` and `pitch_deg`. When they are absent the camera is straight down, north up, so
+  every Phase 3 line stays valid unchanged. `K` prints the full camera.
+- (g) **Following vehicle N** keeps the keyframe's yaw, pitch and height and moves with the
+  vehicle. No chase camera.
+
+The keys (`Q E R F`), the rates (0.25°/px, 15°, 5°), `φ` = 45°, the 25° floor, the curve,
+the blends, the pick plane and the face shading are the draft's proposals.
+
 ## 3. Open questions
 
 - ~~**OQ-1** — Reuse the engine's placement (`assimilator-geometry`, git-pinned) or
@@ -921,6 +1249,25 @@ Decided by the user, 2026-09-30, after review round 1 (finding F6), not a scope 
   **CLOSED 2026-09-30 (user): answered by Phase 4.** The slider is designed in §2.10 and
   built by Phase 4, on `bevy_ui`, which the readout already needs; `bevy_egui` is not
   added, so the premise's "another dependency" does not hold (§2.10.6).
+- **OQ-10** — With `--camera`, should `render`'s window default to the keyframes' span
+  (first to last `t`) instead of the whole FCD? A shot is usually a stretch of the run, and
+  today the user must repeat the first and last `t` as `--from` and `--to`. Phase 5 keeps
+  §2.4's defaults, so a flag's meaning does not depend on another flag. *(design call;
+  non-blocking; recommendation: keep §2.4's defaults in Phase 5 and decide from Phase 5
+  gate 13, where the user renders a file.)*
+- **OQ-11** — Does orbiting need a second binding for a trackpad, for example Ctrl +
+  left-drag? Right-drag on a Mac trackpad is a two-finger press and drag, which may be
+  awkward to hold, and the `Q E R F` keys only step. *(design call; deferred by evidence to
+  Phase 5 gate 13, the user's hands-on check; blocks nothing.)*
+- **OQ-12** — Should the pitch floor go below 25° for low, near-horizon shots? The floor
+  keeps the horizon out of every frame (§2.11.1), because today there is nothing to show
+  above it and pan, zoom and pick need a ground point under the cursor. With buildings and
+  a sky (roadmap item 4) a lower floor may be worth its cost. *(design call; deferred by
+  evidence to the city phase; blocks nothing in Phase 5.)*
+- **OQ-13** — Should `view` preview a keyframe file (`view --camera <file>`, playing the
+  flight in the window)? Phase 5 writes paths blind: `K` in `view`, then a `render` to see
+  the flight. Whether that loop is too slow is for the user to say. *(design call; deferred
+  by evidence to Phase 5 gate 13; if yes, a phase of its own.)*
 
 ## 4. Implementation phases
 
@@ -1660,6 +2007,295 @@ it extends.
       frame order, the readout's new place, and a pointer to `slider.md`, reworded to fit;
       its `max_lines` is not raised;
     - the README's `view` section gains the slider;
+    - no `CLAUDE.md` stanza change.
+  - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
+    its cause.
+  - Write this phase's `shipped` date.
+
+### Phase 5 — 3D camera: orbit and tilt in `view`, keyframed flights in `render`
+*Produces the observable: yes. `render --camera <file.toml>` writes the run's video
+through a perspective camera that flies through the keyframes `view` printed: tilted,
+turned, holding, and following a vehicle. Without `--camera`, `render`'s video is
+byte-identical to Phase 4's (gate 1).*
+
+Drafted 2026-09-30; the design is §2.11, and the user's calls on it are §2.11.8. Phase 5 is
+strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe lines.
+
+- **Scope:**
+  - **The pose (`src/camera.rs`, new; no Bevy types).** `Pose { cx, cy, height_m, yaw_deg,
+    pitch_deg }` and its default (yaw 0, pitch 90); the named constants `FOV_DEG` = 45,
+    `PITCH_MIN` = 25, `PITCH_MAX` = 90, `FAR_PER_D` = 20; the degree sine and cosine, exact
+    at multiples of 90° (§2.11.1); `distance(height_m)`; `project(pose, W, H, [x, y, z])`
+    and `ray_to_plane(pose, W, H, (px, py), z)`; the short way round (§2.11.5).
+  - **Keyframes and the flight (`src/keyframes.rs`, new; no Bevy types).**
+    - `Keyframe` and `At` move here from `src/view/state.rs`, which re-exports both so the
+      tests' paths stay. `Keyframe` gains `yaw_deg` and `pitch_deg` (defaults applied on
+      reading). `format` prints §2.11.4's lines, and `parse(line)` reads one line with the
+      file's reader.
+    - `read(path, &Run)`: the file's TOML (`serde`, `deny_unknown_fields`) and every check
+      of §2.11.4, in the order listed there, each error naming the keyframe.
+    - `Flight::new(keyframes)` builds §2.11.5's channels once; `Flight::pose_at(t, &Run)`
+      gives the pose at any `t`, the vehicle's placed point from the run's `boxes_at`.
+  - **Drawing (`src/draw.rs`, `src/scene.rs`).** A perspective camera from a pose: its
+    `Transform` in the baked frame and its `PerspectiveProjection` (`φ`, `far = 20·d`).
+    `box_transform` takes the lift per rank as an argument; the orthographic callers pass
+    today's `RANK_LIFT` (0.01 m), and the perspective ones `RANK_LIFT_3D` (0.001 m). A
+    second box mesh with per-face vertex colours for the perspective path (§2.11.2).
+  - **`render` (`src/render.rs`, `src/lib.rs`, `src/main.rs`).**
+    - `render` gains `--camera <file.toml>`.
+    - `RenderOptions` does not change (`tests/gates.rs` builds it field by field).
+      `Job::prepare(&RenderOptions)` is Phase 4's orthographic job, unchanged.
+      `Job::prepare_with_camera(&RenderOptions, &Path)` loads the run the same way, then
+      reads the file (§2.11.4), builds the `Flight` and a perspective `Renderer` whose
+      camera is set from `pose_at(t)` on every frame.
+    - `Job::pose_at(t)` exposes the pose (`None` for the orthographic job).
+      `Job::camera()` and `Job::k()` keep answering with the fit, the scene's bake origin.
+    - The frame count, the progress lines, the ffmpeg output and every error and check of
+      §2.4 are unchanged. The ffmpeg check still runs first; the file's checks run inside
+      the prepare, before the encoder starts.
+  - **`view` (`src/view/state.rs`, `src/view/mod.rs`).**
+    - `ViewInput` gains `right_press`, `right_release` and `Pressed::{q, e, r, f}`.
+      `ViewState` gains `yaw_deg`, `pitch_deg` and an `orbit` (the press's cursor, yaw and
+      pitch).
+    - `ViewState::frame` applies §2.11.3's order. `world` casts the cursor's ray to the
+      ground, the click casts it to the 0.80 m plane, and pan, `WASD` and zoom follow
+      §2.11.3. `keyframe()` carries the pose.
+    - The window sets the camera's `Transform` and `PerspectiveProjection` from the state's
+      pose every frame, reads the right button and `Q E R F` by `KeyCode`, and draws the
+      boxes with the shaded mesh and `RANK_LIFT_3D`. The readout and the slider do not
+      change.
+    - `Fit`, `ViewState::new`, `pick` and every other public signature the tests use stay
+      as they are.
+  - **`Cargo.toml`.** `toml` 1 (`default-features = false`, `features = ["std", "parse",
+    "serde"]`) and `serde` 1 with `derive` (§2.11.6). No Bevy feature changes.
+  - **Tests.**
+    - `tests/camera.rs` (new): gates 4–7 and 11–12 headless. Those that need the fixture
+      (7, and part of 5) are `#[ignore]`d, like `tests/view.rs`. Gates 8 and 9 render
+      through the GPU, and are `#[ignore]`d too.
+    - `tests/flight.toml` (new): the keyframe file of gates 7 and 10, below.
+    - `scripts/gates.sh` gains gate 10.
+    - `tests/gates.rs` and `tests/slider.rs` are not edited. `tests/view.rs` is edited in
+      `gate9_keyframe_line` only (gate 2 says why).
+- **Exit gate.** On Phase 1's fixture (engine `df8aec0`, urban_grid, baseline, seed 42), on
+  the development machine (Apple M3, macOS, Retina display). Headless gates measure the
+  state and the pose, with no window and no GPU. Distances are compared to 1e-9 m, angles
+  to 1e-9°, pixels to 1e-9 px and times to 1e-9 s unless a gate says otherwise: the state is
+  set by formulas, so anything beyond float noise is a bug. "Exactly" means equal as `f64`.
+  **The predictions** come from a Python model of §2.11's formulas in IEEE doubles, with the
+  operations in §2.11's order (`specs/reviews/vis-001.md`). Nothing was built. The plain
+  state is Phase 3's (`[0, 300]`, centre (0, 0), `k` = 1, 1280×720, so `height_m` = 720).
+
+  **The flight file** of gates 7 and 10, `tests/flight.toml`. It holds a Phase 3 line
+  unchanged, two holds, a tilt, a turn the short way and a follow with a zoom:
+
+  ```toml
+  keyframes = [
+    { t = 20.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+    { t = 50.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+    { t = 64.100, follow = 1, height_m = 120.00, yaw_deg = 90.00, pitch_deg = 45.00 },
+    { t = 140.000, follow = 1, height_m = 60.00, yaw_deg = 90.00, pitch_deg = 45.00 },
+    { t = 160.000, x = 600.00, y = 300.00, height_m = 400.00, yaw_deg = 0.00, pitch_deg = 60.00 },
+    { t = 220.000, x = 300.00, y = 600.00, height_m = 700.00, yaw_deg = 315.00, pitch_deg = 35.00 },
+    { t = 250.000, x = 300.00, y = 600.00, height_m = 700.00, yaw_deg = 315.00, pitch_deg = 35.00 },
+  ]
+  ```
+
+  Vehicle 1 is drawn at 64.1 s (Phase 2 gate 3) and until its last row at 147.1 s (Phase 3
+  gate 8), so both `follow` lines are valid and the blend to 160 s outlives it.
+  - **What must not change:**
+  1. **`render` without `--camera`.** `scripts/gates.sh` passes, and its Phase 3 gate 1
+     comparison gives the default render's `framemd5` equal to
+     `scratch/ref-8eb9052.framemd5`. Prediction: **8700 of 8700** (§2.11.8 c).
+     `cargo test --release --test gates -- --ignored --test-threads=1` passes 5 of 5 with
+     Phase 2's printed numbers, and `tests/gates.rs` is not edited.
+  2. **`view`'s Phase 3 and 4 gates.** Both run with `--include-ignored --test-threads=1`,
+     with every printed number equal to Phase 3's and Phase 4's records to 1e-9.
+     - `tests/slider.rs` is not edited and passes **8 of 8**.
+     - `tests/view.rs` passes **10 of 10**. It is edited in `gate9_keyframe_line` only,
+       because §2.11.8 f changes what that test asserts. Its three exact lines (the hold's
+       included) gain `yaw_deg = 0.00, pitch_deg = 90.00`; the `-0.00` keyframe it builds
+       field by field gains the two fields; Phase 3's two lines are checked to parse (to
+       yaw 0, pitch 90) rather than to re-format to themselves; and its rejection list
+       drops the three cases TOML reads (keys out of order, twice, and no spaces inside
+       the braces). The missing keys, the extra keys, `x` with `follow`, `inf`, a negative
+       `follow`, the trailing comma and the empty line are still rejected.
+
+     Why the rest stands: every other gate runs at the default pose, where the cursor's
+     ground point, pan, `WASD` and zoom are Phase 3's formulas bit for bit (§2.11.1,
+     §2.11.3). The pick plane moves each click point by `0.8·r/d`: 0.16 m for vehicle 1
+     in Phase 3 gate 7 (298 m from the centre, radius 13.8 m), 0 at `k_min` (centred),
+     and 0.31 m for Phase 4 gate 7's box at (0, −331) (the click lands at `y` = −330.69, in
+     its ±0.9 m footprint). The readout does not change. Every line `check_line` reads now
+     has six or five keys, and still round-trips.
+  3. **Build cost.** `Cargo.lock` gains exactly 2 packages, `toml` and `serde_spanned`, and
+     no Bevy feature changes. The crate count of a clean release build is taken from its
+     `Compiling` lines, in a throwaway `CARGO_TARGET_DIR` under `scratch/` (about 1.2 GB,
+     deleted afterwards). Prediction: **362–365** (360 at Phase 3). Wall time and the
+     working `target/` growth are recorded, not predicted.
+  - **The pose, headless:**
+  4. **Projection.** `distance(h)` = 1.2071067811865475·`h`.
+     - At the default pose, `project` of a ground point is Phase 1's `world_to_pixel`. At
+       the render fit's scale (1920×1080, `height_m` = 1240, look-at (0, 300)), the point
+       (100, 350, 0) is at (1047.0967741935483, 496.4516129032258) both ways.
+     - Yaw 90, pitch 90, same scale: (100, 300, 0), 100 m east of the look-at, is at
+       (960, 452.90322580645164), straight above the centre.
+     - Pitch 30, yaw 0, `height_m` = 240, look-at (0, 0), 1920×1080: (0, 100, 0) is at
+       (960, 366.7808893062154).
+     - `ray_to_plane(project(X))` gives back `X` for each of these.
+     - On the plain state, the cursor (740, 300) is over the ground point (100, 60) exactly,
+       which is Phase 3's `world`; at yaw 30, pitch 40 it is over (145.222180146317,
+       33.60236249663478).
+  5. **The keyframe file.** Each error of §2.11.4 has a case. Each exits 1 with one stderr
+     line starting `error: --camera`, no progress line and no file at `--out`; those that
+     need the run use the fixture through the CLI. The cases:
+     - no file; not TOML; no `keyframes`; `keyframes = []`; a second top-level key;
+     - a keyframe with `zoom = 2.0`; no `t`; no `height_m`; `x` and `follow`; neither;
+       `x` without `y`;
+     - `t = inf`; `height_m = nan`; `follow = -3`; `follow = 1.5`;
+     - `height_m = 0`; `pitch_deg = 24.99`; `pitch_deg = 90.01`;
+     - `t` out of order (named "out of order"); a duplicate `t` (named "duplicate");
+     - `follow = 1` at `t = 200` (after its last row); `follow` of an id not in the FCD.
+
+     Accepted, each with its expected pose: both Phase 3 lines unchanged (yaw 0, pitch
+     90); `yaw_deg = 370` (read as 10); `yaw_deg = -90` (270); the file as `[[keyframes]]`
+     tables, which gives the same keyframes as the inline array; a single keyframe; a
+     keyframe at `t` = 5, before `from`.
+  6. **The flight, constructed.** Five keyframes, all fixed: `K1` `t` = 10, (0, 0), `h` =
+     200, yaw 0, pitch 90; `K2` 20, (100, 0), 200, 0, 90; `K3` 30, (100, 100), 100, 90, 45;
+     `K4` = `K3` at 40 (a hold); `K5` 50, (0, 100), 300, 350, 60. `pose_at(t)` gives
+     (x, y, `height_m`, yaw, pitch):
+
+     | `t` | pose |
+     |---|---|
+     | 5, 10 | `K1` exactly (before the first keyframe, and at it) |
+     | 15 | (41.89453125, −4.39453125, 200, 0, 90) |
+     | 20 | `K2` exactly |
+     | 25 | (104.39453125, 58.10546875, 141.42135623730945, 45, 67.5) |
+     | 30, 35, 40 | `K3` exactly: the hold |
+     | 45 | (50, 100, 173.20508075688775, 40, 52.5) |
+     | 50, 55 | `K5` exactly |
+
+     - **The hold:** at all 301 frame times of [30, 40] at 30 fps, the pose equals `K3`
+       exactly. **0 drift.**
+     - **No overshoot:** at every frame time of each segment, each scalar lies between its
+       two keyframes' values. **0 violations.** `τ` never decreases, and on `K2 → K3` it
+       never passes `K3`'s knot.
+     - **No corner at `K2`:** the velocity there is (5, 5) m/s from both sides (central
+       and one-sided differences at ±1e-4 s agree to 1e-3 m/s). It is 0 at 10, 30, 40 and
+       50.
+     - **The curve leaves the lines:** the largest distance from the straight line between
+       two keyframes is 7.41 m (7.4073228602604, on `K1 → K2` and on `K2 → K3`). The
+       largest speed is 15.006 m/s.
+     - **Yaw the short way:** `K4 → K5` (90° to 350°) runs 90, 87.2, 79.6, 68.4, 54.8, 40,
+       25.2, 11.6, 0.4, 352.8, 350 at whole seconds, through 0°, never through 180°. A tie
+       turns clockwise: 0° to 180° over [0, 10] is 90° at 5 s, and 180° to 0° is 270°.
+  7. **The flight on the fixture** (`tests/flight.toml`), at every frame time of the
+     default render (`from` = 9.099999999999984, `h` = 1/30 s):
+     - `t` ≤ 50: the pose is the first keyframe exactly (held before 20, then the 20–50
+       hold). `t` ≥ 220: the pose is the sixth keyframe exactly (the 220–250 hold, then
+       held after the last keyframe to `to`).
+     - [64.1, 140]: the look-at point equals vehicle 1's placed point from `boxes_at(t)`;
+       yaw is 90 and pitch 45 exactly; `height_m` decreases strictly from 120 to 60.
+     - (147.1, 160): vehicle 1 is not drawn, and the look-at point lies on the segment
+       from its last placed point to (600, 300), to 1e-9 m.
+     - At each keyframe in the window, the look-at point's one-frame steps just before and
+       just after differ by at most 0.1 m. Predicted largest: about 0.02 m. A blend's
+       acceleration at its ends is `6·L/T²` (9.0 m/s² for 50 → 64.1 s, about 298 m in
+       14.1 s), plus the vehicle's own, at most 6 m/s² (Phase 2 gate 7), so the steps
+       differ by about 15·`h²` = 0.017 m. Each scalar stays between its segment's
+       keyframes: 0 violations.
+  - **The pose, through the GPU:**
+  8. **Placement.** Phase 2 gate 3's single-vehicle subset for vehicle 1, rendered at
+     `t` = 64.1 at 3840×2160 through `prepare_with_camera` with one keyframe at the look-at
+     (−150, 500), `height_m` = 400. The weighted centroid of the vehicle's pixels (Phase 1
+     gate 3's method, against the same pose's empty frame) is within **6 px** of `project`
+     of its placed point at `z` = 0.80. Predictions, from the placed point
+     (−0.649, 598.000) (±0.1 px for its rounding):
+     - yaw 0, pitch 90: (2727.83, 549.92);
+     - yaw 90, pitch 90: (1389.92, 272.17);
+     - yaw 30, pitch 40: (2266.51, 635.05).
+
+     Why 6 px: the silhouette's centroid is not the projected centre of a box seen from an
+     angle, and at 5.4 px per metre a 0.5 m bias is 3 px. Each error this gate exists to
+     catch is larger: the yaw's sign (727 and 1 932 px), 5° of pitch (18–52 px), a 60°
+     field of view (41 px at the tilt).
+  9. **Old lines frame the same ground.** The roads with no vehicles, at 1920×1080: the
+     orthographic job's `render_empty()`, and a perspective job with one keyframe at the
+     fit's centre (to 2 decimals, as a line carries it), `height_m` = 1080·`k_fit`, yaw 0,
+     pitch 90. Every pixel that differs is on a road edge: its 3×3 neighbourhood in the
+     orthographic frame holds both road and background. Prediction: at most 2 % of the
+     frame, which is about every edge pixel; the count is recorded.
+  10. **A keyframed render.** `render --camera tests/flight.toml` with the other defaults:
+      `ffprobe` gives `1920,1080,30/1,8700`, and stderr is 8700 progress lines and `done`.
+      Rendering it twice gives equal `framemd5`: **8700 of 8700**, with the 0.001 m lift
+      (§2.11.2). The wall time is recorded, not predicted (Phase 4: 144 s).
+  - **The view, headless:**
+  11. **Orbit, tilt and the generalised camera,** on the plain state:
+      - a right press at (640, 360), moved to (740, 300): yaw 335 and pitch 75 exactly;
+        the centre (0, 0) and `k` = 1 exactly unchanged. A right drag down from pitch 90
+        stays at 90;
+      - from the default pose: `E` gives 15; from 350, `E` gives 5 exactly; `Q` undoes
+        either. `R` 13 times gives 25 exactly, and a 14th leaves it; `F` 13 times gives
+        90. During an orbit, `Q E R F` change nothing;
+      - a right press in the slider's hit area, at (640, 706), then moved: yaw and pitch
+        unchanged. A right press and release over a box picks nothing;
+      - following a picked box, an orbit and each key step leave the follow on;
+      - at yaw 30, pitch 40: a left drag from (640, 360) to (740, 300) moves the centre to
+        (−145.222180146317, −33.60236249663467), and the ground point under the cursor is
+        (0, 0), the one under the press. 5 scroll lines at (800, 300) give `k` =
+        1.1^−5, the centre (76.5140026126445, 0.34605626576816634), and leave the cursor
+        over (201.84201134738174, 0.912887711228791);
+      - at yaw 90, holding `W` for 30 frames of 1/60 s moves the centre to (320, 0), `cy`
+        exactly 0;
+      - **pick at a tilt:** yaw 30, pitch 45, `k` = 0.05 (`height_m` = 36), one box (4.5 m,
+        heading 120°) at the look-at (0, 0). A click at (640, 337.5125250710996), where its
+        roof centre projects, picks it: the click's point at 0.80 m is (0.395, 0.684),
+        0.79 m from the centre across the box, inside its 0.9 m half-width. The ground point
+        (0.816, 1.414) would be 0.73 m outside the footprint, beyond the 0.4 m radius, so a
+        ground-plane pick fails this case.
+  12. **The keyframe line.** After gate 11's orbit (`t` = 0):
+      `{ t = 0.000, x = 0.00, y = 0.00, height_m = 720.00, yaw_deg = 335.00, pitch_deg = 75.00 }`.
+      Phase 3 gate 9's states print
+      `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00, yaw_deg = 0.00, pitch_deg = 90.00 }`
+      and `{ t = 200.000, follow = 103, height_m = 60.00, yaw_deg = 0.00, pitch_deg = 90.00 }`.
+      Every line of gates 11–12 satisfies `format(parse(line)) == line` and gives back the
+      pose to within half its last decimal. Wrapped in `keyframes = [ … ]`, gate 11's lines
+      read as a file with no syntax error.
+  - **The user's check:**
+  13. **The user flies the camera.** On the fixture:
+      - in `view`: right-drag to orbit and tilt, slowly and fast; `Q`/`E`, `R`/`F`; pan,
+        zoom and `WASD` at a tilt, with the point under the cursor staying put; click a box
+        at a tilt and follow it through a turn while orbiting; press `K` and read the line;
+      - write a keyframe file from `K` lines with at least one hold, one tilt and one
+        follow (or start from `tests/flight.toml`), render it, and watch the MP4: the path
+        is smooth, with no corner at a keyframe, eases in and out, holds dead still, and
+        follows the vehicle;
+      - watch Phase 4's default render once more, if wanted: it is the same file, hash for
+        hash (gate 1).
+
+      And say whether the rates (0.25°/px, 15°, 5°), `φ` = 45°, the 25° floor or the face
+      shading should change, which is iteration (§2.6) unless it changes the keyframe line
+      or the pose, and answer OQ-10, OQ-11 and OQ-13.
+- **Not predicted, and so not gated:**
+  - the frame rate in perspective: `view --bench 20` at the default window, recorded at
+    close-out (Phase 4: 60.00 fps, median 16.67 ms);
+  - `render --camera`'s wall time (gate 10), and the clean build's (gate 3);
+  - the silhouette bias of gate 8 beyond its bound, and the edge-pixel count of gate 9;
+  - the feel of the orbit, the look of the shading and of the flights (gate 13).
+- **Close-out (standing plan steps, §3 of the methodology):**
+  - **Commit plan:** one branch (`phase-5`) and one push, with commits for the pose and the
+    keyframes (gates 4–6 and 12's parsing), for `render --camera` (gates 1, 5, 7–10), for
+    `view`'s orbit and tilt (gates 2, 11, 12), for the gate run and its record, and for the
+    close-out.
+  - **Reconciliation:**
+    - a new `rules/camera.md` for §2.11 as built: the pose and projection, the keyframe
+      line and file with its errors, the flight, and what each path draws; `sources`
+      `src/camera.rs`, `src/keyframes.rs`, `src/draw.rs`;
+    - `rules/render.md` (60/60) and `rules/view.md` (60/60) are at their caps, so they
+      gain only `--camera`, the perspective path, the orbit keys, the new frame order and a
+      pointer to `rules/camera.md`, reworded to fit; `rules/inputs.md` (50/50) gains the
+      file's checks as one pointer. No `max_lines` is raised;
+    - the README gains `--camera`, the file's format, and `view`'s orbit and keys;
     - no `CLAUDE.md` stanza change.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
     its cause.
