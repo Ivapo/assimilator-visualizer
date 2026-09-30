@@ -25,7 +25,7 @@ use bevy::winit::WinitPlugin;
 use crate::draw;
 use crate::motion::TrackPos;
 use crate::place::Placed;
-use crate::scene::{Camera as SceneCamera, Strip};
+use crate::scene::{self, Camera as SceneCamera, Strip};
 
 /// One box to draw.
 #[derive(Debug, Clone, Copy)]
@@ -153,7 +153,14 @@ impl Renderer {
         }
         let cam = self.camera;
         let world = self.apps.main.world_mut();
-        draw::fill_pool(world, &self.pool, &self.materials, boxes, cam.cx, cam.cy);
+        draw::fill_pool(
+            world,
+            &self.pool,
+            &self.materials,
+            boxes,
+            (cam.cx, cam.cy),
+            scene::RANK_LIFT,
+        );
         *self.slot.lock().unwrap() = None;
         let slot = self.slot.clone();
         world.spawn(Screenshot::image(self.target.clone())).observe(

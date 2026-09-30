@@ -1,6 +1,7 @@
 //! What `render` and `view` draw the same way (vis-001 §2.9.6): the road mesh, the box
 //! pool's materials and transforms, and the camera's fixed parts. Moved from
-//! `src/render.rs`, so `render`'s frames do not change.
+//! `src/render.rs`, so `render`'s frames do not change. The perspective path (§2.11.2)
+//! adds a camera built from a pose, a shaded box mesh and a smaller rank lift.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
@@ -8,8 +9,21 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
 
+use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
+
+/// The rank lift of the perspective path, metres (§2.11.2): 0.01 m per rank would float
+/// a 110th box 1.09 m over the road at a tilt. The orthographic path keeps
+/// `scene::RANK_LIFT`.
+pub const RANK_LIFT_3D: f64 = 0.001;
+
+/// The shaded box's faces, as fractions of the speed colour (linear, multiplied in by the
+/// vertex colour): the top keeps it; the long sides, the ends and the bottom are darker.
+pub const SHADE_TOP: f32 = 1.0;
+pub const SHADE_SIDE: f32 = 0.55;
+pub const SHADE_END: f32 = 0.4;
+pub const SHADE_BOTTOM: f32 = 0.25;
 
 pub fn srgb(c: [u8; 3]) -> Color {
     Color::srgb_u8(c[0], c[1], c[2])
@@ -72,9 +86,58 @@ pub fn projection(width: f32, height: f32) -> Projection {
     })
 }
 
-/// Box `b` at rank `i` in `vehicle_id` order, with the scene baked relative to
-/// `(cx, cy)`.
-pub fn box_transform(b: &VehicleBox, i: usize, cx: f64, cy: f64) -> Transform {
+/// The perspective camera at `pose`, in the scene baked relative to `(fx, fy)`: world
+/// `(x, y, z)` is Bevy `(x − fx, z, −(y − fy))`. A `Transform` at the eye looking at the
+/// look-at point with the image's up, and a projection of `φ` with `far = 20·d`.
+pub fn perspective(pose: &Pose, fx: f64, fy: f64, aspect: f64) -> (Transform, Projection) {
+    let to = |p: [f64; 3]| Vec3::new((p[0] - fx) as f32, p[2] as f32, -(p[1] - fy) as f32);
+    let (_, u, _) = pose.axes();
+    let eye = to(pose.eye());
+    let target = to([pose.cx, pose.cy, 0.0]);
+    let up = Vec3::new(u[0] as f32, u[2] as f32, -u[1] as f32);
+    let d = camera::distance(pose.height_m);
+    (
+        Transform::from_translation(eye).looking_at(target, up),
+        Projection::from(PerspectiveProjection {
+            fov: FOV_DEG.to_radians() as f32,
+            aspect_ratio: aspect as f32,
+            far: (FAR_PER_D * d) as f32,
+            ..default()
+        }),
+    )
+}
+
+/// A unit cuboid whose faces are shaded by vertex colour (§2.11.2), so a tilted box reads
+/// as a solid under the unlit speed materials.
+pub fn shaded_box_mesh() -> Mesh {
+    let mut mesh = Mesh::from(Cuboid::new(1.0, 1.0, 1.0));
+    let normals: Vec<[f32; 3]> = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x3(n)) => n.clone(),
+        _ => unreachable!("a Cuboid mesh has normals"),
+    };
+    // Local +X is the length, +Y up, +Z the width (`box_transform`).
+    let colours: Vec<[f32; 4]> = normals
+        .iter()
+        .map(|n| {
+            let f = if n[1] > 0.5 {
+                SHADE_TOP
+            } else if n[1] < -0.5 {
+                SHADE_BOTTOM
+            } else if n[2].abs() > 0.5 {
+                SHADE_SIDE
+            } else {
+                SHADE_END
+            };
+            [f, f, f, 1.0]
+        })
+        .collect();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
+    mesh
+}
+
+/// Box `b` at rank `i` in `vehicle_id` order, lifted `lift` metres per rank, with the
+/// scene baked relative to `(cx, cy)`.
+pub fn box_transform(b: &VehicleBox, i: usize, cx: f64, cy: f64, lift: f64) -> Transform {
     let x = (b.at.x - cx) as f32;
     let z = -(b.at.y - cy) as f32;
     // Local +X along the heading: rotate by 90° − heading about +Y.
@@ -83,7 +146,7 @@ pub fn box_transform(b: &VehicleBox, i: usize, cx: f64, cy: f64) -> Transform {
         // Rank `i` in vehicle_id order sets the depth order (scene::RANK_LIFT).
         translation: Vec3::new(
             x,
-            (scene::BOX_HEIGHT / 2.0 + 0.05 + i as f64 * scene::RANK_LIFT) as f32,
+            (scene::BOX_HEIGHT / 2.0 + 0.05 + i as f64 * lift) as f32,
             z,
         ),
         rotation: Quat::from_rotation_y(yaw),
@@ -95,20 +158,20 @@ pub fn box_transform(b: &VehicleBox, i: usize, cx: f64, cy: f64) -> Transform {
     }
 }
 
-/// Fill the pool with `boxes` in draw order and hide the rest.
+/// Fill the pool with `boxes` in draw order, `lift` metres per rank, and hide the rest.
 pub fn fill_pool(
     world: &mut World,
     pool: &[Entity],
     materials: &[Handle<StandardMaterial>],
     boxes: &[VehicleBox],
-    cx: f64,
-    cy: f64,
+    (cx, cy): (f64, f64),
+    lift: f64,
 ) {
     for (i, &e) in pool.iter().enumerate() {
         let mut ent = world.entity_mut(e);
         match boxes.get(i) {
             Some(b) => {
-                *ent.get_mut::<Transform>().unwrap() = box_transform(b, i, cx, cy);
+                *ent.get_mut::<Transform>().unwrap() = box_transform(b, i, cx, cy, lift);
                 ent.get_mut::<MeshMaterial3d<StandardMaterial>>().unwrap().0 =
                     materials[scene::speed_bin(b.speed)].clone();
                 *ent.get_mut::<Visibility>().unwrap() = Visibility::Visible;
