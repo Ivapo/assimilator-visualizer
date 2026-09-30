@@ -11,7 +11,7 @@ use assimilator_video::place::Placed;
 use assimilator_video::render::VehicleBox;
 use assimilator_video::run::{self, LoadOptions, Run};
 use assimilator_video::view::slider::Bar;
-use assimilator_video::view::state::{Fit, ViewInput, ViewState};
+use assimilator_video::view::state::{At, Fit, Follow, Keyframe, ViewInput, ViewState};
 
 /// Distances in pixels or metres and times in seconds: the state is set by formulas.
 const TOL: f64 = 1e-9;
@@ -118,6 +118,41 @@ fn vbox(id: u64, x: f64, y: f64, heading: f64, length: f64) -> VehicleBox {
             odo: 0.0,
         },
     }
+}
+
+/// Phase 3 gate 9's check on the state's current line.
+fn check_line(s: &ViewState) {
+    let line = s.keyframe_line();
+    let kf = Keyframe::parse(&line).unwrap_or_else(|e| panic!("{line}: {e}"));
+    assert_eq!(kf.format(), line);
+    close(kf.t, s.t, 0.0005 + TOL, "line t");
+    close(kf.height_m, s.size.1 * s.k, 0.005 + TOL, "line height_m");
+    match (kf.at, s.follow) {
+        (At::Follow(id), Some(f)) => {
+            assert!(f.drawn, "{line}: follow printed on hold");
+            assert_eq!(id, f.vehicle_id);
+        }
+        (At::Centre(x, y), f) => {
+            assert!(!matches!(f, Some(Follow { drawn: true, .. })), "{line}");
+            close(x, s.cx, 0.005 + TOL, "line x");
+            close(y, s.cy, 0.005 + TOL, "line y");
+        }
+        (At::Follow(_), None) => panic!("{line}: follow without a follow"),
+    }
+}
+
+fn pixel_of(s: &ViewState, (x, y): (f64, f64)) -> (f64, f64) {
+    (
+        s.size.0 / 2.0 + (x - s.cx) / s.k,
+        s.size.1 / 2.0 - (y - s.cy) / s.k,
+    )
+}
+
+fn placed_of(run: &Run, t: f64, id: u64) -> Option<(f64, f64)> {
+    run.boxes_at(t)
+        .iter()
+        .find(|b| b.vehicle_id == id)
+        .map(|b| (b.at.x, b.at.y))
 }
 
 // ── Gate 4: geometry ─────────────────────────────────────────────────────────
@@ -364,4 +399,84 @@ fn gate8_playback() {
     assert_eq!(s.scrub, None, "no bar ends the scrub");
     close(s.t, T400, TOL, "t held when the bar goes");
     assert!(s.playing, "playing resumes when the bar goes");
+}
+
+// ── Gate 9: a follow survives a scrub ────────────────────────────────────────
+
+#[test]
+#[ignore = "needs the fixture"]
+fn gate9_follow_scrub() {
+    let (run, mut s) = fixture();
+    let step = |s: &mut ViewState, input: ViewInput| {
+        s.frame(&input, |t| run.boxes_at(t));
+        check_line(s);
+    };
+    s.t = 64.1;
+    let p = placed_of(&run, s.t, 1).expect("vehicle 1 drawn at 64.1 s");
+    let c = pixel_of(&s, p);
+    step(&mut s, clicked(c));
+    assert_eq!(s.follow.map(|f| f.vehicle_id), Some(1), "picked");
+
+    step(&mut s, pressed((400.0, 706.0)));
+    close(s.t, 98.33076923076906, TOL, "t(400)");
+    let f = s.follow.expect("following");
+    assert!(f.drawn && f.vehicle_id == 1);
+    let p = placed_of(&run, s.t, 1).unwrap();
+    close(s.cx, p.0, TOL, "centre x at 400");
+    close(s.cy, p.1, TOL, "centre y at 400");
+    println!(
+        "gate9 x = 400: t {}, centre ({:.3}, {:.3})",
+        s.t, s.cx, s.cy
+    );
+
+    let held = (s.cx, s.cy);
+    step(&mut s, at((900.0, 706.0)));
+    close(s.t, 214.51666666666634, TOL, "t(900)");
+    assert_eq!(s.follow.map(|f| (f.vehicle_id, f.drawn)), Some((1, false)));
+    assert!(s.readout().contains("(not drawn)"), "{}", s.readout());
+    assert_eq!((s.cx, s.cy), held, "held centre");
+    println!("gate9 x = 900: t {}, {}", s.t, s.readout());
+
+    step(&mut s, at((400.0, 706.0)));
+    let p = placed_of(&run, s.t, 1).unwrap();
+    close(s.cx, p.0, TOL, "re-centred x");
+    close(s.cy, p.1, TOL, "re-centred y");
+    step(&mut s, released((400.0, 706.0)));
+    assert_eq!(s.scrub, None);
+    assert_eq!(s.follow.map(|f| (f.vehicle_id, f.drawn)), Some((1, true)));
+}
+
+// ── Gate 10: ticks ───────────────────────────────────────────────────────────
+
+#[test]
+#[ignore = "needs the fixture"]
+fn gate10_ticks() {
+    let (_run, s) = fixture();
+    let b = Bar::new((W, H)).unwrap();
+    assert_eq!(b.period(s.from, s.to), Some(60.0));
+    let ticks = b.ticks(s.from, s.to);
+    assert_eq!(ticks, vec![60.0, 120.0, 180.0, 240.0]);
+    let want = [
+        235.04551724137974,
+        493.25241379310427,
+        751.4593103448287,
+        1009.6662068965533,
+    ];
+    for (t, x) in ticks.iter().zip(want) {
+        close(b.x(*t, s.from, s.to), x, TOL, &format!("tick {t}"));
+    }
+    println!("gate10 fixture: P 60 s, ticks {ticks:?}");
+
+    for (to, p, n) in [
+        (3600.0, 60.0, 61),
+        (10800.0, 300.0, 37),
+        (86400.0, 600.0, 145),
+    ] {
+        assert_eq!(b.period(0.0, to), Some(p), "[0, {to}]");
+        assert_eq!(b.ticks(0.0, to).len(), n, "[0, {to}]");
+        println!("gate10 [0, {to}]: P {p} s, {n} ticks");
+    }
+    let narrow = Bar::new((64.0, H)).unwrap();
+    assert_eq!(narrow.period(s.from, s.to), Some(300.0));
+    assert!(narrow.ticks(s.from, s.to).is_empty());
 }
