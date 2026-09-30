@@ -20,7 +20,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 3 — View: a window over a finished run"
-    reviewed: null
+    reviewed: 2026-09-29
     shipped: null
     cut: null
     by: null
@@ -1168,8 +1168,8 @@ it reuses unchanged.
   - **`render` stays headless (`src/render.rs`).** `Renderer::new` disables
     `WinitPlugin` and sets `WindowPlugin { primary_window: None, exit_condition:
     DontExit, close_when_requested: false, ..default() }` (§2.9.6). With `primary_window:
-    None` and the default `OnAllClosed`, Bevy would exit on the first update.
-  - **View state (`src/view/state.rs`, new; no Bevy window types).**
+    None` and the default `OnAllClosed`, Bevy would write `AppExit` on every update.
+  - **View state (`src/view/state.rs`, new; no Bevy types).**
     - `ViewInput`: for one frame, the keys pressed and the keys held (space, `+`, `−`,
       `←`, `→`, Shift, `W A S D`, `Esc`, `K`), the cursor in logical pixels, left-button
       press and release, scroll in lines or pixels, the window's logical size, and the
