@@ -6,11 +6,13 @@
 //! adds the boxes at any time with their track positions ([`Job::boxes_at`]) and the
 //! motion report ([`Job::motion_report`]).
 
+pub mod camera;
 pub mod clock;
 pub mod draw;
 pub mod encode;
 pub mod fcd;
 pub mod inputs;
+pub mod keyframes;
 pub mod motion;
 pub mod place;
 pub mod render;
