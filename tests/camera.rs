@@ -4,11 +4,17 @@
 //! ignored; run everything with
 //! `cargo test --release --test camera -- --include-ignored --test-threads=1 --nocapture`.
 
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
 use assimilator_video::camera::{self, Pose, distance, project, ray_to_plane};
+use assimilator_video::keyframes::{self, Flight};
 use assimilator_video::motion::{Piece, TrackPos};
 use assimilator_video::place::Placed;
 use assimilator_video::render::VehicleBox;
-use assimilator_video::scene::Camera;
+use assimilator_video::run::{self, LoadOptions, Run};
+use assimilator_video::scene::{self, Camera};
+use assimilator_video::{Job, RenderOptions, clock};
 use assimilator_video::view::state::{
     At, Fit, Follow, Held, Keyframe, OrbitButton, Pressed, ViewInput, ViewState,
 };
@@ -669,4 +675,574 @@ fn gate12_keyframe_line() {
     let file = format!("keyframes = [\n  {orbit},\n  {a},\n  {b},\n]\n");
     let v: toml::Table = toml::from_str(&file).expect("the lines read as a file");
     assert_eq!(v["keyframes"].as_array().map(|a| a.len()), Some(3));
+    let kfs = keyframes::parse_file(&file).expect("the file reader takes them");
+    assert_eq!(kfs.len(), 3);
+    assert_eq!((kfs[0].yaw_deg, kfs[0].pitch_deg), (335.0, 75.0));
+    for (kf, line) in kfs.iter().zip([orbit, a.as_str(), b.as_str()]) {
+        assert_eq!(kf.format(), line);
+    }
+}
+
+// ── Gate 6: the flight, constructed ──────────────────────────────────────────
+
+fn kf(t: f64, x: f64, y: f64, h: f64, yaw: f64, pitch: f64) -> Keyframe {
+    Keyframe {
+        t,
+        at: At::Centre(x, y),
+        height_m: h,
+        yaw_deg: yaw,
+        pitch_deg: pitch,
+    }
+}
+
+fn pose_of(k: &Keyframe) -> Pose {
+    let At::Centre(cx, cy) = k.at else {
+        panic!("a fixed keyframe")
+    };
+    Pose {
+        cx,
+        cy,
+        height_m: k.height_m,
+        yaw_deg: k.yaw_deg,
+        pitch_deg: k.pitch_deg,
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+fn gate6_keyframes() -> Vec<Keyframe> {
+    vec![
+        kf(10.0, 0.0, 0.0, 200.0, 0.0, 90.0),
+        kf(20.0, 100.0, 0.0, 200.0, 0.0, 90.0),
+        kf(30.0, 100.0, 100.0, 100.0, 90.0, 45.0),
+        kf(40.0, 100.0, 100.0, 100.0, 90.0, 45.0),
+        kf(50.0, 0.0, 100.0, 300.0, 350.0, 60.0),
+    ]
+}
+
+fn close_pose(p: &Pose, want: (f64, f64, f64, f64, f64), what: &str) {
+    close(p.cx, want.0, TOL, &format!("{what} x"));
+    close(p.cy, want.1, TOL, &format!("{what} y"));
+    close(p.height_m, want.2, TOL, &format!("{what} height_m"));
+    close(p.yaw_deg, want.3, TOL, &format!("{what} yaw"));
+    close(p.pitch_deg, want.4, TOL, &format!("{what} pitch"));
+}
+
+/// `v` lies between `a` and `b`.
+fn between(v: f64, a: f64, b: f64) -> bool {
+    a.min(b) <= v && v <= a.max(b)
+}
+
+/// The distance from `p` to the segment `a`–`b`.
+fn to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let l2 = dx * dx + dy * dy;
+    let u = if l2 == 0.0 {
+        0.0
+    } else {
+        (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / l2).clamp(0.0, 1.0)
+    };
+    (p.0 - a.0 - u * dx).hypot(p.1 - a.1 - u * dy)
+}
+
+/// Each scalar of `p` lies between keyframes `a` and `b`'s (the yaw the short way).
+fn scalars_between(p: &Pose, a: &Keyframe, b: &Keyframe) -> bool {
+    let dyaw = camera::short_way(a.yaw_deg, b.yaw_deg);
+    let off = camera::short_way(a.yaw_deg, p.yaw_deg);
+    let off = if dyaw == 180.0 && off == -180.0 { 180.0 } else { off };
+    between(p.height_m, a.height_m, b.height_m)
+        && between(p.pitch_deg, a.pitch_deg, b.pitch_deg)
+        && between(off, 0.0, dyaw)
+}
+
+#[test]
+fn gate6_flight_constructed() {
+    let k = gate6_keyframes();
+    let f = Flight::with_drawn(k.clone(), vec![]);
+    let at = |t: f64| f.pose_at_by(t, &no_boxes);
+    let pos = |t: f64| {
+        let p = at(t);
+        (p.cx, p.cy)
+    };
+
+    // The table.
+    for (t, j) in [(5.0, 0), (10.0, 0), (20.0, 1), (30.0, 2), (35.0, 2), (40.0, 2), (50.0, 4), (55.0, 4)] {
+        assert_eq!(at(t), pose_of(&k[j]), "t = {t}: keyframe {} exactly", j + 1);
+    }
+    for (t, want) in [
+        (15.0, (41.89453125, -4.39453125, 200.0, 0.0, 90.0)),
+        (25.0, (104.39453125, 58.10546875, 141.42135623730945, 45.0, 67.5)),
+        (45.0, (50.0, 100.0, 173.20508075688775, 40.0, 52.5)),
+    ] {
+        let p = at(t);
+        println!(
+            "gate6 t = {t}: ({}, {}, {}, {}, {})",
+            p.cx, p.cy, p.height_m, p.yaw_deg, p.pitch_deg
+        );
+        close_pose(&p, want, &format!("t = {t}"));
+    }
+
+    // The hold: every frame time of [30, 40] at 30 fps.
+    let mut drift = 0;
+    for n in 0..=300 {
+        let t = 30.0 + n as f64 / 30.0;
+        if at(t) != pose_of(&k[2]) {
+            drift += 1;
+        }
+    }
+    println!("gate6 hold: 301 frames, {drift} drift");
+    assert_eq!(drift, 0);
+
+    // No overshoot, and τ never decreases nor passes K3's knot on K2 → K3.
+    let frames: Vec<f64> = (0..=1200).map(|n| 10.0 + n as f64 / 30.0).collect();
+    let mut violations = 0;
+    // K3's knot: |K2 − K1|^½ + |K3 − K2|^½.
+    let tau_k3 = 20.0;
+    let mut last_tau = f64::NEG_INFINITY;
+    for &t in &frames {
+        let i = k.partition_point(|kf| kf.t <= t).saturating_sub(1).min(k.len() - 2);
+        if !scalars_between(&at(t), &k[i], &k[i + 1]) {
+            violations += 1;
+        }
+        if t < 30.0 {
+            let tau = f.tau_at(t).expect("K1 → K3 is one run");
+            assert!(tau >= last_tau, "τ decreases at {t}");
+            assert!(tau <= tau_k3, "τ passes K3's knot at {t}");
+            last_tau = tau;
+        }
+    }
+    println!("gate6 overshoot: {violations} violations");
+    assert_eq!(violations, 0);
+
+    // No corner at K2; at rest at 10, 30, 40 and 50.
+    let e = 1e-4;
+    let v = |a: f64, b: f64| {
+        let (p, q) = (pos(a), pos(b));
+        ((q.0 - p.0) / (b - a), (q.1 - p.1) / (b - a))
+    };
+    for (what, got) in [
+        ("central", v(20.0 - e, 20.0 + e)),
+        ("left", v(20.0 - e, 20.0)),
+        ("right", v(20.0, 20.0 + e)),
+    ] {
+        println!("gate6 velocity at K2, {what}: ({}, {})", got.0, got.1);
+        close2(got, (5.0, 5.0), 1e-3, &format!("velocity at K2 {what}"));
+    }
+    for t in [10.0, 30.0, 40.0, 50.0] {
+        for (what, got) in [("left", v(t - e, t)), ("right", v(t, t + e))] {
+            close2(got, (0.0, 0.0), 1e-3, &format!("velocity at {t} {what}"));
+        }
+    }
+
+    // The curve leaves the lines.
+    let mut worst = [(0.0f64, 0.0f64); 4];
+    let mut vmax = (0.0f64, 0.0);
+    for &t in &frames {
+        let i = k.partition_point(|kf| kf.t <= t).saturating_sub(1).min(k.len() - 2);
+        let (a, b) = (pose_of(&k[i]), pose_of(&k[i + 1]));
+        let d = to_segment(pos(t), (a.cx, a.cy), (b.cx, b.cy));
+        if d > worst[i].0 {
+            worst[i] = (d, t);
+        }
+        let h = 1e-6;
+        let s = v(t - h, t + h);
+        let sp = s.0.hypot(s.1);
+        if sp > vmax.0 {
+            vmax = (sp, t);
+        }
+    }
+    println!(
+        "gate6 off the lines: K1→K2 {} at {}, K2→K3 {} at {}; top speed {} at {}",
+        worst[0].0, worst[0].1, worst[1].0, worst[1].1, vmax.0, vmax.1
+    );
+    close(worst[0].0, 7.4073228602604, TOL, "off the line K1→K2");
+    close(worst[1].0, 7.4073228602604, TOL, "off the line K2→K3");
+    close(worst[0].1, 17.2333, 1e-4, "K1→K2 where");
+    close(worst[1].1, 22.7667, 1e-4, "K2→K3 where");
+    assert!(worst[2].0 == 0.0 && worst[3].0 < TOL, "the hold and K4→K5 stay on their lines");
+    close(vmax.0, 15.006, 1e-3, "top speed");
+
+    // Yaw the short way.
+    let yaws: Vec<f64> = (40..=50).map(|s| at(s as f64).yaw_deg).collect();
+    println!("gate6 yaw K4→K5: {yaws:?}");
+    for (y, want) in yaws.iter().zip([90.0, 87.2, 79.6, 68.4, 54.8, 40.0, 25.2, 11.6, 0.4, 352.8, 350.0]) {
+        close(*y, want, TOL, "yaw");
+    }
+    for &t in frames.iter().filter(|&&t| t > 40.0) {
+        let y = at(t).yaw_deg;
+        assert!(!(90.0 < y && y < 350.0), "yaw {y} at {t}: the long way");
+    }
+    let tie = |a: f64, b: f64| {
+        let f = Flight::with_drawn(
+            vec![kf(0.0, 0.0, 0.0, 100.0, a, 90.0), kf(10.0, 0.0, 0.0, 100.0, b, 90.0)],
+            vec![],
+        );
+        f.pose_at_by(5.0, &no_boxes).yaw_deg
+    };
+    close(tie(0.0, 180.0), 90.0, TOL, "0 → 180 turns clockwise");
+    close(tie(180.0, 0.0), 270.0, TOL, "180 → 0 turns clockwise");
+}
+
+// ── The fixture: gates 5, 7, 8 and 9 ─────────────────────────────────────────
+
+fn root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn fixture_run() -> Run {
+    run::load(&LoadOptions {
+        project: root().join("scratch/urban_grid"),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from: None,
+        to: None,
+    })
+    .expect("the fixture loads (scripts/fixture.sh)")
+}
+
+/// A scratch file for a keyframe file's text.
+fn write_camera(name: &str, text: &str) -> PathBuf {
+    let dir = root().join("scratch/out/camera");
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join(name);
+    std::fs::write(&p, text).unwrap();
+    p
+}
+
+const LINE: &str = "{ t = 20.000, x = 0.00, y = 300.00, height_m = 1240.00 }";
+
+fn one(line: &str) -> String {
+    format!("keyframes = [\n  {line},\n]\n")
+}
+
+fn render_cmd(camera: &Path, out: &Path) -> (i32, String) {
+    let o = Command::new(env!("CARGO_BIN_EXE_assimilator-video"))
+        .args(["render", "--project"])
+        .arg(root().join("scratch/urban_grid"))
+        .args(["--scenario", "baseline", "--seed", "42", "--out"])
+        .arg(out)
+        .arg("--camera")
+        .arg(camera)
+        .output()
+        .unwrap();
+    (
+        o.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    )
+}
+
+#[test]
+#[ignore = "needs the fixture"]
+fn gate5_keyframe_file_errors() {
+    let kf = |body: &str| one(&format!("{{ {body} }}"));
+    let cases: Vec<(&str, Option<String>, &str)> = vec![
+        ("no-file", None, "cannot read"),
+        ("not-toml", Some("keyframes = [ {".into()), "not TOML"),
+        ("no-keyframes", Some("# no keys\n".into()), "no `keyframes`"),
+        ("empty", Some("keyframes = []\n".into()), "empty"),
+        ("second-key", Some(format!("{}speed = 2\n", one(LINE))), "unknown field"),
+        ("unknown-key", Some(kf("t = 20.0, x = 0.0, y = 300.0, height_m = 1240.0, zoom = 2.0")), "unknown field"),
+        ("no-t", Some(kf("x = 0.0, y = 300.0, height_m = 1240.0")), "no `t`"),
+        ("no-height", Some(kf("t = 20.0, x = 0.0, y = 300.0")), "no `height_m`"),
+        ("x-and-follow", Some(kf("t = 20.0, x = 0.0, y = 300.0, follow = 1, height_m = 1240.0")), "both"),
+        ("neither", Some(kf("t = 20.0, height_m = 1240.0")), "neither"),
+        ("x-without-y", Some(kf("t = 20.0, x = 0.0, height_m = 1240.0")), "without"),
+        ("t-inf", Some(kf("t = inf, x = 0.0, y = 300.0, height_m = 1240.0")), "finite"),
+        ("height-nan", Some(kf("t = 20.0, x = 0.0, y = 300.0, height_m = nan")), "finite"),
+        ("follow-negative", Some(kf("t = 64.1, follow = -3, height_m = 120.0")), "≥ 0"),
+        ("follow-fraction", Some(kf("t = 64.1, follow = 1.5, height_m = 120.0")), "invalid type"),
+        ("height-zero", Some(kf("t = 20.0, x = 0.0, y = 300.0, height_m = 0")), "positive"),
+        ("pitch-low", Some(kf("t = 20.0, x = 0.0, y = 300.0, height_m = 1240.0, pitch_deg = 24.99")), "pitch_deg"),
+        ("pitch-high", Some(kf("t = 20.0, x = 0.0, y = 300.0, height_m = 1240.0, pitch_deg = 90.01")), "pitch_deg"),
+        (
+            "out-of-order",
+            Some(format!(
+                "keyframes = [\n  {LINE},\n  {{ t = 10.000, x = 0.00, y = 300.00, height_m = 1240.00 }},\n]\n"
+            )),
+            "out of order",
+        ),
+        ("duplicate", Some(format!("keyframes = [\n  {LINE},\n  {LINE},\n]\n")), "duplicate"),
+        ("follow-gone", Some(kf("t = 200.0, follow = 1, height_m = 60.0")), "not drawn"),
+        ("follow-unknown", Some(kf("t = 64.1, follow = 999999, height_m = 60.0")), "not in the FCD"),
+    ];
+    for (label, text, want) in cases {
+        let path = match &text {
+            Some(t) => write_camera(&format!("gate5_{label}.toml"), t),
+            None => root().join("scratch/out/camera/does_not_exist.toml"),
+        };
+        let out = root().join(format!("scratch/out/camera/gate5_{label}.mp4"));
+        let partial = root().join(format!("scratch/out/camera/gate5_{label}.mp4.partial"));
+        let _ = std::fs::remove_file(&out);
+        let (code, stderr) = render_cmd(&path, &out);
+        println!("gate5 {label}: exit {code}: {}", stderr.trim_end());
+        assert_eq!(code, 1, "{label}: exit");
+        assert_eq!(stderr.lines().count(), 1, "{label}: one stderr line");
+        assert!(stderr.starts_with("error: --camera"), "{label}: {stderr}");
+        assert!(stderr.contains(want), "{label}: wants {want:?}: {stderr}");
+        assert!(!stderr.contains("\"frame\""), "{label}: progress");
+        assert!(!out.exists() && !partial.exists(), "{label}: an output file");
+    }
+}
+
+#[test]
+#[ignore = "needs the fixture"]
+fn gate5_keyframe_file_accepted() {
+    let run = fixture_run();
+    let accept = |text: &str| {
+        let kfs = keyframes::parse_file(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+        keyframes::check_follows(&kfs, &run.motion, &run.fcd, &run.placement)
+            .unwrap_or_else(|e| panic!("{text}: {e}"));
+        Flight::new(kfs, &run.fcd)
+    };
+    let at = |f: &Flight, t: f64| f.pose_at(t, &run.motion, &run.fcd, &run.placement);
+
+    // Phase 3's lines, unchanged.
+    let f = accept(&one("{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }"));
+    assert_eq!(at(&f, 64.1), Pose { cx: 512.3, cy: -133.2, height_m: 240.0, yaw_deg: 0.0, pitch_deg: 90.0 });
+    let kfs = keyframes::parse_file(&one("{ t = 200.000, follow = 103, height_m = 60.00 }")).unwrap();
+    assert_eq!((kfs[0].yaw_deg, kfs[0].pitch_deg), (0.0, 90.0));
+    let f = accept(&one("{ t = 64.100, follow = 1, height_m = 120.00 }"));
+    let p = at(&f, 64.1);
+    assert_eq!((p.yaw_deg, p.pitch_deg, p.height_m), (0.0, 90.0, 120.0));
+
+    for (yaw, want) in [(370.0, 10.0), (-90.0, 270.0)] {
+        let f = accept(&one(&format!(
+            "{{ t = 20.000, x = 0.00, y = 300.00, height_m = 1240.00, yaw_deg = {yaw} }}"
+        )));
+        println!("gate5 yaw_deg = {yaw} reads as {}", at(&f, 20.0).yaw_deg);
+        assert_eq!(at(&f, 20.0).yaw_deg, want);
+    }
+
+    let flight = std::fs::read_to_string(root().join("tests/flight.toml")).unwrap();
+    let inline = keyframes::parse_file(&flight).unwrap();
+    let mut tables = String::new();
+    for k in &inline {
+        tables.push_str(&format!("[[keyframes]]\n{}\n\n", {
+            let l = k.format();
+            l[2..l.len() - 2].replace(", ", "\n")
+        }));
+    }
+    assert_eq!(keyframes::parse_file(&tables).unwrap(), inline, "[[keyframes]] tables");
+
+    // A single keyframe holds for the whole run; one before `from` is read.
+    let f = accept(&one(LINE));
+    let want = Pose { cx: 0.0, cy: 300.0, height_m: 1240.0, yaw_deg: 0.0, pitch_deg: 90.0 };
+    for t in [run.from, 20.0, 150.0, run.to] {
+        assert_eq!(at(&f, t), want);
+    }
+    let f = accept(&one("{ t = 5.000, x = 10.00, y = 20.00, height_m = 300.00 }"));
+    assert_eq!(at(&f, run.from), Pose { cx: 10.0, cy: 20.0, height_m: 300.0, yaw_deg: 0.0, pitch_deg: 90.0 });
+}
+
+// ── Gate 7: the flight on the fixture ────────────────────────────────────────
+
+fn placed_of(run: &Run, t: f64, id: u64) -> Option<(f64, f64)> {
+    run.boxes_at(t)
+        .iter()
+        .find(|b| b.vehicle_id == id)
+        .map(|b| (b.at.x, b.at.y))
+}
+
+#[test]
+#[ignore = "needs the fixture"]
+fn gate7_flight_on_fixture() {
+    let run = fixture_run();
+    let k = keyframes::read(&root().join("tests/flight.toml")).expect("tests/flight.toml");
+    keyframes::check_follows(&k, &run.motion, &run.fcd, &run.placement).expect("its follows");
+    let f = Flight::new(k.clone(), &run.fcd);
+    let d = run.to - run.from;
+    let speedup = clock::default_speedup(d);
+    let frames = clock::frame_count(d, 30, speedup);
+    assert_eq!((run.from, speedup, frames), (9.099999999999984, 1.0, 8700));
+    let times: Vec<f64> = (0..frames).map(|n| clock::frame_time(run.from, n, speedup, 30)).collect();
+    let poses: Vec<Pose> = times
+        .iter()
+        .map(|&t| f.pose_at(t, &run.motion, &run.fcd, &run.placement))
+        .collect();
+    let first = Pose { cx: 0.0, cy: 300.0, height_m: 1240.0, yaw_deg: 0.0, pitch_deg: 90.0 };
+    let sixth = Pose { cx: 300.0, cy: 600.0, height_m: 700.0, yaw_deg: 315.0, pitch_deg: 35.0 };
+    let (mut held, mut follow, mut blend, mut violations) = (0, 0, 0, 0);
+    let mut last_h = f64::INFINITY;
+    let last_row = run.fcd.vehicles.iter().find(|v| v.vehicle_id == 1).unwrap().rows.last().unwrap().time;
+    let last_seen = placed_of(&run, last_row, 1).expect("vehicle 1 at its last row");
+    println!("gate7 vehicle 1 last row {last_row}, at {last_seen:?}");
+    for (&t, p) in times.iter().zip(&poses) {
+        if t <= 50.0 {
+            assert_eq!(*p, first, "t = {t}");
+            held += 1;
+        } else if t >= 220.0 {
+            assert_eq!(*p, sixth, "t = {t}");
+            held += 1;
+        }
+        if (64.1..=140.0).contains(&t) {
+            let v = placed_of(&run, t, 1).expect("vehicle 1 drawn");
+            assert_eq!((p.cx, p.cy), v, "t = {t}: on vehicle 1");
+            assert_eq!((p.yaw_deg, p.pitch_deg), (90.0, 45.0), "t = {t}");
+            assert!(p.height_m < last_h, "t = {t}: height {} not decreasing", p.height_m);
+            assert!(between(p.height_m, 60.0, 120.0));
+            last_h = p.height_m;
+            follow += 1;
+        }
+        if t > 147.1 && t < 160.0 {
+            assert!(placed_of(&run, t, 1).is_none(), "t = {t}: vehicle 1 drawn");
+            let dseg = to_segment((p.cx, p.cy), last_seen, (600.0, 300.0));
+            assert!(dseg <= TOL, "t = {t}: {dseg} m off the segment");
+            blend += 1;
+        }
+        let i = k.partition_point(|kf| kf.t <= t).saturating_sub(1).min(k.len() - 2);
+        if t > k[0].t && t < k[k.len() - 1].t && !scalars_between(p, &k[i], &k[i + 1]) {
+            violations += 1;
+        }
+    }
+    println!("gate7: {held} held frames, {follow} following, {blend} blending, {violations} violations");
+    assert_eq!(violations, 0);
+
+    // One-frame steps just before and just after each keyframe in the window.
+    let mut worst: f64 = 0.0;
+    for kf in &k {
+        let Some(n) = times.iter().rposition(|&t| t <= kf.t) else { continue };
+        if n < 1 || n + 1 >= times.len() {
+            continue;
+        }
+        let step = |a: usize, b: usize| (poses[b].cx - poses[a].cx, poses[b].cy - poses[a].cy);
+        let (s0, s1) = (step(n - 1, n), step(n, n + 1));
+        let dd = (s1.0 - s0.0).hypot(s1.1 - s0.1);
+        println!("gate7 keyframe t = {}: steps differ by {dd:.5} m", kf.t);
+        worst = worst.max(dd);
+    }
+    println!("gate7 largest step change at a keyframe: {worst:.5} m");
+    assert!(worst <= 0.1);
+}
+
+// ── Gates 8 and 9: through the GPU ───────────────────────────────────────────
+
+fn options(fcd: Option<PathBuf>, from: Option<f64>, to: Option<f64>, w: u32, h: u32) -> RenderOptions {
+    RenderOptions {
+        project: root().join("scratch/urban_grid"),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd,
+        from,
+        to,
+        speedup: None,
+        fps: 30,
+        width: w,
+        height: h,
+    }
+}
+
+/// Phase 1 gate 3's method: the weighted centroid of the pixels that differ from the empty
+/// frame.
+fn centroid(frame: &[u8], empty: &[u8], w: usize, h: usize) -> (f64, f64) {
+    let (mut sx, mut sy, mut sw) = (0.0, 0.0, 0.0);
+    for j in 0..h {
+        for i in 0..w {
+            let o = (j * w + i) * 4;
+            let wt: u32 = (0..3)
+                .map(|c| (frame[o + c] as i32 - empty[o + c] as i32).unsigned_abs())
+                .sum();
+            if wt > 0 {
+                sx += (i as f64 + 0.5) * wt as f64;
+                sy += (j as f64 + 0.5) * wt as f64;
+                sw += wt as f64;
+            }
+        }
+    }
+    assert!(sw > 0.0, "no vehicle pixels");
+    (sx / sw, sy / sw)
+}
+
+#[test]
+#[ignore = "needs the fixture and the GPU"]
+fn gate8_placement() {
+    let (w, h) = (3840u32, 2160u32);
+    let subset = root().join("scratch/derived/subset_g3_1.parquet");
+    assert!(subset.is_file(), "{} (scripts/fixture.sh and --test gates)", subset.display());
+    for (yaw, pitch, want) in [
+        (0.0, 90.0, (2727.83, 549.92)),
+        (90.0, 90.0, (1389.92, 272.17)),
+        (30.0, 40.0, (2266.51, 635.05)),
+    ] {
+        let file = write_camera(
+            &format!("gate8_{yaw}_{pitch}.toml"),
+            &one(&format!(
+                "{{ t = 64.100, x = -150.00, y = 500.00, height_m = 400.00, yaw_deg = {yaw:.2}, pitch_deg = {pitch:.2} }}"
+            )),
+        );
+        let mut job = Job::prepare_with_camera(&options(Some(subset.clone()), Some(64.1), Some(65.1), w, h), &file)
+            .expect("prepare_with_camera");
+        let pose = job.pose_at(64.1).expect("a keyframed job");
+        let b = job.boxes_at(64.1);
+        let v = b.iter().find(|b| b.vehicle_id == 1).expect("vehicle 1 at 64.1");
+        let predicted = project(&pose, w as f64, h as f64, [v.at.x, v.at.y, 0.8]);
+        let frame = job.render_at(64.1).unwrap();
+        let empty = job.render_empty().unwrap();
+        let got = centroid(&frame, &empty, w as usize, h as usize);
+        let err = (got.0 - predicted.0).hypot(got.1 - predicted.1);
+        println!(
+            "gate8 yaw {yaw} pitch {pitch}: placed ({:.3}, {:.3}); project ({:.2}, {:.2}); centroid ({:.2}, {:.2}); error {err:.2} px",
+            v.at.x, v.at.y, predicted.0, predicted.1, got.0, got.1
+        );
+        close2(predicted, want, 0.1, "the prediction");
+        assert!(err <= 6.0, "centroid error {err:.2} px > 6");
+    }
+}
+
+#[test]
+#[ignore = "needs the fixture and the GPU"]
+fn gate9_old_lines_frame_the_same_ground() {
+    let (w, h) = (1920usize, 1080usize);
+    let mut ortho = Job::prepare(&options(None, None, None, w as u32, h as u32)).unwrap();
+    let fit = *ortho.camera();
+    let a = ortho.render_empty().unwrap();
+    let from = ortho.clock.from;
+    drop(ortho);
+    let line = Keyframe {
+        t: from,
+        at: At::Centre(fit.cx, fit.cy),
+        height_m: h as f64 * fit.k,
+        yaw_deg: 0.0,
+        pitch_deg: 90.0,
+    }
+    .format();
+    println!("gate9 line: {line}");
+    let file = write_camera("gate9.toml", &one(&line));
+    let mut persp = Job::prepare_with_camera(&options(None, None, None, w as u32, h as u32), &file).unwrap();
+    let b = persp.render_empty().unwrap();
+    let px = |f: &[u8], i: usize, j: usize| {
+        let o = (j * w + i) * 4;
+        [f[o], f[o + 1], f[o + 2]]
+    };
+    let (mut differ, mut off_edge) = (0usize, 0usize);
+    for j in 0..h {
+        for i in 0..w {
+            if px(&a, i, j) == px(&b, i, j) {
+                continue;
+            }
+            differ += 1;
+            let (mut road, mut bg) = (false, false);
+            for jj in j.saturating_sub(1)..=(j + 1).min(h - 1) {
+                for ii in i.saturating_sub(1)..=(i + 1).min(w - 1) {
+                    let c = px(&a, ii, jj);
+                    road |= c == scene::ROAD;
+                    bg |= c == scene::BACKGROUND;
+                }
+            }
+            if !(road && bg) {
+                off_edge += 1;
+            }
+        }
+    }
+    let frac = differ as f64 / (w * h) as f64;
+    println!(
+        "gate9: {differ} pixels differ ({:.3} % of the frame), {off_edge} not on a road edge",
+        100.0 * frac
+    );
+    assert_eq!(off_edge, 0, "a differing pixel off a road edge");
+    assert!(frac <= 0.02, "{:.3} % > 2 %", 100.0 * frac);
 }
