@@ -7,6 +7,8 @@
 # and python3.
 # Gate 5 is recorded by hand in specs/reviews/vis-001.md. The human check is Phase 1's
 # gate 6 and Phase 2's gate 12.
+# Phase 3 (view): gate 1's reference comparison is below; gates 2 (view) and 4–9 are
+#   cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -78,6 +80,22 @@ if cmp -s "$OUT/default.framemd5" "$OUT/default2.framemd5"; then
     echo "gate2: $(grep -vc '^#' "$OUT/default.framemd5") frame hashes equal"
 else
     fail "gate2 frame hashes differ"
+fi
+
+# Phase 3 gate 1 — the default render's frames equal the 8eb9052 reference's, when the
+# reference hash file is present (built as vis-001 Phase 3 gate 1 says, then kept).
+REF="$ROOT/scratch/ref-8eb9052.framemd5"
+if [ -f "$REF" ]; then
+    python3 - "$REF" "$OUT/default.framemd5" <<'PY' || fail "phase3 gate1 frames differ from the reference"
+import sys
+a = [l for l in open(sys.argv[1]) if not l.startswith("#")]
+b = [l for l in open(sys.argv[2]) if not l.startswith("#")]
+eq = sum(x == y for x, y in zip(a, b))
+print(f"phase3 gate1: {eq} of {len(a)} frames equal to the 8eb9052 reference ({len(b)} rendered)")
+assert eq == len(a) == len(b)
+PY
+else
+    echo "phase3 gate1: no $REF, skipped"
 fi
 
 # Gate 4 — input errors: non-zero exit, exactly one stderr line, no progress, no file.
