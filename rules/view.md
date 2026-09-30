@@ -9,9 +9,10 @@ sources:
 covers: >
   The `assimilator-video view` window over a finished run: its CLI and checks, the
   wall-clock view clock, the camera (pan, zoom, centre bound), picking and following,
-  the readout, the keyframe line and the hidden `--bench`.
+  the readout, the keyframe line and the hidden `--bench`. The time slider is
+  `rules/slider.md`.
 max_lines: 60
-generated: 2026-09-29
+generated: 2026-09-30
 ---
 
 # View
@@ -27,15 +28,15 @@ generated: 2026-09-29
 - Stdout carries only keyframe lines, one per `K`, flushed. Stderr carries only the
   error line or `--bench`'s JSON. Closing the window exits 0.
 - One Bevy app on the main thread: `DefaultPlugins` with a primary window titled
-  `assimilator-video view`, default present mode (vsync). One exclusive `Update` system
-  per frame: Bevy input → `ViewInput` → `ViewState::frame` → camera, boxes, readout.
+  `assimilator-video view`, vsync. Per frame `track_pointer`, then one exclusive system:
+  Bevy input → `ViewInput` → `ViewState::frame` → camera, boxes, readout, slider.
 
 ## Drawing (`src/draw.rs`, shared with `render`)
 - The road mesh and the box pool (`motion.max_drawn()` boxes) are `render`'s, baked
   relative to the launch fit's centre `(fx, fy)`; the camera sits at
   `(cx − fx, 500, −(cy − fy))`, straight down, with an ortho projection of `W·k × H·k` m
   set every frame from the window's current logical size.
-- The readout is a 14 px white UI text line at the top left.
+- The readout is a 14 px white UI text line at left 16, bottom 30, just above the slider.
 
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
@@ -61,7 +62,7 @@ generated: 2026-09-29
   the higher `vehicle_id`. No box in reach changes nothing.
 - Following sets the centre to the vehicle's placed point each frame it is drawn. When it
   is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops it.
-- Frame order: clock; `Esc`; pan and zoom; click; follow; `K`.
+- Frame order: bar press; clock; scrub; `Esc`; pan and zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`
