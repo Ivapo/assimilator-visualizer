@@ -1,5 +1,8 @@
 //! `assimilator-video render …` (vis-001 §2.4). Stderr carries one JSON progress object
 //! per line and a final `done`, or a single error line; nothing else.
+//!
+//! `assimilator-video view …` (vis-001 §2.9) opens a window over a finished run. Stdout
+//! carries only keyframe lines; stderr only the error line, or `--bench`'s JSON.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -7,6 +10,8 @@ use std::process::ExitCode;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 
+use assimilator_video::run::LoadOptions;
+use assimilator_video::view::{self, ViewOptions};
 use assimilator_video::{Job, RenderOptions, encode};
 
 #[derive(Parser)]
@@ -54,6 +59,36 @@ enum Cmd {
         #[arg(long, default_value_t = 1080)]
         height: u32,
     },
+    /// Open a window over one finished run; `K` prints a keyframe line on stdout.
+    View {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        scenario: String,
+        #[arg(long)]
+        seed: u64,
+        /// Default: <project>/results.db.
+        #[arg(long)]
+        results: Option<PathBuf>,
+        /// Default: fcd/<scenario>_<seed>.parquet beside results.db.
+        #[arg(long)]
+        fcd: Option<PathBuf>,
+        /// Window start, sim seconds. Default: the first FCD time.
+        #[arg(long)]
+        from: Option<f64>,
+        /// Window end, sim seconds. Default: the last FCD time.
+        #[arg(long)]
+        to: Option<f64>,
+        /// Window width, logical pixels.
+        #[arg(long, default_value_t = 1280)]
+        width: u32,
+        /// Window height, logical pixels.
+        #[arg(long, default_value_t = 720)]
+        height: u32,
+        /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
+        #[arg(long, hide = true)]
+        bench: Option<f64>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -81,40 +116,73 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let Cmd::Render {
-        project,
-        scenario,
-        seed,
-        out,
-        results,
-        fcd,
-        from,
-        to,
-        speedup,
-        fps,
-        width,
-        height,
-    } = cli.command;
+    match cli.command {
+        Cmd::Render {
+            project,
+            scenario,
+            seed,
+            out,
+            results,
+            fcd,
+            from,
+            to,
+            speedup,
+            fps,
+            width,
+            height,
+        } => render(
+            RenderOptions {
+                project,
+                scenario,
+                seed,
+                results,
+                fcd,
+                from,
+                to,
+                speedup,
+                fps,
+                width,
+                height,
+            },
+            out,
+        ),
+        // No ffmpeg: `view` encodes nothing.
+        Cmd::View {
+            project,
+            scenario,
+            seed,
+            results,
+            fcd,
+            from,
+            to,
+            width,
+            height,
+            bench,
+        } => view::run(&ViewOptions {
+            load: LoadOptions {
+                project,
+                scenario,
+                seed,
+                results,
+                fcd,
+                from,
+                to,
+            },
+            width,
+            height,
+            bench,
+        }),
+    }
+}
+
+fn render(opts: RenderOptions, out: PathBuf) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
-    };
-    let opts = RenderOptions {
-        project,
-        scenario,
-        seed,
-        results,
-        fcd,
-        from,
-        to,
-        speedup,
-        fps,
-        width,
-        height,
     };
     let mut job = Job::prepare(&opts)?;
 
     let n_frames = job.clock.frames;
-    let mut enc = encode::Encoder::start(&ffmpeg, &out, width, height, fps)?;
+    let mut enc = encode::Encoder::start(&ffmpeg, &out, opts.width, opts.height, opts.fps)?;
     for n in 0..n_frames {
         let rgba = job.render_frame(n)?;
         enc.write_frame(&rgba)?;

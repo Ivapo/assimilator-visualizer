@@ -24,6 +24,12 @@ bevy = { version = "0.19", default-features = false, features = [
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_pbr",
+    # `view` (vis-001 §2.9.7): the window, and the readout's text.
+    "bevy_winit",
+    "bevy_text",
+    "default_font",
+    "bevy_ui",
+    "bevy_ui_render",
 ] }
 arrow-array = "60"
 arrow-schema = "60"

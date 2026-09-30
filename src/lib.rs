@@ -16,6 +16,7 @@ pub mod place;
 pub mod render;
 pub mod run;
 pub mod scene;
+pub mod view;
 
 use std::path::PathBuf;
 

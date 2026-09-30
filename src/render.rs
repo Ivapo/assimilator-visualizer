@@ -19,6 +19,8 @@ use bevy::render::render_resource::{
 };
 use bevy::render::renderer::RenderDevice;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
+use bevy::window::ExitCondition;
+use bevy::winit::WinitPlugin;
 
 use crate::draw;
 use crate::motion::TrackPos;
@@ -60,6 +62,17 @@ impl Renderer {
                     synchronous_pipeline_compilation: true,
                     ..default()
                 })
+                // No window and no OS event loop (vis-001 §2.9.6): `WinitPlugin::build`
+                // creates the event loop, which on macOS panics off the main thread, and
+                // with no primary window the default exit condition would write
+                // `AppExit` on every update.
+                .set(WindowPlugin {
+                    primary_window: None,
+                    exit_condition: ExitCondition::DontExit,
+                    close_when_requested: false,
+                    ..default()
+                })
+                .disable::<WinitPlugin>()
                 .disable::<PipelinedRenderingPlugin>()
                 // Its handler only asks the app to exit, and the loop here is pumped by
                 // hand: keep the default SIGINT behaviour instead.
