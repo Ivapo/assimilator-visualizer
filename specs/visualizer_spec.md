@@ -461,8 +461,7 @@ through `Job::motion_report()`; showing it without the library is roadmap item 6
 `view` opens a window over a **finished** run: the same roads and boxes as `render`,
 moving as §2.8 places them, under a camera and a clock that the user drives. It is a
 tool, not the observable (§2.7 item 3): what it hands on is a keyframe line (§2.9.5),
-which Phase 4's scripted camera will read. Watching a run while the engine runs is out of
-scope: it needs the engine to stream (§1.1).
+which Phase 4's scripted camera will read.
 
 ```
 assimilator-video view --project <dir> --scenario <name> --seed <n>
@@ -471,18 +470,17 @@ assimilator-video view --project <dir> --scenario <name> --seed <n>
 ```
 
 - **Inputs and checks are `render`'s** (§2.1, §2.4): the same files, the same
-  completed-run check, every `link_id` known and every row placed, all before the window
-  opens. An input error prints one `error: …` line on stderr, exits 1, and opens no
-  window. `view` does not need ffmpeg and does not look for it.
-- `--width`×`--height` is the window's size in **logical** pixels (the OS's points), 1280×720
-  by default; any positive size is accepted. On this machine's Retina display a logical
-  pixel is 2×2 physical ones.
+  completed-run check, every `link_id` known and every row placed, all before any Bevy
+  `App` is built. So an input error prints one `error: …` line on stderr, exits 1, and
+  cannot open a window. `view` does not need ffmpeg and does not look for it.
+- `--width`×`--height` is the window's size in **logical** pixels (the OS's points,
+  2×2 physical on this machine's Retina display), 1280×720 by default; any positive size
+  is accepted.
 - **Stdout carries only keyframe lines** (§2.9.5), one per press, flushed. Stderr carries
-  nothing but the error line (Bevy's logger is off, as in `render`), except under the
-  hidden `--bench` flag that records the frame rate (Phase 3, §2.9.8). Closing the window exits 0.
-- **The look is `render`'s**: top-down, orthographic, north up, the same colours, strips,
-  boxes and depth lift (§2.3). 3D and a tilted camera wait for the city phase (§2.7
-  item 4).
+  only the error line (Bevy's logger is off, as in `render`), or the hidden `--bench`
+  flag's JSON (Phase 3). Closing the window exits 0.
+- **The look is `render`'s** (§2.3): top-down, orthographic, north up. 3D and a tilted
+  camera wait for the city phase (§2.7 item 4).
 
 #### 2.9.1 The view clock: wall-clock driven
 
@@ -497,8 +495,7 @@ time, because it has to keep up with a person.
   restarts at `from`.
 - **Speed** is a ladder of powers of two, `s` ∈ {1/8, 1/4, 1/2, 1, 2, 4, 8, 16, 32, 64}.
   `+` doubles it and `−` halves it, and each stops at its end of the ladder. `+` is
-  the `=` key with or without Shift, or keypad `+`; `−` is `-` or keypad `−`. At 64× the
-  fixture's 290 s play in about 4.5 s; at 1/8× one FCD second lasts 8 s.
+  the `=` key with or without Shift, or keypad `+`; `−` is `-` or keypad `−`.
 - **Step** pauses and moves `t` by a fixed amount, one per key press (held keys do not
   repeat):
   - `←`/`→`: by exactly `1/30` s of sim time, one frame of `render` at its defaults
@@ -507,8 +504,7 @@ time, because it has to keep up with a person.
   - `Shift+←`/`Shift+→`: to the previous or next FCD sample, the latest snapshot time
     below `t − 1e-6` or the earliest above `t + 1e-6` (§2.4's epsilon), where the data is
     exact. Past the first or last snapshot `t` does not move.
-- Frames are drawn at `t` with `boxes_at(t)` (§2.8): the same positions `render` draws
-  at that time.
+- Frames are drawn with `boxes_at(t)` (§2.8), the positions `render` draws at `t`.
 
 #### 2.9.2 The view camera
 
@@ -516,36 +512,43 @@ The camera is a centre `(cx, cy)` in world metres and a zoom `k` in metres per l
 pixel, over a window `W × H` logical pixels. A cursor at `(px, py)` (logical, origin top
 left, `y` down) is over the world point
 `(cx + (px − W/2)·k, cy − (py − H/2)·k)`.
-- **Start:** `render`'s fit (Phase 1 "Camera"), at the window's logical size: the
-  strips' bounding box plus 20 m, so the whole network shows. Its zoom is `k_fit`.
-- **Pan:** a left-button drag by `(dx, dy)` logical pixels moves the centre by
-  `(−dx·k, +dy·k)`, so the world point under the cursor stays under it. `W`, `A`, `S`, `D`
-  pan north, west, south and east at half the window's width per second of real time,
-  `0.5·W·k` metres per second, the same on-screen speed at any zoom.
+- **Start:** `render`'s fit (Phase 1 "Camera"), at the window's logical size at launch:
+  the strips' bounding box plus 20 m, so the whole network shows. Its zoom is `k_fit`.
+  `k_fit`, `k_max` and the fitted rectangle are fixed at launch; a resize does not
+  change them.
+- **Pan:** a left-button drag by `(dx, dy)` logical pixels, measured from the press,
+  moves the centre by `(−dx·k, +dy·k)` from where it was at the press, so the world
+  point under the cursor stays under it. `W`, `A`, `S`, `D` pan north, west, south and
+  east at half the window's width per second of real time, `0.5·W·k` metres per second
+  (the same on-screen speed at any zoom), over the same capped `Δ` as the clock (§2.9.1).
 - **Zoom:** a scroll of `n` lines sets `k ← clamp(k · 1.1^(−n), k_min, k_max)`, scrolling
   up to zoom in. A trackpad's pixel scroll counts 20 pixels as a line. The world point
   under the cursor stays under it: `c ← p + (c − p)·k′/k`. The limits:
   - `k_min` = 0.02 m per logical pixel, so a 4.5 m car is 225 logical pixels long;
   - `k_max` = 2·`k_fit`, so the network can shrink to half the window and no further.
-- **Click or drag:** a left-button press and release with the cursor moved less than 4
-  logical pixels in all is a click (§2.9.3); anything more is a drag.
+- **Click or drag:** a press becomes a drag the first frame the cursor is 4 logical
+  pixels or more from where it was pressed (net distance, not path length); from then
+  until release the centre follows the pan rule above. A press released without
+  becoming a drag is a click (§2.9.3), and the camera did not move during it.
 - **Centre bound:** the centre is clamped to the fitted rectangle (the strips' bounding
   box plus 20 m), so the network cannot be panned out of sight. Where the clamp applies,
   it wins over keeping the point under the cursor.
 
 `k` and the centre are the whole camera. The window is drawn at its physical resolution,
 and Bevy's orthographic projection is set each frame to `W·k × H·k` metres, so a resize
-keeps the centre and the zoom and shows more or less around them.
+keeps the centre and the zoom and shows more or less around them. The road mesh is baked
+relative to the fit's centre `(fx, fy)` (`src/render.rs:road_mesh`: world `(x, y)` → Bevy
+`(x − fx, ·, −(y − fy))`), so the camera sits at `(cx − fx, ·, −(cy − fy))`.
 
 #### 2.9.3 Picking and following a vehicle
 
 **A click picks** the vehicle drawn at `t` whose box is nearest the cursor:
-- the distance is from the cursor to the box's footprint, the `length × 1.8 m` rectangle
-  at its heading (Phase 1 "Vehicles"), in logical pixels: 0 inside it;
-- the nearest box within **8 logical pixels** is picked. On a tie, including a cursor
-  inside two overlapping boxes, the higher `vehicle_id` wins: it is the box drawn on top
-  (§2.3);
-- a click with no box within 8 pixels changes nothing.
+- the distance is from the world point under the cursor to the box's footprint, the
+  `length × 1.8 m` rectangle at its heading (Phase 1 "Vehicles"): 0 inside it;
+- the nearest box within **8 logical pixels**, `8·k` m, is picked. On a tie, including a
+  cursor inside two overlapping boxes, the higher `vehicle_id` wins: it is the box drawn
+  on top (§2.3);
+- a click with no box within 8 pixels changes nothing, including a follow in progress.
 
 **Following** a vehicle `v` sets the centre to `v`'s placed point in every frame where it
 is drawn, after `t` has moved, so the box stays at the window's centre.
@@ -559,8 +562,8 @@ is drawn, after `t` has moved, so the box stays at the window's centre.
 #### 2.9.4 The readout
 
 One small line of text in the window's top-left corner shows `t` (to 0.01 s, so each
-1/30 s step shows), the window `[from, to]`, the speed, playing or paused, and the vehicle followed, if any, with
-"(not drawn)" when §2.9.3's hold applies. For example:
+1/30 s step shows), the window `[from, to]`, the speed, playing or paused, and the
+vehicle followed, if any, with "(not drawn)" when §2.9.3's hold applies. For example:
 `t 64.10 s [9.1–299.1]  ×2  paused  following 103`. It is drawn on the window and never
 enters a keyframe or a `render` frame.
 
@@ -576,47 +579,46 @@ file can hold the lines verbatim as an array:
 
 - `t` is the sim time in seconds, 3 decimals.
 - `x`, `y` are the centre in world metres (the network's frame, not the camera's), 2
-  decimals. While following, `follow` (the `vehicle_id`) replaces them, because the
-  centre is then the vehicle's placed point at `t`, whether or not the follow is on hold.
-- `height_m` is the zoom as the visible height in metres, `H·k`, 2 decimals. The
-  visible height, not `k`, because it does not depend on the window's size or on the
-  resolution a later `render` uses.
+  decimals.
+- `follow` (the `vehicle_id`) replaces `x`, `y` while following **and** the vehicle is
+  drawn at `t`. The line then means: the centre is that vehicle's placed point at `t`
+  (§2.8). While the follow is on hold (§2.9.3) the vehicle has no placed point at `t`, so
+  `K` prints the held centre as `x`, `y`: the line is always the camera on screen.
+- `height_m` is the zoom as the visible height in metres, `H·k`, 2 decimals. It fixes
+  the vertical extent only; the width follows from the aspect of whatever displays it. It
+  is the height, not `k`, so it does not depend on the window's size or on the resolution
+  a later `render` uses.
+- Numbers are written by Rust's `format!("{:.N}")` (the exact binary value, rounded to
+  nearest, ties to even). A value that rounds to zero from below prints as `-0.00`, which
+  is valid TOML and parses to 0.
 - Keys come in exactly this order, separated by `, `, with one space inside each brace.
 
 It is **minimal on purpose**: a time and a 2D camera, nothing about easing, rotation,
-tilt or duration. Phase 4 adds what its scripted moves need as new keys, and decides the
-file that holds the lines; Phase 3 does not design that file. `view` also parses its own
-line, for the round-trip gate: it accepts exactly the two forms above and rejects anything
-else.
+tilt or duration. Phase 4 decides the file that holds the lines (for example as the
+elements of a TOML array, a comma after each), what a `t` outside its render's window
+means, and adds what its scripted moves need as new keys; Phase 3 designs none of that.
+`view` also parses its own line, for the round-trip gate: it accepts exactly the two forms
+above and rejects anything else.
 
 #### 2.9.6 Sharing code with `render`, whose output does not change
 
-`view` reuses reading (§2.1), placement (§2.2), motion (`Job::boxes_at`, §2.8) and
-drawing. Only the loop around them differs: `render` pumps a headless app with a fixed
-clock, `view` runs a windowed one with the clock and camera of §2.9.1–§2.9.3.
-- **Loading** moves out of `Job::prepare` into one function both commands call, with the
-  checks in the same order (`rules/inputs.md`). `Job` keeps its public fields and methods,
-  so `tests/gates.rs` compiles unedited.
-- **Drawing** moves out of `src/render.rs` into a module both use: the road mesh, the box
-  pool and each box's transform, material and depth lift, and the camera's fixed parts
-  (straight down, north up, MSAA ×4, no tonemapping or dither, the clear colour). The
-  formulas are moved, not rewritten.
+`view` reuses reading (§2.1), placement (§2.2), motion (§2.8) and drawing; only the loop
+around them differs. The Phase 3 scope (§4) names the modules.
+- **Loading and drawing are moved, not rewritten,** so `render`'s frames cannot change.
+  `tests/gates.rs` compiles unedited: every public path it names stays where it is or is
+  re-exported there (`Job`, its fields and methods, `RenderOptions`, `inputs`,
+  `fcd::{self, Row}`, `place::Placement`, `motion::{How, Piece}`, `render::VehicleBox`).
 - **`render` stays headless.** With the windowing feature on, `DefaultPlugins` includes
   `WinitPlugin`, whose `build` creates the OS event loop: on macOS that panics off the
-  main thread, and `tests/gates.rs` builds a `Job` on test threads. A second event loop in
-  one process also panics. So `Renderer::new` disables `WinitPlugin` and sets
-  `WindowPlugin { primary_window: None, … }`. `render` opens no window and runs where it
-  ran before.
-- **The check is `render`'s frames:** the default render built after Phase 3 gives the
-  same decoded frames, hash for hash, as the same render built at `8eb9052` (Phase 2
-  shipped), and Phase 1–2's gates still pass (Phase 3 gate 1).
+  main thread, and libtest runs every test on a thread of its own, even with
+  `--test-threads=1`. A second event loop in one process also panics. So `render`
+  disables `WinitPlugin` and creates no window (bevy_winit 0.19.1, `WinitPlugin::build`).
 - **The input → state logic is separate from the window.** The camera, the clock, picking,
-  following and the keyframe line are plain Rust with no Bevy window types: a frame's input
-  (keys pressed, keys held, cursor, button press and release, scroll, window size, real
-  `Δ`) goes in, and the new state comes out. The windowed app only translates Bevy's input
-  into that struct and the state into a camera transform, a projection, the boxes and the
-  readout. So tests drive the state with scripted input on the fixture, with no window and
-  no GPU.
+  following and the keyframe line are plain Rust with no Bevy types: a frame's input goes
+  in, and the new state comes out. The windowed app only translates Bevy's input into that
+  struct and the state into a camera transform, a projection, the boxes and the readout.
+  So tests drive the state with scripted input on the fixture, with no window and no GPU:
+  the boxes come from the loaded run's `boxes_at(t)`, which needs no `Renderer`.
 
 #### 2.9.7 Build cost
 
@@ -630,17 +632,19 @@ already has). The readout's text adds `bevy_text`, `default_font`, `bevy_ui` and
 | `bevy_winit` | 307 | 310, 306 s | 2 060 s | 1.3 GB, 5.0 GB |
 | + `bevy_text`, `default_font`, `bevy_ui`, `bevy_ui_render` | 360 | 605, 448 s | 2 740 s | 1.6 GB, 6.3 GB |
 
-- **The window alone costs almost nothing:** no change in wall time, +23 crates,
-  +0.1 GB release and +0.3 GB in all.
-- **The readout's text is most of the cost:** +53 crates (font shaping and the UI
-  renderer), +0.3 GB release and +1.3 GB in all, and about a third more CPU time, each
-  over the window alone. Its wall time was not measured cleanly: other sessions were
-  compiling (load average 10–50 during these builds), and the two runs differ by 157 s.
-  The base's three runs spread 40 s under the same conditions.
-- Text is kept (§2.9.8, decision 1). The alternative was the time in the window's title
-  bar, which costs nothing and is not drawn on the window.
-- Measured on a throwaway copy of the repo with its own `target/`, deleted afterwards;
-  nothing was committed. The method is in `specs/reviews/vis-001.md`.
+- The window alone costs almost nothing; the readout's text (font shaping and the UI
+  renderer) is most of the cost. Text wall times are not clean: other sessions were
+  compiling (load average 10–50), and the two runs differ by 157 s where the base's three
+  spread 40 s. Text is kept (§2.9.8, decision 1); the alternative was the window's title
+  bar, which costs nothing.
+- **What `target/` becomes.** The working `target/` is 5.6 GB (2026-09-29). A feature
+  change rebuilds most Bevy crates under new hashes and cargo keeps the old ones, so
+  without a clean it grows to about 12 GB (5.6 + 6.3). The build runs `cargo clean` once
+  after the `Cargo.toml` change, which brings it to about 6.3 GB plus incremental growth.
+  Gate 1's reference build adds about 1.2 GB in `scratch/`, deleted after the gate. With
+  about 100 GB free, none of this is gated.
+- Measured on a throwaway copy with its own `target/`, deleted afterwards; the method is
+  in `specs/reviews/vis-001.md`.
 
 `x11` and `wayland` are Linux-only winit back ends and compile nothing here; a Linux
 build needs one of them, which is roadmap item 6's Linux build check.
@@ -650,15 +654,11 @@ build needs one of them, which is roadmap item 6's Linux build check.
 Decided by the user, 2026-09-29, on the Phase 3 draft:
 1. **The readout is on-screen text**, at §2.9.7's cost, because roadmap item 5's HUD
    (clock, legend, chart) needs the same Bevy features in `render` anyway.
-2. **The frame rate is recorded, not gated.** The predicted median of 16.67 ms is the
-   display's vsync, so a gate on it would measure the display, not `view`. And this
-   machine runs at load average 50–75 when other sessions compile, which would make a
-   timing gate flaky. The hidden `--bench` flag and its JSON stay, so the numbers are
-   recorded at close-out.
-3. **Steps:** `←`/`→` step 1/30 s, and `Shift+←`/`Shift+→` step one FCD sample
-   (§2.9.1), as drafted.
-4. **Follow:** when the followed vehicle stops being drawn, the camera holds and the
-   follow stays armed (§2.9.3), as drafted.
+2. **The frame rate is recorded, not gated.** The predicted 16.67 ms median is the
+   display's vsync, so a gate would measure the display, not `view`; and load averages
+   of 50–75 while other sessions compile would make it flaky. `--bench` stays to record it.
+3. **Steps** are 1/30 s, and one FCD sample with Shift (§2.9.1), as drafted.
+4. **Follow** holds and stays armed when the vehicle is not drawn (§2.9.3), as drafted.
 
 ## 3. Open questions
 
@@ -1151,43 +1151,46 @@ the user's hands-on check (gate 11) decides whether a time slider is needed (OQ-
 before Phase 4 relies on it. It is also a check on Phases 1–2 that a video cannot give:
 pausing on any frame and following one vehicle through a junction.*
 
-Drafted 2026-09-29; the design is §2.9. Phase 3 is strictly after Phase 2: it reuses
-Phase 2's motion unchanged and adds a second command beside `render`.
+Drafted 2026-09-29; the design is §2.9. Phase 3 is strictly after Phase 2, whose motion
+it reuses unchanged.
 
 - **Scope:**
   - **Loading (`src/lib.rs`, or a new `src/run.rs`).** The part of `Job::prepare` from
     the project to the built tracks becomes one function, called by `Job::prepare` and by
     `view`, with the checks in `rules/inputs.md`'s order. It returns the window
     `[from, to]`, the FCD, the placed rows, the placement, the motion and the strips.
-    `Job` keeps its public fields and methods; `tests/gates.rs` is not edited.
-    `boxes_at(t)` becomes callable without a `Renderer`, and `Job::boxes_at` calls it.
+    `tests/gates.rs` is not edited (§2.9.6). What it returns has a `boxes_at(t)` that
+    needs no `Renderer`; `Job::boxes_at` calls it, and gates 4–9 use it.
   - **Drawing (`src/draw.rs`, new).** Moved, not rewritten, from `src/render.rs`: the road
     mesh, the box pool, a box's transform (translation, yaw, scale and the rank lift),
-    its speed material, and the camera's fixed components (§2.9.6). `Renderer` calls
-    them.
+    its speed material, and the camera's fixed parts (straight down, north up, MSAA ×4, no
+    tonemapping or dither, the clear colour). `Renderer` calls them.
   - **`render` stays headless (`src/render.rs`).** `Renderer::new` disables
     `WinitPlugin` and sets `WindowPlugin { primary_window: None, exit_condition:
-    DontExit, close_when_requested: false }` (§2.9.6).
+    DontExit, close_when_requested: false, ..default() }` (§2.9.6). With `primary_window:
+    None` and the default `OnAllClosed`, Bevy would exit on the first update.
   - **View state (`src/view/state.rs`, new; no Bevy window types).**
     - `ViewInput`: for one frame, the keys pressed and the keys held (space, `+`, `−`,
       `←`, `→`, Shift, `W A S D`, `Esc`, `K`), the cursor in logical pixels, left-button
       press and release, scroll in lines or pixels, the window's logical size, and the
       real `Δ`.
-    - `ViewState`: the clock (§2.9.1), the camera and follow (§2.9.2–§2.9.3), and
-      `fn frame(&mut self, input, boxes_at) -> Option<String>`, which applies one frame of
-      input in this order — clock, then pan and zoom, then click, then follow — and returns
-      a keyframe line when `K` was pressed.
+    - `ViewState::new(from, to, snapshot times, fit)`, where `fit` is the launch fit
+      (its centre, `k_fit` and the fitted rectangle) and the snapshot times are the
+      FCD's, including one before `from`; its state is §2.9.1–§2.9.2's start.
+    - `fn frame(&mut self, input, boxes_at) -> Option<String>` applies one frame of input
+      in this order: clock; `Esc`; pan and zoom; click; follow; then `K`, whose line
+      (§2.9.5) is returned and describes the state after the frame.
     - `ViewState::readout()`, the text of §2.9.4, so the window only displays it.
-    - `pick(boxes, cursor, k)` (§2.9.3), and the keyframe line's `format` and `parse`
-      (§2.9.5).
+    - `pick(boxes, world point, k)` (§2.9.3), and the keyframe line's `format` and
+      `parse` (§2.9.5).
   - **The window (`src/view/mod.rs`, new).** A Bevy app with `DefaultPlugins` and a
     primary window of `--width`×`--height` logical pixels, titled `assimilator-video view`.
     Each frame it builds a `ViewInput` from Bevy's input, calls `ViewState::frame`, prints
     a returned line to stdout and flushes, sets the camera's transform and projection,
     fills the box pool from `boxes_at(t)` through `src/draw.rs`, and sets the readout
     (§2.9.4). Present mode is Bevy's default, vsync on.
-    - A hidden `--bench <s>` flag, to record the frame rate at close-out (§2.9.8): it starts at `t` = 140 s playing at
-      2×, measures real frame times for `s` seconds after 3 s of warm-up, prints one JSON
+    - A hidden `--bench <s>` flag, to record the frame rate at close-out (§2.9.8): it
+      starts at `t` = 140 s playing at 2×, measures real frame times for `s` seconds after 3 s of warm-up, prints one JSON
       object on stderr (`frames`, `mean_fps`, `median_ms`, `p99_ms`, `worst_ms`) and
       exits 0. It is not in `--help`.
   - **The CLI (`src/main.rs`).** A `view` subcommand (§2.9). It does not look for ffmpeg.
@@ -1207,29 +1210,40 @@ Phase 2's motion unchanged and adds a second command beside `render`.
   - **`render` is unchanged (Phase 1–2 gates):**
   1. **Same frames.** The default render built on the Phase 3 branch and the default
      render built at `8eb9052` give equal `framemd5` hashes, run on this machine the same
-     day. Prediction: 8700 of 8700 equal. `scripts/gates.sh` (gates 1, 2, 4) and
-     `cargo test --release --test gates -- --ignored` (all of it: Phase 2 gates 3 and
-     6–11, Phase 1 gate 7, the determinism check) pass with Phase 2's recorded numbers, and
-     `tests/gates.rs` is not edited. Those tests build a `Job` off the main thread, so
-     they also show that `render` creates no event loop.
+     day. Prediction: 8700 of 8700 equal.
+     - **The reference:** `git archive 8eb9052` into `scratch/ref-8eb9052/`, built there
+       release-only with its own `CARGO_TARGET_DIR` (about 1.2 GB, §2.9.7), run with
+       `render`'s defaults on the fixture, hashed with `ffmpeg -f framemd5` into
+       `scratch/ref-8eb9052.framemd5`; the build is then deleted. `scripts/gates.sh`
+       rewrites `scratch/out/default.framemd5` on every run, so the existing file is not
+       the reference.
+     - `scripts/gates.sh` (gates 1, 2, 4) and `cargo test --release --test gates --
+       --ignored --test-threads=1` (all of it: Phase 2 gates 3 and 6–11, Phase 1 gate 7,
+       the determinism check) pass with Phase 2's recorded numbers, and `tests/gates.rs`
+       is not edited. Those tests build a `Job` on libtest's threads, so with
+       `bevy_winit` on they also show that `render` creates no event loop.
+     - It runs twice: on the loading-and-drawing commit, and again after the `Cargo.toml`
+       feature change, the only run that exercises `WinitPlugin`.
   2. **Input errors** (Phase 1 gate 4) as before for `render`. For `view`: a missing FCD
-     and an unknown `link_id` each exit 1 with one stderr line, nothing on stdout, and no
-     window. With ffmpeg off `PATH`, `view`'s missing-FCD error is still the FCD's.
+     and an unknown `link_id` each exit 1 with one stderr line and nothing on stdout. No
+     window is possible: the checks run before any `App` is built (§2.9), which the code
+     shows. With ffmpeg off `PATH`, `view`'s missing-FCD error is still the FCD's.
   3. **Build cost** (Phase 1 gate 5), clean builds with sccache off, recorded with the
-     load average, with no pass or fail, as in Phase 1. Predictions, from §2.9.7: 360 crates
-     in the release build; `target/` about 1.6 GB after the release build and about 6.3 GB
-     with the debug build added. Wall time is recorded and not predicted: the drafting
-     builds ran under other sessions' load and could not pin it down (§2.9.7).
+     load average, with no pass or fail. Predictions, from §2.9.7: 360 crates in the
+     release build; `target/` about 1.6 GB after it and about 6.3 GB with the debug build
+     added. Wall time is recorded, not predicted (other sessions' load, §2.9.7).
   - **The view state, headless:**
   4. **Pan.** From the fit, a drag of (+100, −40) logical pixels moves the centre by
      (−100·`k_fit`, −40·`k_fit`) = (−172.22, −68.89) m, and the world point under the
      cursor at release is the one under it at press. Holding `D` for frames of real
      `Δ` summing to 0.5 s moves `cx` by `0.5 · 0.5 · 1280 · k_fit` = 551.11 m, before the
      centre bound. A drag that would pass the fitted rectangle stops at its edge.
-  5. **Zoom.** With the cursor at (1000, 200), 5 lines up give `k = k_fit · 1.1^−5` and
-     leave the world point under the cursor where it was. 100 lines up give exactly
-     `k_min` = 0.02, and 100 lines down exactly `k_max` = 3.4444, with the same fixed
-     point. 40 trackpad pixels equal 2 lines.
+  5. **Zoom.** With the cursor at (800, 300), over world (575.56, 403.33), 5 lines up give
+     `k = k_fit · 1.1^−5` and leave the world point under the cursor where it was. From
+     the fit, 100 lines up give exactly `k_min` = 0.02 (`k_fit · 1.1^−100` ≈ 1.25e-4); from
+     there, 100 lines down give exactly `k_max` = 2·`k_fit` = 3.4444, with the same fixed
+     point and the centre at (24.44, 196.67), inside the fitted rectangle. 40 trackpad
+     pixels equal 2 lines.
   6. **Clock.**
      - Playing at 1× with `Δ` = 1/60 s for 600 frames moves `t` by 10 s. One frame with
        `Δ` = 0.5 s moves it by 0.1 s (the cap).
@@ -1247,8 +1261,8 @@ Phase 2's motion unchanged and adds a second command beside `render`.
      point (Phase 2 gate 3's junction case) picks vehicle 1 at `k_fit` and at `k_min`.
   8. **Follow.** Pick vehicle 1 at `t` = 64.1 s, then play at 1× with `Δ` = 1/60 s,
      zooming in 10 lines along the way, until `t` is past vehicle 1's last row (147.1 s).
-     In every frame where it is drawn, the centre equals its placed point from
-     `Job::boxes_at(t)`. In every frame after, the centre is its last drawn point and
+     In every frame where it is drawn, the centre equals its placed point from the loaded
+     run's `boxes_at(t)` (which `Job::boxes_at` calls, so no `Renderer` is built). In every frame after, the centre is its last drawn point and
      `readout()` says "(not drawn)".
      Stepping back into its interval re-centres on it. A drag, a `WASD` pan and `Esc` each
      stop following. The centre bound never applies while following (every placed point is
@@ -1257,14 +1271,15 @@ Phase 2's motion unchanged and adds a second command beside `render`.
      720-pixel window prints exactly
      `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }`, and following vehicle
      103 at `t` = 200 and `k` = 1/12 prints `{ t = 200.000, follow = 103, height_m = 60.00 }`.
-     For the state at every frame of gates 4–8, its line satisfies
-     `format(parse(line)) == line`, and `parse` gives back `t`, the centre or the vehicle, and `H·k` to within half the last decimal.
-     `parse` rejects a line with a missing key, an extra key, keys out of
-     order, or both `x` and `follow`.
+     In gate 8's hold (vehicle 1 not drawn), `K` prints the `x`, `y` form with the held
+     centre, not `follow`. For the state at every frame of gates 4–8, its line satisfies
+     `format(parse(line)) == line`, and `parse` gives back `t`, the centre or the vehicle,
+     and `H·k` to within half the last decimal (the rounding is the only loss). `parse`
+     rejects a line with a missing key, an extra key, keys out of order, or both `x` and
+     `follow`.
   - **Frame rate:**
-  10. *Recorded, not gated (user, 2026-09-29, §2.9.8 decision 2).* The measurement is
-      under "Not predicted, and so not gated" below; the number is kept so that gate 11
-      and the references to it do not move.
+  10. *Recorded, not gated (§2.9.8 decision 2);* see "Not predicted" below. The number
+      is kept so that gate 11 does not move.
   - **The user's check:**
   11. **The user uses `view`** on the fixture and confirms it is fit to find and frame
       shots. What to try:
@@ -1284,24 +1299,19 @@ Phase 2's motion unchanged and adds a second command beside `render`.
       iteration, not a spec change (§2.6), unless it changes the keyframe line.
 - **Not predicted, and so not gated:**
   - **The frame rate** (§2.9.8, decision 2). At close-out, `view --bench 20` runs on the
-    fixture at the default window (1280×720 logical, 2560×1440 physical): full zoom-out,
-    playing at 2× from `t` = 140 s (up to 92 boxes drawn), 3 s of warm-up, then 20 s
-    measured. Its JSON (frames, mean fps, median, p99 and worst frame) is recorded with
-    the load average.
-    - What the drafting prototype measured, for comparison, not as a prediction: median
-      frame 16.67 ms, p99 ≤ 18.6 ms, mean 60.0 fps in three runs. That is the display's
-      60 Hz refresh, which held even with vsync off (Metal), so it measures the display.
-      The first of four runs had one 2.9 s stall, which took its mean to 52.2 fps; the
-      other three had none, and the cause was not measured (`specs/reviews/vis-001.md`).
-    - `boxes_at` took 0.07–0.09 ms per frame (median) and 0.26 ms at most, so the CPU
-      side has about 60× headroom at 60 Hz.
+    fixture at the default window, full zoom-out (up to 92 boxes drawn), and its JSON is
+    recorded with the load average.
+    - For comparison, not a prediction: the drafting prototype ran at the display's
+      60 Hz (median 16.67 ms, even with vsync off), with one unexplained 2.9 s stall in
+      four runs, and `boxes_at` at 0.26 ms at most (`specs/reviews/vis-001.md`).
   - frame rates on other machines or displays;
   - the feel of the controls (gate 11);
   - whether macOS itself writes to stderr (the OS, not `view`, would be the writer).
 - **Close-out (standing plan steps, §3 of the methodology):**
   - **Commit plan:** one branch and one push, with commits for the shared loading and
-    drawing (with gate 1 run on it before `view` exists), for `view` and its state, for
-    the tests and gates, and for the close-out.
+    drawing (gate 1's first run), for the `Cargo.toml` features, `view` and its state
+    (`cargo clean` once right after the feature change, §2.9.7; then gate 1's second
+    run), for the tests and gates, and for the close-out.
   - **Reconciliation:**
     - a new `rules/view.md` for §2.9 as built: the CLI, the clock, the camera, picking and
       following, the keyframe line (`rules/render.md` is at its 60-line cap);
@@ -1309,6 +1319,9 @@ Phase 2's motion unchanged and adds a second command beside `render`.
       created, and "Scene" points at `src/draw.rs`; its `sources` gain `src/draw.rs`;
     - `rules/inputs.md`: "Checks before the first frame" says `view` runs the same
       checks without ffmpeg; its `sources` gain the loading module if it is new;
+    - `rules/render.md` (60/60) and `rules/inputs.md` (50/50) are at their caps, so these
+      edits reword to fit, moving detail into `rules/view.md`; `max_lines` is not
+      raised;
     - the README gains the `view` command and its keys;
     - no `CLAUDE.md` stanza change.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
