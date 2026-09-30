@@ -941,6 +941,39 @@ where `(dx, dy)` is the cursor from the press in logical pixels, read from `poin
 default window. The look-at point and `k` do not move: the camera orbits about the
 look-at point. A right press in the slider's hit area starts nothing.
 
+**Ctrl + left-drag is the same orbit** (§2.11.8 k), for a trackpad. A left press with
+Control held is an **orbit press**, and from then on it is a right press in every respect:
+- it orbits and tilts by the rules above until the left button is released; releasing
+  Control mid-drag does not end it, and pressing Control during a left-drag that has
+  already begun (a pan, or a press still under 4 px) does not turn it into an orbit. The
+  mode is fixed at the press;
+- it never pans, picks or scrubs, and it makes no Phase 3 `Press`. A press and release over
+  a box picks nothing and leaves a follow as it was; an orbit does not stop a follow;
+- in the slider's hit area it starts nothing, as a right press does there: no scrub, no
+  orbit, `t` and the clock untouched. The bar owns a plain left press only (§2.10.3);
+- while an orbit is on, a second press of either kind starts nothing.
+
+Control is read as held (`KeyCode::ControlLeft` or `ControlRight`) in the press's frame.
+How macOS reports Control-click was read from the sources at the `Cargo.lock` versions:
+- winit 0.30.13 `src/platform_impl/macos/view.rs`: `mouseDown:`, `rightMouseDown:` and
+  `otherMouseDown:` all go to `mouse_click`, whose button is `mouse_button(event)`,
+  NSEvent's `buttonNumber` (0 → `Left`, 1 → `Right`), with no translation of Control and
+  no `menuForEvent:` override. Control itself comes from `flagsChanged:`, which
+  `update_modifiers` turns into `KeyboardInput` events for `ControlLeft`/`ControlRight`
+  as well as `ModifiersChanged`;
+- bevy_winit 0.19.1 maps the button one to one (`convert_mouse_button` in `converters.rs`), and
+  the key events reach `ButtonInput<KeyCode>`.
+
+So the one step not in these sources is AppKit's: whether a Control-click on a view with no
+context menu reaches `mouseDown:` (button 0) or is re-sent as a secondary click. AppKit's
+context-menu path runs through `menuForEvent:`, which winit's view does not provide, and
+other toolkits on macOS (SDL, GLFW) receive a Control-click as a left button with Control
+and offer right-click emulation as an opt-in, which is the same reading. It arrives as
+**Left + Ctrl**, so that binding is used. If it ever arrives as `Right` instead, right-drag
+already orbits and the binding still works, only through the other path; nothing mis-fires
+either way, because both buttons orbit. Gate 13 confirms it on the user's trackpad. Option
++ left-drag was the fallback had neither been usable, and is not needed.
+
 **Keys, in fixed steps.** Matched by position, like `WASD`, so they sit next to `WASD` on
 any layout; one step per press, held keys do not repeat:
 - `Q` and `E` turn the yaw by −15° and +15°, wrapped;
@@ -983,9 +1016,11 @@ the default pose (§2.11.1):
 **orbit and the `Q E R F` steps**; pan and zoom; click; follow; `K`. The pose is set
 before pan and zoom, which read it.
 
-`ViewInput` gains the right button's press and release and the four keys; it still derives
-`Default`, so every existing script leaves them off. On a trackpad, right-drag is a
-two-finger press and drag; whether it needs a second binding is OQ-11.
+`ViewInput` gains the right button's press and release, Control held, and the four keys;
+it still derives `Default`, so every existing script leaves them off. On a trackpad,
+right-drag is a two-finger press and drag, and Ctrl + left-drag is the one-finger way
+(OQ-11, answered). In the frame order, the bar press (step 2) is a left press without
+Control; an orbit press starts in the orbit step.
 
 #### 2.11.4 The keyframe line and the keyframe file
 
@@ -1147,7 +1182,18 @@ Decided by the user, 2026-09-30, before drafting:
   vehicle. No chase camera.
 
 The keys (`Q E R F`), the rates (0.25°/px, 15°, 5°), `φ` = 45°, the 25° floor, the curve,
-the blends, the pick plane and the face shading are the draft's proposals.
+the blends, the pick plane and the face shading were the draft's proposals.
+
+Decided by the user, 2026-09-30, on the Phase 5 draft, before review round 1:
+- (h) **The numbers are accepted as drafted:** `Q`/`E` ±15°, `R`/`F` 5°, right-drag
+  0.25°/px, `φ` = 45° vertical, the 25° pitch floor. Tuning them after gate 13 is iteration
+  (§2.6), not a spec change.
+- (i) **Box-side shading stays in Phase 5** (§2.11.2): it is needed to judge tilted views.
+- (j) **Keyframes are read with the `toml` crate** (+2 packages, §2.11.6), as drafted.
+- (k) **OQ-11 answered: a second orbit binding.** The user orbits on a MacBook trackpad, so
+  Ctrl + left-drag orbits and tilts exactly as right-drag does (§2.11.3). The sources show
+  it arrives as Left + Ctrl, so that is the binding; Option + left-drag was the fallback
+  and is not used.
 
 ## 3. Open questions
 
@@ -1255,10 +1301,14 @@ the blends, the pick plane and the face shading are the draft's proposals.
   §2.4's defaults, so a flag's meaning does not depend on another flag. *(design call;
   non-blocking; recommendation: keep §2.4's defaults in Phase 5 and decide from Phase 5
   gate 13, where the user renders a file.)*
-- **OQ-11** — Does orbiting need a second binding for a trackpad, for example Ctrl +
+- ~~**OQ-11** — Does orbiting need a second binding for a trackpad, for example Ctrl +
   left-drag? Right-drag on a Mac trackpad is a two-finger press and drag, which may be
   awkward to hold, and the `Q E R F` keys only step. *(design call; deferred by evidence to
-  Phase 5 gate 13, the user's hands-on check; blocks nothing.)*
+  Phase 5 gate 13, the user's hands-on check; blocks nothing.)*~~ **ANSWERED 2026-09-30
+  (user): yes.** The user orbits on a MacBook trackpad. Ctrl + left-drag orbits and tilts
+  exactly as right-drag does; it arrives as Left + Ctrl (winit 0.30.13 and bevy_winit
+  0.19.1 pass the button through untranslated), so no Option fallback. Recorded in
+  §2.11.3 and §2.11.8 (k); gated in Phase 5 gates 11 and 13.
 - **OQ-12** — Should the pitch floor go below 25° for low, near-horizon shots? The floor
   keeps the horizon out of every frame (§2.11.1), because today there is nothing to show
   above it and pan, zoom and pick need a ground point under the cursor. With buildings and
@@ -2054,14 +2104,16 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       §2.4 are unchanged. The ffmpeg check still runs first; the file's checks run inside
       the prepare, before the encoder starts.
   - **`view` (`src/view/state.rs`, `src/view/mod.rs`).**
-    - `ViewInput` gains `right_press`, `right_release` and `Pressed::{q, e, r, f}`.
-      `ViewState` gains `yaw_deg`, `pitch_deg` and an `orbit` (the press's cursor, yaw and
-      pitch).
+    - `ViewInput` gains `right_press`, `right_release`, `Held::ctrl` and
+      `Pressed::{q, e, r, f}`. `ViewState` gains `yaw_deg`, `pitch_deg` and an `orbit`
+      (the press's cursor, yaw and pitch, and which button ends it: right, or left for
+      Ctrl + left, §2.11.3).
     - `ViewState::frame` applies §2.11.3's order. `world` casts the cursor's ray to the
       ground, the click casts it to the 0.80 m plane, and pan, `WASD` and zoom follow
       §2.11.3. `keyframe()` carries the pose.
     - The window sets the camera's `Transform` and `PerspectiveProjection` from the state's
-      pose every frame, reads the right button and `Q E R F` by `KeyCode`, and draws the
+      pose every frame, reads the right button, Control (either side) and `Q E R F` by
+      `KeyCode`, and draws the
       boxes with the shaded mesh and `RANK_LIFT_3D`. The readout and the slider do not
       change.
     - `Fit`, `ViewState::new`, `pick` and every other public signature the tests use stay
@@ -2240,6 +2292,21 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       - a right press in the slider's hit area, at (640, 706), then moved: yaw and pitch
         unchanged. A right press and release over a box picks nothing;
       - following a picked box, an orbit and each key step leave the follow on;
+      - **Ctrl + left-drag** (Control held in the press's frame): a press at (640, 360),
+        moved to (740, 300), gives yaw 335 and pitch 75 exactly, the centre (0, 0) and
+        `k` = 1 exactly, and no `Press`; releasing Control in the next frame while moving
+        on to (740, 300) changes nothing: the orbit goes on to the release. A plain left
+        press at (640, 360) dragged to (740, 300), with Control pressed only after the
+        press, pans: the centre is (−100, −60) and yaw and pitch stay 0 and 90;
+      - Ctrl + left over a box: on the plain state a box (4.5 m, heading 0°) at (0, 0)
+        under (640, 360); a Ctrl press and release there picks nothing (`follow` stays
+        `None`); following it (picked by a plain click), a Ctrl + left orbit leaves the
+        follow on and the centre on the box;
+      - Ctrl + left on the slider: a press at (640, 706), moved to (900, 706), then
+        released: `t` stays 0, no scrub starts, the clock stays paused, and yaw and pitch
+        stay 0 and 90; the same while playing leaves it playing;
+      - during a right-button orbit a Ctrl + left press starts nothing, and the orbit ends
+        on the right release;
       - at yaw 30, pitch 40: a left drag from (640, 360) to (740, 300) moves the centre to
         (−145.222180146317, −33.60236249663467), and the ground point under the cursor is
         (0, 0), the one under the press. 5 scroll lines at (800, 300) give `k` =
@@ -2263,7 +2330,9 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       read as a file with no syntax error.
   - **The user's check:**
   13. **The user flies the camera.** On the fixture:
-      - in `view`: right-drag to orbit and tilt, slowly and fast; `Q`/`E`, `R`/`F`; pan,
+      - in `view`: right-drag and Ctrl + left-drag on the trackpad to orbit and tilt,
+        slowly and fast (Ctrl + left-drag must orbit, never open a menu or pan); a Ctrl +
+        click on a box picks nothing, and on the slider does nothing; `Q`/`E`, `R`/`F`; pan,
         zoom and `WASD` at a tilt, with the point under the cursor staying put; click a box
         at a tilt and follow it through a turn while orbiting; press `K` and read the line;
       - write a keyframe file from `K` lines with at least one hold, one tilt and one
@@ -2275,7 +2344,7 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
 
       And say whether the rates (0.25°/px, 15°, 5°), `φ` = 45°, the 25° floor or the face
       shading should change, which is iteration (§2.6) unless it changes the keyframe line
-      or the pose, and answer OQ-10, OQ-11 and OQ-13.
+      or the pose, and answer OQ-10 and OQ-13.
 - **Not predicted, and so not gated:**
   - the frame rate in perspective: `view --bench 20` at the default window, recorded at
     close-out (Phase 4: 60.00 fps, median 16.67 ms);
