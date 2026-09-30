@@ -711,8 +711,8 @@ At the default 1280×720: `x0 = 16`, `x1 = 1264`, `L = 1248`, `y_bar = 706`, the
   every frame from `ViewInput::size`. `t` does not change; the handle is redrawn at `x(t)`
   in the new geometry. A scrub in progress maps the cursor through the new geometry.
 - **Too small.** With `W < 64` or `H < 64` logical pixels there is no bar: nothing is
-  drawn, no hit area exists, and a scrub in progress ends as on release (§2.10.3). The
-  readout keeps its place.
+  drawn, no hit area exists, and a scrub in progress ends as on release (§2.10.3), with
+  `t` held where the last scrub frame left it. The readout keeps its place.
 - **Over the map.** The bar is drawn over the scene, and the fit (§2.9.2) does not change
   for it, so Phase 3's `k_fit` and gates stand. At the launch fit the hit area covers
   world `y` below about −272 m in the fixture, the south ends of its southern entry links;
@@ -809,6 +809,19 @@ Nothing is measured beforehand, since nothing in the dependency graph moves.
   above the bar carry the time for now.
 - Tick labels, keyboard focus on the bar, and any slider in `render`'s video (the HUD is
   roadmap item 5).
+
+#### 2.10.8 Six calls on the draft (decision, recorded)
+
+Decided by the user, 2026-09-30, on the Phase 4 draft, before review round 1:
+1. **A press on the handle jumps `t` to the cursor**, like a press anywhere on the bar:
+   there is no grab offset (§2.10.3).
+2. **Space, `←` and `→` are ignored** while the button is held on the bar (§2.10.3).
+3. **Scroll over the bar or during a scrub is ignored** (§2.10.3).
+4. **Ticks thin out on long runs**: 1, 5, 10, 15, 30 and 60 min, then 2–24 h (§2.10.4), as
+   drafted.
+5. **The launch fit is not shrunk for the bar**, which may cover the south edge of the map
+   (§2.10.1).
+6. **The close-out adds `rules/slider.md`** rather than raising `rules/view.md`'s cap.
 
 ## 3. Open questions
 
@@ -1512,15 +1525,17 @@ it extends.
   - **The state (`src/view/state.rs`).**
     - `ViewInput` gains `pointer: Option<(f64, f64)>`, the last `CursorMoved` position of
       the frame in logical pixels, not bounded to the window (§2.10.3).
-    - `ViewState` gains the scrub: `Option` of whether the clock was playing at the press.
+    - `ViewState` gains the scrub: `Option` of whether the clock was playing at the press;
+      and `bar()`, the geometry of §2.10.1 for its current `size` (`None` when too small),
+      which the window draws from.
     - `ViewState::frame` applies §2.10.5's order. Steps 5–9 are Phase 3's code, changed
       only so that a bar press makes no `Press` and scroll is ignored per §2.10.3.
     - The existing public API keeps its signatures, so `tests/view.rs` compiles and runs
-      unedited (every `ViewInput` there is built with `..idle()`, and `ViewState` with
-      `new`).
+      unedited: `ViewInput` derives `Default`, which every `ViewInput` there comes from
+      (through `idle()`), so `pointer` is `None`; `ViewState` is built with `new`.
   - **The window (`src/view/mod.rs`).** `input` fills `pointer` from Bevy's
     `CursorMoved` messages for the primary window. At start-up it spawns the track, the
-    handle and a pool of tick nodes as absolutely positioned `bevy_ui` `Node`s with a
+    handle and a pool of tick nodes, grown when a frame needs more ticks, as absolutely positioned `bevy_ui` `Node`s with a
     `BackgroundColor`; each frame it sets their positions and sizes from the state's
     geometry, and hides unused ticks and, when there is no bar, the whole bar (`Display::None`).
     The readout's node moves to `left: 16 px, bottom: 30 px` (§2.10.1). Colours are
@@ -1528,8 +1543,8 @@ it extends.
   - **Unchanged:** `Cargo.toml` and `Cargo.lock` (§2.10.6), the CLI and `--help`, every
     key, the keyframe line, `--bench`, and everything `render` runs.
   - **Tests (`tests/slider.rs`, new).** Gates 4–8 run on constructed windows in plain
-    `cargo test`. Gates 9 and 10 need the fixture and are `#[ignore]`d, like
-    `tests/view.rs`.
+    `cargo test`, except gate 5's round trip over the fixture's snapshot times. That part
+    and gates 9 and 10 need the fixture and are `#[ignore]`d, like `tests/view.rs`.
 - **Exit gate.** On Phase 1's fixture (engine `df8aec0`, urban_grid, baseline, seed 42),
   on the development machine (Apple M3, macOS, Retina display). Gates 4–10 drive
   `ViewState::frame` and the slider functions headless, as Phase 3's gates 4–9 do, at a
@@ -1545,9 +1560,11 @@ it extends.
      --test-threads=1` passes 5 of 5 with Phase 2's printed numbers, and `tests/gates.rs`
      is not edited.
   2. **`view`'s Phase 3 gates.** `tests/view.rs` is not edited, and `cargo test --release
-     --test view -- --ignored --test-threads=1` passes 10 of 10 (Phase 3 gates 2 and 4–9)
-     with the numbers Phase 3 printed. None of its presses or scrolls is in the hit area:
-     all are at `y` ≤ 360 of 720.
+     --test view -- --include-ignored --test-threads=1` (Phase 3's command, in
+     `scripts/gates.sh`) passes 10 of 10 (6 ignored, 4 plain: Phase 3 gates 2 and 4–9 and
+     the gate 11 fixes) with the numbers Phase 3 printed. None of its presses or scrolls is
+     in the hit area: all are in a 1280×720 window at `y` ≤ 371 (gate 8's re-follow after
+     `W`, at 370.67; the rest at ≤ 360), above its top at 692.
   3. **Build cost.** `git diff` of `Cargo.toml` and `Cargo.lock` against the Phase 3
      merge is empty. Prediction: 0 crates added (360 in the release build). The
      incremental release build's wall time is recorded, not predicted.
@@ -1574,8 +1591,8 @@ it extends.
      - press at (640, 706) and move 100 px right, then 100 px up off the bar: the centre
        does not move (0 m, exactly), and `t` follows `x` only (`t(740)` = 174.03846153846155);
      - with the box at (0, −331), under (640, 691), a click at (640, 691) picks it, and a
-       drag from (640, 691) by (+100, 0) pans the centre by −100 m, and keeps panning when
-       the cursor then moves onto the bar;
+       drag from (640, 691) by (+100, 0) pans the centre to (−100, 0) m, and keeps panning
+       when the cursor then moves onto the bar: at (740, 706) the centre is (−100, 15) m;
      - 3 scroll lines at (640, 706), and 3 during a scrub at (640, 300), leave `k` = 1;
        3 lines at (640, 691) zoom to `k` = 1.1^−3.
   8. **Playback across a drag.** On the constructed window, `Δ` = 1/60 s:
@@ -1583,10 +1600,13 @@ it extends.
        92.3076923076923 in every frame, the clock paused, the readout "paused"; release:
        playing, and the next frame gives `t` = 92.32435897435897;
      - paused before the press: paused after the release;
-     - playing, released at (1264, 706): `t` = 300 exactly, and paused;
+     - playing, press at (640, 706), move to (1264, 706) and release there: `t` = 300
+       exactly, and paused;
      - playing, a click at (640, 706): `t` = 150, still playing;
      - during a scrub, space, `←` and `→` change neither `t` nor the resume; one `+` makes
-       the speed 2×.
+       the speed 2×;
+     - playing, press at (400, 706), then a frame at 63×720 (no bar): the scrub ends, `t`
+       stays 92.3076923076923 in that frame, and playing resumes.
   9. **A follow survives a scrub** (fixture). Pick vehicle 1 at `t` = 64.1 s as Phase 3
      gate 7 does, then press on the bar at (400, 706) and drag, one frame per position:
      - at `x` = 400 (`t` = 98.33076923076906): following, drawn, the centre equal to
@@ -1594,7 +1614,7 @@ it extends.
      - at `x` = 900 (`t` = 214.51666666666634, after vehicle 1's last row at 147.1 s):
        still following, "(not drawn)" in the readout, the centre unchanged from the frame
        before;
-     - back at `x` = 400: re-centred on the placed point; after release, still following
+     - back at `x` = 400: re-centred on the placed point; released there, still following
        vehicle 1;
      - every frame's keyframe line passes Phase 3 gate 9's check (round trip, `follow`
        only while drawn).
