@@ -8,5 +8,5 @@
   How each vehicle's FCD rows become a position at any time: Hermite along links, junction spans on the engine's turn paths, lane slides, when a vehicle is drawn, and the motion report.
 - **[render](render.md)** — generated 2026-09-29 · 8 sources · 60/60 lines
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
-- **[view](view.md)** — generated 2026-09-29 · 5 sources · 59/60 lines
+- **[view](view.md)** — generated 2026-09-29 · 5 sources · 60/60 lines
   The `assimilator-video view` window over a finished run: its CLI and checks, the wall-clock view clock, the camera (pan, zoom, centre bound), picking and following, the readout, the keyframe line and the hidden `--bench`.

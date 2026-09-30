@@ -8,6 +8,7 @@ pub mod state;
 use std::io::Write;
 
 use anyhow::{Result, bail};
+use bevy::input::keyboard::Key;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowResolution};
@@ -148,6 +149,14 @@ fn input(world: &mut World) -> ViewInput {
         None => ((1.0, 1.0), None),
     };
     let keys = world.resource::<ButtonInput<KeyCode>>();
+    // Speed keys by their logical character, so `+` works on any layout; the keypad by
+    // position.
+    let chars = world.resource::<ButtonInput<Key>>();
+    let char_pressed = |f: fn(&str) -> bool| {
+        chars
+            .get_just_pressed()
+            .any(|k| matches!(k, Key::Character(c) if f(c)))
+    };
     let mouse = world.resource::<ButtonInput<MouseButton>>();
     let scroll = world.resource::<AccumulatedMouseScroll>();
     let (scroll_lines, scroll_pixels) = match scroll.unit {
@@ -157,8 +166,8 @@ fn input(world: &mut World) -> ViewInput {
     ViewInput {
         pressed: state::Pressed {
             space: keys.just_pressed(KeyCode::Space),
-            plus: keys.any_just_pressed([KeyCode::Equal, KeyCode::NumpadAdd]),
-            minus: keys.any_just_pressed([KeyCode::Minus, KeyCode::NumpadSubtract]),
+            plus: char_pressed(state::is_speed_up) || keys.just_pressed(KeyCode::NumpadAdd),
+            minus: char_pressed(state::is_speed_down) || keys.just_pressed(KeyCode::NumpadSubtract),
             left: keys.just_pressed(KeyCode::ArrowLeft),
             right: keys.just_pressed(KeyCode::ArrowRight),
             esc: keys.just_pressed(KeyCode::Escape),

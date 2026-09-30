@@ -12,7 +12,7 @@ use assimilator_video::place::Placed;
 use assimilator_video::render::VehicleBox;
 use assimilator_video::run::{self, LoadOptions, Run};
 use assimilator_video::view::state::{
-    At, Fit, Follow, K_MIN, Keyframe, ViewInput, ViewState, pick,
+    At, Fit, Follow, K_MIN, Keyframe, ViewInput, ViewState, is_speed_down, is_speed_up, pick,
 };
 
 /// Distances in metres and times in seconds: the state is set by formulas.
@@ -555,6 +555,11 @@ fn gate8_follow() {
                     x0 <= q.0 && q.0 <= x1 && y0 <= q.1 && q.1 <= y1,
                     "placed point in rect"
                 );
+                assert!(
+                    s.readout().ends_with("  following 1 — Esc to stop"),
+                    "{}",
+                    s.readout()
+                );
                 last = Some(q);
                 drawn += 1;
             }
@@ -562,7 +567,12 @@ fn gate8_follow() {
                 assert!(!f.drawn);
                 let l = last.expect("drawn before the hold");
                 assert_eq!((s.cx, s.cy), l, "the camera holds the last centre");
-                assert!(s.readout().contains("(not drawn)"), "{}", s.readout());
+                assert!(
+                    s.readout()
+                        .ends_with("  following 1 (not drawn) — Esc to stop"),
+                    "{}",
+                    s.readout()
+                );
                 assert!(s.keyframe_line().contains(" x = "), "{}", s.keyframe_line());
                 held += 1;
             }
@@ -668,6 +678,70 @@ fn gate8_follow() {
     refollow(&mut s);
     step(&mut s, &run, press(|i| i.pressed.esc = true));
     assert!(s.follow.is_none(), "Esc stops following");
+}
+
+// ── Gate 11 fix: the speed keys by logical character ────────────────────────
+
+/// `+` (Shift+`=` on a US layout, its own key elsewhere) and `=` both double the speed,
+/// `-` halves it, by the character a key types rather than its position. The window maps
+/// `Key::Character` through these; the keypad keys are matched by position.
+#[test]
+fn speed_keys_by_character() {
+    for c in ["+", "="] {
+        assert!(is_speed_up(c), "{c:?} speeds up");
+        assert!(!is_speed_down(c), "{c:?} does not slow down");
+    }
+    assert!(is_speed_down("-"));
+    assert!(!is_speed_up("-"));
+    for c in ["", "k", "K", "0", "*", "_", "−", "++"] {
+        assert!(
+            !is_speed_up(c) && !is_speed_down(c),
+            "{c:?} is not a speed key"
+        );
+    }
+
+    // Pressed `+` goes back up the ladder from 1/8× (the finding: `−` reached 1/8× and
+    // `+` could not return).
+    let mut s = plain_state();
+    let key = |plus: bool, minus: bool| ViewInput {
+        pressed: assimilator_video::view::state::Pressed {
+            plus,
+            minus,
+            ..Default::default()
+        },
+        ..idle()
+    };
+    for _ in 0..3 {
+        s.frame(&key(false, true), |_| vec![]);
+    }
+    assert_eq!(s.speed(), 0.125);
+    for _ in 0..3 {
+        s.frame(&key(true, false), |_| vec![]);
+    }
+    assert_eq!(s.speed(), 1.0);
+}
+
+#[test]
+fn readout_while_following() {
+    let mut s = plain_state();
+    s.t = 64.1;
+    assert_eq!(s.readout(), "t 64.10 s [0.0–300.0]  ×1  paused");
+    s.follow = Some(Follow {
+        vehicle_id: 103,
+        drawn: true,
+    });
+    assert_eq!(
+        s.readout(),
+        "t 64.10 s [0.0–300.0]  ×1  paused  following 103 — Esc to stop"
+    );
+    s.follow = Some(Follow {
+        vehicle_id: 103,
+        drawn: false,
+    });
+    assert_eq!(
+        s.readout(),
+        "t 64.10 s [0.0–300.0]  ×1  paused  following 103 (not drawn) — Esc to stop"
+    );
 }
 
 // ── Gate 9: the keyframe line ────────────────────────────────────────────────

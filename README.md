@@ -45,7 +45,7 @@ and framings worth rendering.
 | Key or mouse | Does |
 |---|---|
 | Space | play / pause (at the end, restart from the start) |
-| `+` (`=`, keypad `+`) / `-` | double / halve the speed, 1/8× to 64× |
+| `+` or `=` / `-` (by the character typed, any layout; keypad too) | double / halve the speed, 1/8× to 64× |
 | `←` / `→` | pause and step 1/30 s |
 | `Shift+←` / `Shift+→` | step to the previous / next FCD sample |
 | drag, `W` `A` `S` `D` | pan |
@@ -54,7 +54,7 @@ and framings worth rendering.
 | `K` | print the camera as a keyframe line on stdout |
 
 The top-left readout shows the time, the window, the speed, playing or paused, and the
-vehicle followed, with "(not drawn)" while it is out of the run.
+vehicle followed, with "(not drawn)" while it is out of the run and "— Esc to stop".
 
 The run must have FCD Parquet output
 (`--set simulation.output.fcd.enabled=true` on `assimilator run`). The renderer reads the

@@ -25,6 +25,17 @@ pub const PX_PER_LINE: f64 = 20.0;
 pub const SPEED_STEPS: usize = 10;
 const SPEED_ONE: usize = 3;
 
+/// Whether a key's logical character doubles the speed: `+` or `=`, whatever the keyboard
+/// layout (the character, not the key's position, vis-001 §2.9.1).
+pub fn is_speed_up(c: &str) -> bool {
+    matches!(c, "+" | "=")
+}
+
+/// Whether a key's logical character halves the speed: `-`.
+pub fn is_speed_down(c: &str) -> bool {
+    c == "-"
+}
+
 /// Keys pressed this frame (one action per press; held keys do not repeat).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Pressed {
@@ -389,6 +400,7 @@ impl ViewState {
             if !f.drawn {
                 line.push_str(" (not drawn)");
             }
+            line.push_str(" — Esc to stop");
         }
         line
     }

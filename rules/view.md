@@ -40,20 +40,20 @@ generated: 2026-09-29
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
   `t` stays in `[from, to]`; reaching `to` pauses, and space at `to` restarts at `from`.
-- Speed `s = 2^(i−3)`, 1/8× … 64×: `=`/keypad `+` doubles, `-`/keypad `−` halves, each
-  stopping at its end. Held keys never repeat an action.
+- Speed `s = 2^(i−3)`, 1/8× … 64×. Keys go by logical character (`ButtonInput<Key>`), so
+  any layout works: `+`/`=` doubles, `-` halves; keypad `+`/`−` by position. Each stops at
+  its end, and held keys never repeat an action.
 - `←`/`→` pause and step `1/30` s. With Shift: to the latest snapshot below `t − 1e-6` or
   the earliest above `t + 1e-6` (the snapshots include the one before `from`); none, no move.
 
 ## Camera
-- Launch: `render`'s fit at the launch size (`k_fit`), and the fitted rectangle, the
-  strips' bounding box plus 20 m. Neither changes on resize.
+- Launch: `render`'s fit at the launch size (`k_fit`) and the fitted rectangle (the
+  strips' bbox plus 20 m), fixed across resizes; it bounds the centre after pan and zoom.
 - Cursor `(px, py)` is over `(cx + (px − W/2)·k, cy − (py − H/2)·k)`.
 - A left press becomes a drag at a net 4 px; the centre is then the press's centre plus
   `(−dx·k, +dy·k)`. A zoom during a drag re-anchors it. `WASD` pan `0.5·W·k` m/s.
 - Scroll `n` lines (trackpad: 20 px a line): `k ← clamp(k·1.1^−n, 0.02, 2·k_fit)` about
   the cursor's world point, or about the centre while following.
-- After pan and zoom the centre is clamped to the fitted rectangle.
 
 ## Pick and follow
 - A release that never became a drag picks the box nearest the cursor's world point, by
@@ -64,7 +64,8 @@ generated: 2026-09-29
 - Frame order: clock; `Esc`; pan and zoom; click; follow; `K`.
 
 ## Readout and keyframe line
-- Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn)`.
+- Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`
+  (the Esc hint whenever following; "(not drawn)" only on hold).
 - `K`: `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }`, or
   `{ t = 200.000, follow = 103, height_m = 60.00 }` while following a drawn vehicle.
   `height_m = H·k`. `Keyframe::parse` accepts exactly these two forms.
