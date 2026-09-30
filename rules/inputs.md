@@ -10,7 +10,7 @@ covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
   points, and which checks fail before the first frame.
 max_lines: 50
-generated: 2026-09-29
+generated: 2026-09-30
 ---
 
 # Inputs
@@ -59,6 +59,6 @@ generated: 2026-09-29
 
 ## Checks before the first frame (order)
 `render`: ffmpeg on `PATH` → even, positive size; positive fps and speedup → `run::load`
-(`view`: positive size, no ffmpeg → `run::load`): project/scenario → `results.db` and the
-completed run → the FCD file exists → FCD schema → `to > from` → every link known and
-every row placed. An error is one line (`error: …`), exit 1, no output file or window.
+(`view`: positive size, no ffmpeg → `run::load`): project/scenario → `results.db`'s run →
+FCD file → schema → `to > from` → every link known and row placed → `--camera`'s file
+(`rules/camera.md`). An error is one `error: …` line, exit 1, no output file or window.

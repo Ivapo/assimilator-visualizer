@@ -2,13 +2,15 @@
 
 # Rules
 
-- **[inputs](inputs.md)** — generated 2026-09-29 · 5 sources · 50/50 lines
+- **[camera](camera.md)** — generated 2026-09-30 · 3 sources · 60/60 lines
+  The 3D camera: the pose and its perspective projection, what the orthographic and perspective paths draw, the keyframe line and the keyframe file with its errors, and the flight `render --camera` takes through the keyframes.
+- **[inputs](inputs.md)** — generated 2026-09-30 · 5 sources · 50/50 lines
   What the renderer reads from a run and from where, how FCD rows become placed points, and which checks fail before the first frame.
 - **[motion](motion.md)** — generated 2026-09-29 · 3 sources · 59/60 lines
   How each vehicle's FCD rows become a position at any time: Hermite along links, junction spans on the engine's turn paths, lane slides, when a vehicle is drawn, and the motion report.
-- **[render](render.md)** — generated 2026-09-29 · 8 sources · 60/60 lines
+- **[render](render.md)** — generated 2026-09-30 · 8 sources · 60/60 lines
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
 - **[slider](slider.md)** — generated 2026-09-30 · 3 sources · 35/40 lines
   `view`'s time slider: the bar's geometry, x ↔ t, the ticks, how a press on the bar scrubs and what it takes from the camera and the clock, and how the window draws it.
 - **[view](view.md)** — generated 2026-09-30 · 5 sources · 60/60 lines
-  The `assimilator-video view` window over a finished run: its CLI and checks, the wall-clock view clock, the camera (pan, zoom, centre bound), picking and following, the readout, the keyframe line and the hidden `--bench`. The time slider is `rules/slider.md`.
+  The `assimilator-video view` window over a finished run: its CLI and checks, the wall-clock view clock, the camera (orbit and tilt, pan, zoom, centre bound), picking and following, the readout, the keyframe line and the hidden `--bench`. The time slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.

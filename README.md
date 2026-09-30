@@ -7,12 +7,14 @@ Phase 1 (vis-001, `specs/visualizer_spec.md`) draws every FCD vehicle as a box m
 along its link, seen top-down, rendered headless with Bevy and encoded by ffmpeg.
 Phase 2 makes the motion smooth between the 1 Hz FCD samples: boxes brake and
 accelerate as the run did, follow the engine's turn path through each junction, slide
-between lanes, and disappear at their last row.
+between lanes, and disappear at their last row. Phase 5 adds a 3D camera: `view` orbits
+and tilts, and `render --camera` flies a perspective camera through keyframes.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
                          [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                          [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
+                         [--camera <file.toml>]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -23,6 +25,33 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
 - **Progress.** Stderr carries one JSON line per frame (`{"frame": n, "of": N}`), then
   `{"done": "<out>"}`.
 - **Errors.** Any error is a single line and a non-zero exit. No file is left at `--out`.
+- **Camera.** Without `--camera` the camera looks straight down on the whole network,
+  orthographically. With `--camera <file.toml>` it is perspective and flies through the
+  file's keyframes (below). `--camera` changes no other default.
+
+### The keyframe file
+
+The lines `view` prints on `K`, in a TOML array, a comma after each:
+
+```toml
+keyframes = [
+  { t = 20.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+  { t = 50.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+  { t = 64.100, follow = 1, height_m = 120.00, yaw_deg = 90.00, pitch_deg = 45.00 },
+]
+```
+
+- `t` is sim seconds; `x`, `y` the point looked at (metres), or `follow` a vehicle id;
+  `height_m` the world height visible there. `yaw_deg` (compass direction the camera
+  faces, 0 = north up) and `pitch_deg` (90 = straight down, down to 25) are optional:
+  without them the camera looks straight down, north up. `[[keyframes]]` tables also work.
+- The camera passes through every keyframe on a smooth curve, eased in and out. Two
+  keyframes with the same camera hold it still between them. A `follow` keyframe keeps its
+  height, yaw and pitch and moves with the vehicle. Before the first keyframe and after the
+  last, the camera holds.
+- `t` must increase, and a followed vehicle must be drawn at its keyframe's `t`. Any
+  error names the keyframe and stops before the first frame. The file's keyframes do not
+  change the window: use `--from` and `--to` for a part of the run.
 
 ## View a run
 
@@ -38,9 +67,10 @@ and framings worth rendering.
 - **Inputs and checks** are `render`'s, and they run before the window opens. It does not
   need ffmpeg. `--width`×`--height` is the window in logical pixels, 1280×720 by default.
 - **Output.** Stdout carries only keyframe lines, one per `K`, for example
-  `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }`. The line is
-  `{ t = …, follow = <vehicle_id>, height_m = … }` while following a drawn vehicle.
-  Closing the window exits 0.
+  `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00, yaw_deg = 0.00, pitch_deg = 90.00 }`.
+  The line has `follow = <vehicle_id>` instead of `x`, `y` while following a drawn
+  vehicle. Closing the window exits 0.
+- **Camera.** Perspective, starting straight down on the whole network, north up.
 
 | Key or mouse | Does |
 |---|---|
@@ -48,9 +78,12 @@ and framings worth rendering.
 | `+` or `=` / `-` (by the character typed, any layout; keypad too) | double / halve the speed, 1/8× to 64× |
 | `←` / `→` | pause and step 1/30 s |
 | `Shift+←` / `Shift+→` | step to the previous / next FCD sample |
-| drag, `W` `A` `S` `D` | pan |
+| drag, `W` `A` `S` `D` | pan (the ground under the cursor stays under it) |
+| right-drag, or `Ctrl` + drag | orbit (sideways) and tilt (up and down) about the centre |
+| `Q` / `E` | turn 15° left / right |
+| `R` / `F` | tilt 5° toward the horizon / toward straight down (25° to 90°) |
 | scroll | zoom about the cursor (0.02 m per pixel to half the network) |
-| click a box | follow it; a drag, `WASD` or `Esc` stops following |
+| click a box | follow it; a drag, `WASD` or `Esc` stops following (orbiting does not) |
 | click or drag on the time slider | jump or scrub to that time (pauses while held, resumes on release) |
 | `K` | print the camera as a keyframe line on stdout |
 
@@ -99,10 +132,11 @@ Nothing is written into the engine checkout.
 
 ```
 scripts/fixture.sh                                              # once
-scripts/gates.sh                                                # gates 1, 2, 4
+scripts/gates.sh                                                # gates 1, 2, 4; Phase 5 gate 10
 cargo test --release --test gates -- --ignored --test-threads=1 --nocapture   # gates 3, 6–11 + determinism
 cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture   # Phase 3 gates 2, 4–9
 cargo test --release --test slider -- --include-ignored --test-threads=1 --nocapture # Phase 4 gates 4–10
+cargo test --release --test camera -- --include-ignored --test-threads=1 --nocapture # Phase 5 gates 4–9, 11, 12
 ```
 
 `scripts/gates.sh` also compares the default render's frames with
