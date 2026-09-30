@@ -803,7 +803,7 @@ at 360 crates, and nothing is measured beforehand.
 - Tick labels, keyboard focus on the bar, and any slider in `render`'s video (the HUD is
   roadmap item 5).
 
-#### 2.10.8 Six calls on the draft (decision, recorded)
+#### 2.10.8 The user's calls on the draft (decision, recorded)
 
 Decided by the user, 2026-09-30, on the Phase 4 draft, before review round 1:
 1. **A press on the handle jumps `t` to the cursor**, like a press anywhere on the bar:
@@ -815,6 +815,11 @@ Decided by the user, 2026-09-30, on the Phase 4 draft, before review round 1:
 5. **The launch fit is not shrunk for the bar**, which may cover the south edge of the map
    (§2.10.1).
 6. **The close-out adds `rules/slider.md`** rather than raising `rules/view.md`'s cap.
+
+Decided by the user, 2026-09-30, after review round 1 (finding F6), not a scope change:
+
+7. **A window made too small mid-drag ends the drag**: the bar disappears, `t` holds where
+   the last scrub frame left it, and playing resumes if it was playing (§2.10.1, gate 8).
 
 ## 3. Open questions
 
