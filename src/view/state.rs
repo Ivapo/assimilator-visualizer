@@ -1,7 +1,8 @@
-//! `view`'s state (vis-001 §2.9): the clock, the camera, picking, following and the
-//! keyframe line. Plain Rust with no Bevy types: one frame's input goes in, the new state
-//! comes out, so the gates drive it with scripted input and no window.
+//! `view`'s state (vis-001 §2.9, §2.10): the clock, the camera, the time slider, picking,
+//! following and the keyframe line. Plain Rust with no Bevy types: one frame's input goes
+//! in, the new state comes out, so the gates drive it with scripted input and no window.
 
+use super::slider::Bar;
 use crate::render::VehicleBox;
 use crate::scene::{self, Camera, Strip};
 
@@ -65,6 +66,9 @@ pub struct ViewInput {
     pub held: Held,
     /// The cursor in logical pixels, origin top left, `y` down; `None` outside the window.
     pub cursor: Option<(f64, f64)>,
+    /// The frame's last `CursorMoved` position in logical pixels, not bounded to the window
+    /// (a held button keeps it coming outside, §2.10.3); `None` if the cursor did not move.
+    pub pointer: Option<(f64, f64)>,
     /// The left button went down this frame.
     pub press: bool,
     /// The left button went up this frame.
@@ -161,6 +165,8 @@ pub struct ViewState {
     /// The window's logical size, as of the last frame.
     pub size: (f64, f64),
     pub press: Option<Press>,
+    /// A scrub on the time slider in progress: whether the clock was playing at its press.
+    pub scrub: Option<bool>,
     pub follow: Option<Follow>,
 }
 
@@ -179,6 +185,7 @@ impl ViewState {
             k: fit.k,
             size: fit.size,
             press: None,
+            scrub: None,
             follow: None,
         }
     }
@@ -197,16 +204,46 @@ impl ViewState {
         )
     }
 
-    /// Apply one frame of input: clock; `Esc`; pan and zoom; click; follow; then `K`,
-    /// whose line describes the state after the frame.
+    /// The time slider's geometry at the current window size; `None` when too small.
+    pub fn bar(&self) -> Option<Bar> {
+        Bar::new(self.size)
+    }
+
+    /// Apply one frame of input (§2.10.5): the size and the bar; a bar press; clock; scrub;
+    /// `Esc`; pan and zoom; click; follow; then `K`, whose line describes the state after
+    /// the frame.
     pub fn frame(
         &mut self,
         input: &ViewInput,
         boxes_at: impl Fn(f64) -> Vec<VehicleBox>,
     ) -> Option<String> {
         self.size = input.size;
+        let bar = self.bar();
+        let on_bar = |c: Option<(f64, f64)>| matches!((bar, c), (Some(b), Some(c)) if b.hit(c));
+
+        // A press on the bar starts a scrub and pauses; it never makes a `Press`.
+        let bar_press = input.press && self.scrub.is_none() && on_bar(input.cursor);
+        if bar_press {
+            self.scrub = Some(self.playing);
+            self.playing = false;
+        }
+        let scrubbing = self.scrub.is_some();
+
         let dt = input.dt.clamp(0.0, DT_CAP);
-        self.clock(input, dt);
+        self.clock(input, dt, scrubbing);
+
+        // Scrub: the cursor's `x` sets `t`; release, or the bar going, ends it.
+        if let Some(was_playing) = self.scrub {
+            if let Some(b) = bar
+                && let Some((x, _)) = input.pointer.or(input.cursor)
+            {
+                self.t = b.t(x, self.from, self.to);
+            }
+            if bar.is_none() || input.release {
+                self.scrub = None;
+                self.playing = was_playing && self.t < self.to;
+            }
+        }
 
         if input.pressed.esc {
             self.follow = None;
@@ -214,6 +251,7 @@ impl ViewState {
 
         // Pan and zoom.
         if input.press
+            && !bar_press
             && let Some(c) = input.cursor
         {
             self.press = Some(Press {
@@ -250,7 +288,12 @@ impl ViewState {
                 self.cx += v;
             }
         }
-        let n = input.scroll_lines + input.scroll_pixels / PX_PER_LINE;
+        // Scroll over the bar or during a scrub does nothing (§2.10.3).
+        let n = if scrubbing || on_bar(input.cursor) {
+            0.0
+        } else {
+            input.scroll_lines + input.scroll_pixels / PX_PER_LINE
+        };
         if n != 0.0 {
             let k2 = (self.k * ZOOM_STEP.powf(-n)).clamp(K_MIN, self.fit.k_max());
             let p = match (self.follow, input.cursor) {
@@ -305,8 +348,12 @@ impl ViewState {
         input.pressed.k.then(|| self.keyframe_line())
     }
 
-    fn clock(&mut self, input: &ViewInput, dt: f64) {
-        let p = input.pressed;
+    /// The clock (§2.9.1); while `scrubbing`, space, `←` and `→` are ignored.
+    fn clock(&mut self, input: &ViewInput, dt: f64, scrubbing: bool) {
+        let mut p = input.pressed;
+        if scrubbing {
+            (p.space, p.left, p.right) = (false, false, false);
+        }
         if p.plus {
             self.speed = (self.speed + 1).min(SPEED_STEPS - 1);
         }

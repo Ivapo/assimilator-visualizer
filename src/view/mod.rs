@@ -1,8 +1,9 @@
 //! `assimilator-video view` (vis-001 §2.9): a window over a finished run. Each frame turns
 //! Bevy's input into a [`ViewInput`], applies it to the [`ViewState`], prints a returned
-//! keyframe line on stdout, and draws the state: the camera, the boxes at `t` and the
-//! readout.
+//! keyframe line on stdout, and draws the state: the camera, the boxes at `t`, the readout
+//! and the time slider (§2.10).
 
+pub mod slider;
 pub mod state;
 
 use std::io::Write;
@@ -11,7 +12,7 @@ use anyhow::{Result, bail};
 use bevy::input::keyboard::Key;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
-use bevy::window::{PrimaryWindow, WindowResolution};
+use bevy::window::{CursorMoved, PrimaryWindow, WindowResolution};
 
 use crate::draw;
 use crate::run::{self, LoadOptions, Run};
@@ -41,8 +42,26 @@ struct Viewer {
     materials: Vec<Handle<StandardMaterial>>,
     camera: Entity,
     readout: Entity,
+    bar: BarNodes,
     bench: Option<Bench>,
 }
+
+/// The time slider's `bevy_ui` nodes, placed each frame from [`ViewState::bar`].
+struct BarNodes {
+    track: Entity,
+    handle: Entity,
+    /// A pool, grown when a frame needs more ticks; unused ones are hidden.
+    ticks: Vec<Entity>,
+}
+
+/// The primary window's last `CursorMoved` position this frame, logical and unbounded
+/// ([`ViewInput::pointer`]).
+#[derive(Resource, Default)]
+struct Pointer(Option<(f64, f64)>);
+
+const TRACK_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.35);
+const TICK_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.7);
+const HANDLE_COLOR: Color = Color::WHITE;
 
 struct Bench {
     secs: f64,
@@ -114,12 +133,19 @@ pub fn run(o: &ViewOptions) -> Result<()> {
             TextColor(Color::WHITE),
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Px(6.0),
-                left: Val::Px(8.0),
+                bottom: Val::Px(slider::READOUT_BOTTOM as f32),
+                left: Val::Px(slider::INSET as f32),
                 ..default()
             },
         ))
         .id();
+    // Ticks are drawn over the track and under the handle.
+    let bar = BarNodes {
+        track: spawn_rect(world, TRACK_COLOR, 0),
+        handle: spawn_rect(world, HANDLE_COLOR, 2),
+        ticks: Vec::new(),
+    };
+    world.init_resource::<Pointer>();
     world.insert_resource(Viewer {
         run,
         state,
@@ -127,15 +153,32 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         materials: speed_mats,
         camera,
         readout,
+        bar,
         bench: o.bench.map(|secs| Bench {
             secs,
             elapsed: 0.0,
             frame_ms: Vec::new(),
         }),
     });
-    app.add_systems(Update, frame);
+    app.add_systems(Update, (track_pointer, frame).chain());
     app.run();
     Ok(())
+}
+
+/// Keep the primary window's last `CursorMoved` position of this frame. Unlike
+/// `Window::cursor_position`, it is not bounded to the window: while a button is held,
+/// winit on macOS keeps sending it outside (vis-001 §2.10.3).
+fn track_pointer(
+    mut moved: MessageReader<CursorMoved>,
+    primary: Query<Entity, With<PrimaryWindow>>,
+    mut pointer: ResMut<Pointer>,
+) {
+    let window = primary.single().ok();
+    pointer.0 = moved
+        .read()
+        .filter(|m| Some(m.window) == window)
+        .last()
+        .map(|m| (m.position.x as f64, m.position.y as f64));
 }
 
 /// Bevy's input for this frame, as a [`ViewInput`].
@@ -181,6 +224,7 @@ fn input(world: &mut World) -> ViewInput {
             d: keys.pressed(KeyCode::KeyD),
         },
         cursor,
+        pointer: world.resource::<Pointer>().0,
         press: mouse.just_pressed(MouseButton::Left),
         release: mouse.just_released(MouseButton::Left),
         scroll_lines,
@@ -216,6 +260,7 @@ fn frame(world: &mut World) {
         if t.0 != text {
             t.0 = text;
         }
+        draw_bar(world, &mut v.bar, s);
 
         if let Some(b) = v.bench.as_mut() {
             b.elapsed += input.dt;
@@ -229,6 +274,76 @@ fn frame(world: &mut World) {
             }
         }
     });
+}
+
+/// An absolutely positioned rectangle, hidden until placed.
+fn spawn_rect(world: &mut World, color: Color, z: i32) -> Entity {
+    world
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                display: Display::None,
+                ..default()
+            },
+            BackgroundColor(color),
+            ZIndex(z),
+        ))
+        .id()
+}
+
+/// Show `e` at `(left, top, width, height)` logical pixels, or hide it. The node is
+/// written only when it changes, so a still frame triggers no layout.
+fn place(world: &mut World, e: Entity, r: Option<(f64, f64, f64, f64)>) {
+    let mut ent = world.entity_mut(e);
+    let mut node = ent.get_mut::<Node>().unwrap();
+    let Some((l, t, w, h)) = r else {
+        if node.display != Display::None {
+            node.display = Display::None;
+        }
+        return;
+    };
+    let px = |v: f64| Val::Px(v as f32);
+    let want = (Display::Flex, px(l), px(t), px(w), px(h));
+    if (node.display, node.left, node.top, node.width, node.height) != want {
+        (node.display, node.left, node.top, node.width, node.height) = want;
+    }
+}
+
+/// Place the track, the handle at `x(t)` and the ticks from the state's geometry
+/// (§2.10.1, §2.10.4); hide them all when there is no bar.
+fn draw_bar(world: &mut World, nodes: &mut BarNodes, s: &ViewState) {
+    let Some(b) = s.bar() else {
+        place(world, nodes.track, None);
+        place(world, nodes.handle, None);
+        for &e in &nodes.ticks {
+            place(world, e, None);
+        }
+        return;
+    };
+    let th = slider::TRACK_H;
+    place(
+        world,
+        nodes.track,
+        Some((b.x0, b.y_bar - th / 2.0, b.len(), th)),
+    );
+    let hs = slider::HANDLE;
+    let hx = b.x(s.t, s.from, s.to);
+    place(
+        world,
+        nodes.handle,
+        Some((hx - hs / 2.0, b.y_bar - hs / 2.0, hs, hs)),
+    );
+    let ticks = b.ticks(s.from, s.to);
+    while nodes.ticks.len() < ticks.len() {
+        nodes.ticks.push(spawn_rect(world, TICK_COLOR, 1));
+    }
+    let (tw, tk) = (slider::TICK_W, slider::TICK_H);
+    for (i, &e) in nodes.ticks.iter().enumerate() {
+        let r = ticks
+            .get(i)
+            .map(|&t| (b.x(t, s.from, s.to) - tw / 2.0, b.y_bar - tk / 2.0, tw, tk));
+        place(world, e, r);
+    }
 }
 
 fn bench_json(ms: &[f64]) -> String {

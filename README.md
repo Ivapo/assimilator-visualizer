@@ -51,10 +51,17 @@ and framings worth rendering.
 | drag, `W` `A` `S` `D` | pan |
 | scroll | zoom about the cursor (0.02 m per pixel to half the network) |
 | click a box | follow it; a drag, `WASD` or `Esc` stops following |
+| click or drag on the time slider | jump or scrub to that time (pauses while held, resumes on release) |
 | `K` | print the camera as a keyframe line on stdout |
 
-The top-left readout shows the time, the window, the speed, playing or paused, and the
-vehicle followed, with "(not drawn)" while it is out of the run and "— Esc to stop".
+The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
+with a handle at the current time and a tick at each whole minute (thinned on long runs).
+A press on the bar never pans or picks, and scrolling over it does not zoom; a follow
+stays on while you scrub. The bar hides when the window is under 64 pixels either way.
+
+The readout, just above the slider, shows the time, the window, the speed, playing or
+paused, and the vehicle followed, with "(not drawn)" while it is out of the run and
+"— Esc to stop".
 
 The run must have FCD Parquet output
 (`--set simulation.output.fcd.enabled=true` on `assimilator run`). The renderer reads the
@@ -95,6 +102,7 @@ scripts/fixture.sh                                              # once
 scripts/gates.sh                                                # gates 1, 2, 4
 cargo test --release --test gates -- --ignored --test-threads=1 --nocapture   # gates 3, 6–11 + determinism
 cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture   # Phase 3 gates 2, 4–9
+cargo test --release --test slider -- --include-ignored --test-threads=1 --nocapture # Phase 4 gates 4–10
 ```
 
 `scripts/gates.sh` also compares the default render's frames with
