@@ -25,7 +25,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 4 — Time slider: click and drag through the run in view"
-    reviewed: null
+    reviewed: 2026-09-30
     shipped: null
     cut: null
     by: null
