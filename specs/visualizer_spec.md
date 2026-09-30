@@ -479,7 +479,7 @@ assimilator-video view --project <dir> --scenario <name> --seed <n>
   pixel is 2×2 physical ones.
 - **Stdout carries only keyframe lines** (§2.9.5), one per press, flushed. Stderr carries
   nothing but the error line (Bevy's logger is off, as in `render`), except under the
-  hidden `--bench` flag of Phase 3 gate 10. Closing the window exits 0.
+  hidden `--bench` flag that records the frame rate (Phase 3, §2.9.8). Closing the window exits 0.
 - **The look is `render`'s**: top-down, orthographic, north up, the same colours, strips,
   boxes and depth lift (§2.3). 3D and a tilted camera wait for the city phase (§2.7
   item 4).
@@ -637,14 +637,28 @@ already has). The readout's text adds `bevy_text`, `default_font`, `bevy_ui` and
   over the window alone. Its wall time was not measured cleanly: other sessions were
   compiling (load average 10–50 during these builds), and the two runs differ by 157 s.
   The base's three runs spread 40 s under the same conditions.
-- Text is kept because roadmap item 5's HUD (clock, legend, chart) needs the same
-  features in `render` anyway. The alternative is the time in the window's title bar,
-  which costs nothing and is not drawn on the window.
+- Text is kept (§2.9.8, decision 1). The alternative was the time in the window's title
+  bar, which costs nothing and is not drawn on the window.
 - Measured on a throwaway copy of the repo with its own `target/`, deleted afterwards;
   nothing was committed. The method is in `specs/reviews/vis-001.md`.
 
 `x11` and `wayland` are Linux-only winit back ends and compile nothing here; a Linux
 build needs one of them, which is roadmap item 6's Linux build check.
+
+#### 2.9.8 Four calls on the draft (decision, recorded)
+
+Decided by the user, 2026-09-29, on the Phase 3 draft:
+1. **The readout is on-screen text**, at §2.9.7's cost, because roadmap item 5's HUD
+   (clock, legend, chart) needs the same Bevy features in `render` anyway.
+2. **The frame rate is recorded, not gated.** The predicted median of 16.67 ms is the
+   display's vsync, so a gate on it would measure the display, not `view`. And this
+   machine runs at load average 50–75 when other sessions compile, which would make a
+   timing gate flaky. The hidden `--bench` flag and its JSON stay, so the numbers are
+   recorded at close-out.
+3. **Steps:** `←`/`→` step 1/30 s, and `Shift+←`/`Shift+→` step one FCD sample
+   (§2.9.1), as drafted.
+4. **Follow:** when the followed vehicle stops being drawn, the camera holds and the
+   follow stays armed (§2.9.3), as drafted.
 
 ## 3. Open questions
 
@@ -1172,7 +1186,7 @@ Phase 2's motion unchanged and adds a second command beside `render`.
     a returned line to stdout and flushes, sets the camera's transform and projection,
     fills the box pool from `boxes_at(t)` through `src/draw.rs`, and sets the readout
     (§2.9.4). Present mode is Bevy's default, vsync on.
-    - A hidden `--bench <s>` flag, for gate 10 only: it starts at `t` = 140 s playing at
+    - A hidden `--bench <s>` flag, to record the frame rate at close-out (§2.9.8): it starts at `t` = 140 s playing at
       2×, measures real frame times for `s` seconds after 3 s of warm-up, prints one JSON
       object on stderr (`frames`, `mean_fps`, `median_ms`, `p99_ms`, `worst_ms`) and
       exits 0. It is not in `--help`.
@@ -1248,18 +1262,9 @@ Phase 2's motion unchanged and adds a second command beside `render`.
      `parse` rejects a line with a missing key, an extra key, keys out of
      order, or both `x` and `follow`.
   - **Frame rate:**
-  10. **Frame rate.** `view --bench 20` on the fixture at the default window (1280×720
-      logical, 2560×1440 physical): full zoom-out, playing at 2× from `t` = 140 s (up to
-      92 boxes drawn), 3 s of warm-up and then 20 s measured. Gate: **median frame
-      ≤ 17.0 ms (≥ 58.8 fps) and p99 ≤ 20 ms**. The mean is recorded, not gated: one stall
-      moves it (see below).
-      - Prediction: median frame 16.67 ms, p99 ≤ 18.6 ms, mean 60.0 fps. That is the
-        display's 60 Hz refresh: vsync caps it, and on this machine it stayed capped
-        with vsync off (Metal). Measured before building by a throwaway prototype with the
-        same plugins, meshes, box pool, MSAA ×4 and a UI text line (`specs/reviews/vis-001.md`).
-      - `boxes_at` took 0.07–0.09 ms per frame (median), 0.26 ms at most, so the CPU side
-        has about 60× headroom at 60 Hz. The GPU side's headroom is not measurable while the
-        display caps the rate.
+  10. *Recorded, not gated (user, 2026-09-29, §2.9.8 decision 2).* The measurement is
+      under "Not predicted, and so not gated" below; the number is kept so that gate 11
+      and the references to it do not move.
   - **The user's check:**
   11. **The user uses `view`** on the fixture and confirms it is fit to find and frame
       shots. What to try:
@@ -1277,11 +1282,22 @@ Phase 2's motion unchanged and adds a second command beside `render`.
       And say whether a time slider is needed (OQ-9), and whether any number here (pan
       speed, zoom step, limits, pick radius, speed ladder) should change. Tuning those is
       iteration, not a spec change (§2.6), unless it changes the keyframe line.
-- **Not predicted, and so not gated:** the worst single frame and the mean frame rate
-  (the first of four prototype runs had one 2.9 s stall, which took its mean to 52.2 fps;
-  the other three had none, and the cause was not measured); frame rates on other
-  machines or displays; the feel of the controls (gate 11); and whether macOS itself
-  writes to stderr (the OS, not `view`, would be the writer).
+- **Not predicted, and so not gated:**
+  - **The frame rate** (§2.9.8, decision 2). At close-out, `view --bench 20` runs on the
+    fixture at the default window (1280×720 logical, 2560×1440 physical): full zoom-out,
+    playing at 2× from `t` = 140 s (up to 92 boxes drawn), 3 s of warm-up, then 20 s
+    measured. Its JSON (frames, mean fps, median, p99 and worst frame) is recorded with
+    the load average.
+    - What the drafting prototype measured, for comparison, not as a prediction: median
+      frame 16.67 ms, p99 ≤ 18.6 ms, mean 60.0 fps in three runs. That is the display's
+      60 Hz refresh, which held even with vsync off (Metal), so it measures the display.
+      The first of four runs had one 2.9 s stall, which took its mean to 52.2 fps; the
+      other three had none, and the cause was not measured (`specs/reviews/vis-001.md`).
+    - `boxes_at` took 0.07–0.09 ms per frame (median) and 0.26 ms at most, so the CPU
+      side has about 60× headroom at 60 Hz.
+  - frame rates on other machines or displays;
+  - the feel of the controls (gate 11);
+  - whether macOS itself writes to stderr (the OS, not `view`, would be the writer).
 - **Close-out (standing plan steps, §3 of the methodology):**
   - **Commit plan:** one branch and one push, with commits for the shared loading and
     drawing (with gate 1 run on it before `view` exists), for `view` and its state, for
