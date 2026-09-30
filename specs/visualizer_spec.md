@@ -21,7 +21,7 @@ phases:
     by: null
   - name: "Phase 3 — View: a window over a finished run"
     reviewed: 2026-09-29
-    shipped: null
+    shipped: 2026-09-29
     cut: null
     by: null
 
@@ -1315,6 +1315,10 @@ it reuses unchanged.
       and the readout did not say how to stop following (§2.9.4 note). Both are fixed. The
       user answered OQ-9: yes, a time slider, as its own phase. Gate 11 is re-checked by
       the user.
+
+      *Gate 11 passed (2026-09-29, the user's re-check after `5c479fc`).* `+`/`-` and the
+      Esc hint work; everything else was fine at the first check. No number changes. With
+      gates 1–9 passed, **Phase 3 `shipped: 2026-09-29`.**
 - **Not predicted, and so not gated:**
   - **The frame rate** (§2.9.8, decision 2). At close-out, `view --bench 20` runs on the
     fixture at the default window, full zoom-out (up to 92 boxes drawn), and its JSON is
