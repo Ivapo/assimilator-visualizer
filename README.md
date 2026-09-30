@@ -24,6 +24,38 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   `{"done": "<out>"}`.
 - **Errors.** Any error is a single line and a non-zero exit. No file is left at `--out`.
 
+## View a run
+
+```
+assimilator-video view --project <dir> --scenario <name> --seed <n>
+                       [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
+                       [--width <px>] [--height <px>]
+```
+
+`view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
+as `render` draws them. You drive the camera and the clock by hand, to find the moments
+and framings worth rendering.
+- **Inputs and checks** are `render`'s, and they run before the window opens. It does not
+  need ffmpeg. `--width`×`--height` is the window in logical pixels, 1280×720 by default.
+- **Output.** Stdout carries only keyframe lines, one per `K`, for example
+  `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }`. The line is
+  `{ t = …, follow = <vehicle_id>, height_m = … }` while following a drawn vehicle.
+  Closing the window exits 0.
+
+| Key or mouse | Does |
+|---|---|
+| Space | play / pause (at the end, restart from the start) |
+| `+` (`=`, keypad `+`) / `-` | double / halve the speed, 1/8× to 64× |
+| `←` / `→` | pause and step 1/30 s |
+| `Shift+←` / `Shift+→` | step to the previous / next FCD sample |
+| drag, `W` `A` `S` `D` | pan |
+| scroll | zoom about the cursor (0.02 m per pixel to half the network) |
+| click a box | follow it; a drag, `WASD` or `Esc` stops following |
+| `K` | print the camera as a keyframe line on stdout |
+
+The top-left readout shows the time, the window, the speed, playing or paused, and the
+vehicle followed, with "(not drawn)" while it is out of the run.
+
 The run must have FCD Parquet output
 (`--set simulation.output.fcd.enabled=true` on `assimilator run`). The renderer reads the
 project, `results.db` and the FCD in place, and never writes into the project.
@@ -62,7 +94,12 @@ Nothing is written into the engine checkout.
 scripts/fixture.sh                                              # once
 scripts/gates.sh                                                # gates 1, 2, 4
 cargo test --release --test gates -- --ignored --test-threads=1 --nocapture   # gates 3, 6–11 + determinism
+cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture   # Phase 3 gates 2, 4–9
 ```
+
+`scripts/gates.sh` also compares the default render's frames with
+`scratch/ref-8eb9052.framemd5` when that file exists. That is Phase 3's gate 1: the file is
+built once from a `git archive 8eb9052` build, as the spec says.
 
 ## License
 
