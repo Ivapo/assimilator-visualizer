@@ -30,7 +30,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 5 — 3D camera: orbit and tilt in view, keyframed flights in render"
-    reviewed: null
+    reviewed: 2026-09-30
     shipped: null
     cut: null
     by: null
@@ -581,8 +581,8 @@ relative to the fit's centre `(fx, fy)` (`src/draw.rs:road_mesh`: world `(x, y)`
 `(x − fx, ·, −(y − fy))`), so the camera sits at `(cx − fx, ·, −(cy − fy))`.
 
 *Note (2026-09-30, Phase 5):* the camera gains a yaw and a pitch, and the projection
-becomes perspective (§2.11.3). The formulas above are what §2.11.3's reduce to, bit for
-bit, at the start pose (yaw 0, pitch 90).
+becomes perspective (§2.11.3). The formulas above are what §2.11.3's reduce to, to
+rounding, at the start pose (yaw 0, pitch 90) (§2.11.1).
 
 #### 2.9.3 Picking and following a vehicle
 
@@ -888,7 +888,12 @@ What follows from it:
   Phase 3 line frames the same area it did.
 - **Degrees have exact multiples of 90°.** Sines and cosines are taken of degrees by one
   helper that returns 0, ±1 exactly at multiples of 90°. So at the default pose (yaw 0,
-  pitch 90) every formula in §2.11.3 reduces bit for bit to Phase 3's.
+  pitch 90) every formula in §2.11.3 reduces to Phase 3's **to rounding**, not bit for
+  bit: `d·(px − W/2)/f` is not `(px − W/2)·k` in floating point, and a direct
+  implementation differs from Phase 3's `world` in the last bit (up to 4.5e-13 m at the
+  launch fit). Every gate that compares the two does so to 1e-9, and no special case for
+  pitch 90 is added. What *is* exact at yaw 0 or 90 is anything that multiplies by the
+  helper's 0 or 1: an axis a move does not touch stays bit-exact (Phase 5 gate 11's `W`).
 - **Every pixel sees the ground.** The floor of 25° is above `φ/2` = 22.5°, so the top
   edge of the image looks at least 2.5° below the horizon and the horizon never shows. A
   cursor always has a ground point, which pan, zoom and pick need (§2.11.3). Lower shots
@@ -913,10 +918,12 @@ centre (§2.9.2: world `(x, y, z)` → Bevy `(x − fx, z, −(y − fy))`).
 - **`view`, and `render` with `--camera`, are perspective,** at every pose (§2.11.8 b).
 - **The rank lift** (§2.3) moves pixels under perspective, and 0.01 m per rank would float
   urban_grid's 110th box 1.09 m over the road at a tilt. The perspective path lifts
-  **0.001 m per rank** (0.109 m at 110). The depth buffer resolves it: at the launch fit,
-  one step of Bevy's reverse-Z `Depth32Float` is about 0.16 mm, so 0.001 m is about 6
-  steps. The orthographic path keeps 0.01 m. A keyframed render is gated for determinism
-  the same way (Phase 5 gate 10).
+  **0.001 m per rank** (0.109 m at 110). Near the look-at point at the launch fit, one
+  step of Bevy's reverse-Z `Depth32Float` is about 0.16 mm, so 0.001 m is about 6 steps;
+  it coarsens with distance, to about 1.6 mm at the top edge at the 25° floor, where two
+  overlapping boxes one rank apart may tie. A tie is still resolved the same way on every
+  run, so determinism does not rest on the lift. The orthographic path keeps 0.01 m. A
+  keyframed render is gated for determinism the same way (Phase 5 gate 10).
 - **Box faces are shaded** in the perspective path, still unlit: the top keeps today's
   speed colour, and the sides are fixed fractions of it, as vertex colours on the box mesh,
   so a tilted box reads as a solid. The fractions are iteration (§2.6). The orthographic
@@ -931,8 +938,9 @@ centre (§2.9.2: world `(x, y, z)` → Bevy `(x − fx, z, −(y − fy))`).
 
 **Right-drag orbits and tilts** (§2.11.8 a). A right press starts an **orbit**, with no
 4 px threshold: nothing else uses the right button. Until release, each frame sets
-- `yaw_deg ← yaw_press − 0.25·dx`, wrapped to [0, 360): dragging right turns the scene with
-  the cursor, as if it were grabbed;
+- `yaw_deg ← yaw_press − 0.25·dx`, wrapped to [0, 360) (`rem_euclid(360)`, and a result
+  of 360 from a tiny negative taken as 0; every wrap in Phase 5 is this one): dragging
+  right turns the scene with the cursor, as if it were grabbed;
 - `pitch_deg ← clamp(pitch_press + 0.25·dy, 25, 90)`: dragging up tilts toward the
   horizon, dragging down back toward straight down,
 
@@ -954,25 +962,11 @@ Control held is an **orbit press**, and from then on it is a right press in ever
 - while an orbit is on, a second press of either kind starts nothing.
 
 Control is read as held (`KeyCode::ControlLeft` or `ControlRight`) in the press's frame.
-How macOS reports Control-click was read from the sources at the `Cargo.lock` versions:
-- winit 0.30.13 `src/platform_impl/macos/view.rs`: `mouseDown:`, `rightMouseDown:` and
-  `otherMouseDown:` all go to `mouse_click`, whose button is `mouse_button(event)`,
-  NSEvent's `buttonNumber` (0 → `Left`, 1 → `Right`), with no translation of Control and
-  no `menuForEvent:` override. Control itself comes from `flagsChanged:`, which
-  `update_modifiers` turns into `KeyboardInput` events for `ControlLeft`/`ControlRight`
-  as well as `ModifiersChanged`;
-- bevy_winit 0.19.1 maps the button one to one (`convert_mouse_button` in `converters.rs`), and
-  the key events reach `ButtonInput<KeyCode>`.
-
-So the one step not in these sources is AppKit's: whether a Control-click on a view with no
-context menu reaches `mouseDown:` (button 0) or is re-sent as a secondary click. AppKit's
-context-menu path runs through `menuForEvent:`, which winit's view does not provide, and
-other toolkits on macOS (SDL, GLFW) receive a Control-click as a left button with Control
-and offer right-click emulation as an opt-in, which is the same reading. It arrives as
-**Left + Ctrl**, so that binding is used. If it ever arrives as `Right` instead, right-drag
-already orbits and the binding still works, only through the other path; nothing mis-fires
-either way, because both buttons orbit. Gate 13 confirms it on the user's trackpad. Option
-+ left-drag was the fallback had neither been usable, and is not needed.
+On macOS a Control-click arrives as **Left + Ctrl**: winit 0.30.13 and bevy_winit 0.19.1
+pass the button through untranslated, and winit's view has no `menuForEvent:` (the source
+walk is in `specs/reviews/vis-001.md`, "Phase 5 draft — the user's calls"). The one step
+those sources cannot show is AppKit's; were it re-sent as `Right`, right-drag already
+orbits, so nothing mis-fires either way. Gate 13 confirms it on the user's trackpad.
 
 **Keys, in fixed steps.** Matched by position, like `WASD`, so they sit next to `WASD` on
 any layout; one step per press, held keys do not repeat:
@@ -980,11 +974,13 @@ any layout; one step per press, held keys do not repeat:
 - `R` tilts 5° toward the horizon, `F` 5° toward straight down, clamped to [25, 90]. From
   90, 13 presses of `R` reach 25 exactly.
 
-They are ignored during an orbit. `Q`, `E`, `R` and `F` are unbound today (§2.9.1,
-§2.9.2, §2.9.3, §2.9.5).
+They are ignored during an orbit, a left drag (a pan, or a press still under 4 px) and a
+scrub, so a pose never changes under a pan's anchor; for the same reason a right press
+during a left drag or a scrub starts nothing. `Q`, `E`, `R` and `F` are unbound today
+(§2.9.1, §2.9.2, §2.9.3, §2.9.5).
 
 **What stays, generalised to the pose** (§2.11.8 a). Each is Phase 3's rule with the
-cursor's point taken from `ray_to_plane`, and each is Phase 3's formula bit for bit at
+cursor's point taken from `ray_to_plane`, and each is Phase 3's formula to rounding at
 the default pose (§2.11.1):
 - **The cursor's ground point** is `ray_to_plane(pose, W, H, cursor, 0)`, and
   `ViewState::world` returns it. For a fixed yaw and pitch it is the look-at point plus
@@ -1003,9 +999,12 @@ the default pose (§2.11.1):
   that point, radius `8·k`. At a tilt, a click on a box's roof then lands inside its
   footprint where the ground point would miss it (Phase 5 gate 11). Straight down it
   moves the click point toward the image centre by `0.8·r/d` for a point `r` metres out:
-  0.68 m at most at the launch fit (the image corner), against a pick radius of
-  `8·k_fit` = 13.8 m, and 0.31 m for Phase 4 gate 7's click at (640, 691), which still
-  lands inside its box (Phase 5 gate 2).
+  0.68 m at most at the launch fit (the image corner, `d` = 1 497 m), against a pick
+  radius of `8·k_fit` = 13.8 m. For the shipped gates' clicks (Phase 5 gate 2): 0.23 m for
+  Phase 3 gate 7's click on vehicle 1, 423 m from the fit's centre (300, 300); 0 for its
+  centred click at `k_min`, and 7.36 m for its far click there, 160 m out, which must
+  still pick nothing; and 0.31 m for Phase 4 gate 7's click at (640, 691) on the box at
+  (0, −331), which lands at `y` = −330.69, inside its ±0.9 m footprint.
 - **Follow** keeps the pose's yaw, pitch and `k` and moves the look-at point with the
   vehicle (§2.11.8 g). An orbit or a key step does not stop a follow; a drag, `WASD` and
   `Esc` still do.
@@ -1017,15 +1016,15 @@ the default pose (§2.11.1):
 before pan and zoom, which read it.
 
 `ViewInput` gains the right button's press and release, Control held, and the four keys;
-it still derives `Default`, so every existing script leaves them off. On a trackpad,
-right-drag is a two-finger press and drag, and Ctrl + left-drag is the one-finger way
-(OQ-11, answered). In the frame order, the bar press (step 2) is a left press without
-Control; an orbit press starts in the orbit step.
+it still derives `Default`, so every existing script leaves them off. In the frame order,
+the bar press (step 2) is a left press without Control; an orbit press starts in the
+orbit step.
 
 #### 2.11.4 The keyframe line and the keyframe file
 
 **`K` prints the full camera** (§2.11.8 f): `yaw_deg` and `pitch_deg` are always printed,
-2 decimals, after `height_m`:
+2 decimals, after `height_m`. A yaw that would print as `360.00` prints `0.00`, so a
+printed yaw is always in [0, 360) and reads back to itself:
 
 ```
 { t = 64.100, x = 512.30, y = -133.20, height_m = 240.00, yaw_deg = 0.00, pitch_deg = 90.00 }
@@ -1038,8 +1037,10 @@ order. **Reading** is TOML's, so it is not Phase 3's exact-form parser:
   (0 and 90), so **every Phase 3 line stays valid unchanged** and means what it meant.
 - Key order and spacing are TOML's to decide, so any order is read. `K` still prints the
   one order.
-- `Keyframe::parse(line)` reads one line with the same reader as the file, and
-  `format(parse(line)) == line` still holds for every line `K` prints.
+- `Keyframe::parse(line)` reads one line as the value of one key (`k = <line>`) with the
+  same reader as the file, and applies the checks below that need no run; so a trailing
+  comma or an empty line is still an error. `format(parse(line)) == line` still holds for
+  every line `K` prints.
 
 **The file** is given to `render` as `--camera <file.toml>`: one key, `keyframes`, an
 array of the lines above, a comma after each:
@@ -1088,9 +1089,12 @@ A **hold** is two consecutive keyframes with the same camera. There is no hold f
 
 Each channel is interpolated in time on its own, from every keyframe:
 - **Scalars:** `ln(height_m)`, `yaw_deg` and `pitch_deg` each get a **monotone cubic
-  Hermite** in time (PCHIP, the Fritsch–Butland weighted harmonic mean of the two secants
-  at an interior keyframe; 0 where they differ in sign or either is 0; 0 at the first and
-  last keyframe). Height is interpolated in log space, so a zoom runs at a steady rate.
+  Hermite** in time (PCHIP). At an interior keyframe `j`, with interval lengths
+  `h₀ = t_j − t_{j−1}`, `h₁ = t_{j+1} − t_j` and secants `δ₀`, `δ₁`, the slope is the
+  weighted harmonic mean `(w₁ + w₂)/(w₁/δ₀ + w₂/δ₁)`, `w₁ = 2h₁ + h₀`, `w₂ = h₁ + 2h₀`
+  (Fritsch–Butland, as SciPy's `PchipInterpolator`); 0 where the secants differ in sign
+  or either is 0; 0 at the first and last keyframe. Height is interpolated in log
+  space, so a zoom runs at a steady rate.
   Yaw is unwrapped first: each keyframe's yaw is the previous one plus the **short way
   round**, `Δ = 180 − ((180 − (y₁ − y₀)) mod 360)` in (−180°, 180°], so exactly 180° apart
   turns clockwise. The result is taken modulo 360.
@@ -1116,7 +1120,7 @@ What that gives, and why:
   keyframe's own `t` every channel is that keyframe's value. So a hold is bit-exact, and a
   partial hold (same place, new height) holds that channel only.
 - **The curve is not the polyline.** Rounding a keyframe means leaving the straight lines
-  between keyframes: on Phase 5 gate 6's 100 m square it swings 7.41 m outside them. It
+  between keyframes: on Phase 5 gate 6's 100 m square it swings 7.4 m outside them. It
   stays tangent-continuous and does not pass the end of a run.
 
 **Follow** (§2.11.8 g). A `follow` keyframe's position is its vehicle's placed point at
@@ -1130,8 +1134,12 @@ What that gives, and why:
   velocity is that end's own (the vehicle's, or 0), so there is no corner. A fixed
   keyframe next to such a segment ends its Catmull–Rom run, at rest;
 - **a followed vehicle that is not drawn** during a blend (it arrives after, or leaves
-  before, the other end) contributes the placed point of the nearest end of its drawn
-  interval: it is held where it was last seen, as `view` holds (§2.9.3);
+  before, the other end), or before a first or after a last keyframe that follows it,
+  contributes the placed point of the nearest end of its drawn interval: it is held where
+  it was last seen, as `view` holds (§2.9.3). Mid-blend that stops its motion abruptly,
+  so the look-at point's velocity jumps by `(1 − w)` times the vehicle's (in
+  `tests/flight.toml`, at 147.1 s, `w` ≈ 0.29). It is not at a keyframe, so §2.11.8 d
+  holds; gate 13 is where it would show;
 - height, yaw and pitch come from their own channels, as for any keyframe.
 
 The path is built once, before the first frame (`src/keyframes.rs`), and `pose_at(t)`
@@ -1305,10 +1313,8 @@ Decided by the user, 2026-09-30, on the Phase 5 draft, before review round 1:
   left-drag? Right-drag on a Mac trackpad is a two-finger press and drag, which may be
   awkward to hold, and the `Q E R F` keys only step. *(design call; deferred by evidence to
   Phase 5 gate 13, the user's hands-on check; blocks nothing.)*~~ **ANSWERED 2026-09-30
-  (user): yes.** The user orbits on a MacBook trackpad. Ctrl + left-drag orbits and tilts
-  exactly as right-drag does; it arrives as Left + Ctrl (winit 0.30.13 and bevy_winit
-  0.19.1 pass the button through untranslated), so no Option fallback. Recorded in
-  §2.11.3 and §2.11.8 (k); gated in Phase 5 gates 11 and 13.
+  (user): yes.** Ctrl + left-drag orbits and tilts exactly as right-drag does (§2.11.3,
+  §2.11.8 k; Phase 5 gates 11 and 13).
 - **OQ-12** — Should the pitch floor go below 25° for low, near-horizon shots? The floor
   keeps the horizon out of every frame (§2.11.1), because today there is nothing to show
   above it and pan, zoom and pick need a ground point under the cursor. With buildings and
@@ -2082,10 +2088,13 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       tests' paths stay. `Keyframe` gains `yaw_deg` and `pitch_deg` (defaults applied on
       reading). `format` prints §2.11.4's lines, and `parse(line)` reads one line with the
       file's reader.
-    - `read(path, &Run)`: the file's TOML (`serde`, `deny_unknown_fields`) and every check
-      of §2.11.4, in the order listed there, each error naming the keyframe.
-    - `Flight::new(keyframes)` builds §2.11.5's channels once; `Flight::pose_at(t, &Run)`
-      gives the pose at any `t`, the vehicle's placed point from the run's `boxes_at`.
+    - `read(path)`: the file's TOML (`serde`, `deny_unknown_fields`) and every check of
+      §2.11.4 that needs no run, in the order listed there, each error naming the
+      keyframe; then `check_follows(&keyframes, &Motion, &Fcd, &Placement)` for the last
+      one. Both `Run` and `Job` hold those three (`src/run.rs:boxes_at` takes them).
+    - `Flight::new(keyframes)` builds §2.11.5's channels once;
+      `Flight::pose_at(t, &Motion, &Fcd, &Placement)` gives the pose at any `t`, a
+      vehicle's placed point from `run::boxes_at`.
   - **Drawing (`src/draw.rs`, `src/scene.rs`).** A perspective camera from a pose: its
     `Transform` in the baked frame and its `PerspectiveProjection` (`φ`, `far = 20·d`).
     `box_transform` takes the lift per rank as an argument; the orthographic callers pass
@@ -2168,34 +2177,32 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
        included) gain `yaw_deg = 0.00, pitch_deg = 90.00`; the `-0.00` keyframe it builds
        field by field gains the two fields; Phase 3's two lines are checked to parse (to
        yaw 0, pitch 90) rather than to re-format to themselves; and its rejection list
-       drops the three cases TOML reads (keys out of order, twice, and no spaces inside
-       the braces). The missing keys, the extra keys, `x` with `follow`, `inf`, a negative
+       drops the three cases TOML reads (its two "keys out of order" lines and the one with
+       no spaces inside the braces). The missing keys, the extra keys, `x` with `follow`, `inf`, a negative
        `follow`, the trailing comma and the empty line are still rejected.
 
      Why the rest stands: every other gate runs at the default pose, where the cursor's
-     ground point, pan, `WASD` and zoom are Phase 3's formulas bit for bit (§2.11.1,
-     §2.11.3). The pick plane moves each click point by `0.8·r/d`: 0.16 m for vehicle 1
-     in Phase 3 gate 7 (298 m from the centre, radius 13.8 m), 0 at `k_min` (centred),
-     and 0.31 m for Phase 4 gate 7's box at (0, −331) (the click lands at `y` = −330.69, in
-     its ±0.9 m footprint). The readout does not change. Every line `check_line` reads now
-     has six or five keys, and still round-trips.
-  3. **Build cost.** `Cargo.lock` gains exactly 2 packages, `toml` and `serde_spanned`, and
-     no Bevy feature changes. The crate count of a clean release build is taken from its
+     ground point, pan, `WASD` and zoom are Phase 3's formulas to rounding, and those
+     gates compare to 1e-9 (§2.11.1). The pick plane's shifts are listed in §2.11.3; none
+     changes a gate's outcome. Every line `check_line` reads now has six or five keys, and
+     still round-trips.
+  3. **Build cost** (§2.11.6). `Cargo.lock` gains exactly 2 packages, and no Bevy feature
+     changes. The crate count of a clean release build is taken from its
      `Compiling` lines, in a throwaway `CARGO_TARGET_DIR` under `scratch/` (about 1.2 GB,
      deleted afterwards). Prediction: **362–365** (360 at Phase 3). Wall time and the
      working `target/` growth are recorded, not predicted.
   - **The pose, headless:**
   4. **Projection.** `distance(h)` = 1.2071067811865475·`h`.
-     - At the default pose, `project` of a ground point is Phase 1's `world_to_pixel`. At
-       the render fit's scale (1920×1080, `height_m` = 1240, look-at (0, 300)), the point
-       (100, 350, 0) is at (1047.0967741935483, 496.4516129032258) both ways.
+     - At the default pose, `project` of a ground point is Phase 1's `world_to_pixel` to
+       1e-9 px. At the render fit's scale (1920×1080, `height_m` = 1240, look-at (0, 300)),
+       the point (100, 350, 0) is at (1047.0967741935483, 496.4516129032258) both ways.
      - Yaw 90, pitch 90, same scale: (100, 300, 0), 100 m east of the look-at, is at
-       (960, 452.90322580645164), straight above the centre.
+       (960, 452.9032258064516), straight above the centre.
      - Pitch 30, yaw 0, `height_m` = 240, look-at (0, 0), 1920×1080: (0, 100, 0) is at
        (960, 366.7808893062154).
      - `ray_to_plane(project(X))` gives back `X` for each of these.
-     - On the plain state, the cursor (740, 300) is over the ground point (100, 60) exactly,
-       which is Phase 3's `world`; at yaw 30, pitch 40 it is over (145.222180146317,
+     - On the plain state, the cursor (740, 300) is over the ground point (100, 60), which
+       is Phase 3's `world`; at yaw 30, pitch 40 it is over (145.222180146317,
        33.60236249663478).
   5. **The keyframe file.** Each error of §2.11.4 has a case. Each exits 1 with one stderr
      line starting `error: --camera`, no progress line and no file at `--out`; those that
@@ -2235,9 +2242,11 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
      - **No corner at `K2`:** the velocity there is (5, 5) m/s from both sides (central
        and one-sided differences at ±1e-4 s agree to 1e-3 m/s). It is 0 at 10, 30, 40 and
        50.
-     - **The curve leaves the lines:** the largest distance from the straight line between
-       two keyframes is 7.41 m (7.4073228602604, on `K1 → K2` and on `K2 → K3`). The
-       largest speed is 15.006 m/s.
+     - **The curve leaves the lines:** over the frame times `t` = 10 + n/30, the largest
+       distance from the straight line between two keyframes is 7.4073228602604 m, at
+       17.2333 s on `K1 → K2` and 22.7667 s on `K2 → K3` (the continuous maximum is 200/27
+       = 7.4074 m, which these samples miss by 8.5e-5). The largest speed, from the curve's
+       derivative at the same times, is 15.006 m/s to 1e-3.
      - **Yaw the short way:** `K4 → K5` (90° to 350°) runs 90, 87.2, 79.6, 68.4, 54.8, 40,
        25.2, 11.6, 0.4, 352.8, 350 at whole seconds, through 0°, never through 180°. A tie
        turns clockwise: 0° to 180° over [0, 10] is 90° at 5 s, and 180° to 0° is 270°.
@@ -2269,7 +2278,7 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
 
      Why 6 px: the silhouette's centroid is not the projected centre of a box seen from an
      angle, and at 5.4 px per metre a 0.5 m bias is 3 px. Each error this gate exists to
-     catch is larger: the yaw's sign (727 and 1 932 px), 5° of pitch (18–52 px), a 60°
+     catch is larger: the yaw's sign (727 and 1 932 px), 5° of pitch (18–53 px), a 60°
      field of view (41 px at the tilt).
   9. **Old lines frame the same ground.** The roads with no vehicles, at 1920×1080: the
      orthographic job's `render_empty()`, and a perspective job with one keyframe at the
@@ -2310,8 +2319,8 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       - at yaw 30, pitch 40: a left drag from (640, 360) to (740, 300) moves the centre to
         (−145.222180146317, −33.60236249663467), and the ground point under the cursor is
         (0, 0), the one under the press. 5 scroll lines at (800, 300) give `k` =
-        1.1^−5, the centre (76.5140026126445, 0.34605626576816634), and leave the cursor
-        over (201.84201134738174, 0.912887711228791);
+        1.1^−5, the centre (76.5140026126445, 0.3460562657681663), and leave the cursor
+        over (201.84201134738174, 0.9128877112287341);
       - at yaw 90, holding `W` for 30 frames of 1/60 s moves the centre to (320, 0), `cy`
         exactly 0;
       - **pick at a tilt:** yaw 30, pitch 45, `k` = 0.05 (`height_m` = 36), one box (4.5 m,
@@ -2342,9 +2351,8 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       - watch Phase 4's default render once more, if wanted: it is the same file, hash for
         hash (gate 1).
 
-      And say whether the rates (0.25°/px, 15°, 5°), `φ` = 45°, the 25° floor or the face
-      shading should change, which is iteration (§2.6) unless it changes the keyframe line
-      or the pose, and answer OQ-10 and OQ-13.
+      And say whether any number of §2.11.8 (h) or the face shading should change
+      (iteration, §2.6), and answer OQ-10 and OQ-13.
 - **Not predicted, and so not gated:**
   - the frame rate in perspective: `view --bench 20` at the default window, recorded at
     close-out (Phase 4: 60.00 fps, median 16.67 ms);
