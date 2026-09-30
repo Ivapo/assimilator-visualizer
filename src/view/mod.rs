@@ -3,6 +3,7 @@
 //! keyframe line on stdout, and draws the state: the camera, the boxes at `t` and the
 //! readout.
 
+pub mod slider;
 pub mod state;
 
 use std::io::Write;
@@ -181,6 +182,7 @@ fn input(world: &mut World) -> ViewInput {
             d: keys.pressed(KeyCode::KeyD),
         },
         cursor,
+        pointer: None,
         press: mouse.just_pressed(MouseButton::Left),
         release: mouse.just_released(MouseButton::Left),
         scroll_lines,
