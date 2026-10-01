@@ -116,8 +116,8 @@ Decided by the user, 2026-10-01, before drafting.
 - (c) **Cache:** `buildings.geojson` sits beside the frozen fixture, in raw lng/lat, with
   Overture's `id`, `height` and `num_floors` kept. `render` and `view` read it with
   `--buildings <file>`. The visualizer projects it with the engine's formula
-  (equirectangular about `metadata.map_origin`, §2.5), read with `serde_json`. Whether to
-  depend on the engine's function or copy it is OQ-1.
+  (equirectangular about `metadata.map_origin`, §2.5), read with `serde_json`. The formula
+  is copied, not taken from the engine's crate (j).
 - (d) **Height:** `height`, else `num_floors` × 3.5 m, else a fixed 10 m. The fetch script
   reports how many buildings take each rule.
 - (e) **Extent:** the network's bbox plus a margin, a flag defaulting to 250 m. Every
@@ -139,6 +139,19 @@ Decided by the user, 2026-10-01, before drafting.
   Nothing derived from OSM or Overture (ODbL) is committed to this MIT/Apache repo.
 - (i) **vis-001 roadmap item 4** is narrowed by vis-002 to buildings via a fetch script, with
   one dated note there (§2.1).
+
+Decided by the user, 2026-10-01, on the draft, before review round 1 (the answers to OQ-1,
+OQ-2, OQ-3 and OQ-6; OQ-4 and OQ-5 stay open):
+- (j) **The projection is copied:** the engine's three lines, in `src/buildings.rs`, pinned
+  bit for bit by gate 6. No dependency on `assimilator-import` (§2.5.1).
+- (k) **Roofs are triangulated with the `earcut` crate**, +1 package (§2.6, §2.11).
+- (l) **The ODbL credit goes in both places, split** (§2.10):
+  - Phase 1's close-out adds it to the README;
+  - a credit line in the video is a small phase of its own (§2.13), which must ship before
+    any Midtown video is shown outside. Phase 1's scope does not change.
+- (m) **No copy of the cache is kept elsewhere** (§2.3.3). If `2026-09-23.1` is gone from
+  S3 and `scratch/` is lost, a newer release is pinned and the predictions are made again,
+  with the change recorded and nothing rewritten.
 
 The rest of this section is the draft's proposal: the margin basis, the report, the mesh,
 the sun, the checks, the fixture steps and the gates.
@@ -214,8 +227,9 @@ from (`import_report.json`, `source.release`). On 2026-10-01 S3 lists three rele
 So Overture keeps only recent releases, and **the cache will outlive its release**:
 - once `2026-09-23.1` is gone, a lost cache cannot be fetched again;
 - a new release changes every count in Phase 1's gates;
-- the fixture therefore never deletes `buildings.geojson` unless asked (§2.9). Where else a
-  copy might live is OQ-6;
+- the fixture therefore never deletes `buildings.geojson` unless asked (§2.9). No other copy
+  is kept (§2.2 m). If the release is gone and `scratch/` is lost, a newer release is
+  pinned and the predictions are made again, recorded as a change and never rewritten;
 - a release that is not on S3 is an error naming it, exit non-zero, no file at `--out`.
 
 #### 2.3.4 The report
@@ -332,10 +346,11 @@ The inverse (for the extent, §2.3.1) is `lng = origin_lng + x / (111320 · cos(
   checks the drawing to 2 px.
 - Without the `cos(origin_lat)` factor the share is 48.0 %.
 
-#### 2.5.1 Depend on the engine's function, or copy it (OQ-1)
+#### 2.5.1 The formula is copied, not a dependency (decision, recorded — OQ-1)
 
 The engine function is in `assimilator-import`, a crate this repo does not depend on. It
-uses `assimilator-config`, `-core` and `-geometry` (vis-001 §2.2.1).
+uses `assimilator-config`, `-core` and `-geometry` (vis-001 §2.2.1). The two options the
+draft weighed:
 
 | | Depend on `assimilator-import` | Copy the three lines |
 |---|---|---|
@@ -344,9 +359,9 @@ uses `assimilator-config`, `-core` and `-geometry` (vis-001 §2.2.1).
 | Coupling | a crate under active work: 9 commits to `crates/import` between the pin and engine main on 2026-10-01; a pin move may break the build there | none; gate 6 pins the values bit for bit |
 | An engine change to the projection | followed at the next pin move | not followed |
 
-**Recommendation: copy, with gate 6.** vis-001 §2.2.1 reused the placement because it is
-about 1,200 lines that a port would drift from. These are 3 lines, unchanged since
-2026-04-08.
+**Decided by the user, 2026-10-01: copy, with gate 6** (§2.2 j). It is the draft's
+recommendation. vis-001 §2.2.1 reused the placement because it is about 1,200 lines that a
+port would drift from. These are 3 lines, unchanged since 2026-04-08.
 
 "Followed at the next pin move" is worth less than it looks. What must match is the formula
 that made **the project's** network when it was imported, not the formula at the pin.
@@ -366,8 +381,8 @@ Built once, before the first frame or the window, from the projected footprints 
 - **Walls:** one quad per ring edge, from `z` = 0 to the height, holes' rings included, so a
   courtyard has walls. Each quad has its own four vertices and one normal: the right of the
   ring's direction, which with that orientation points out of the solid.
-- **Roof:** each polygon's rings are triangulated at `z` = height (OQ-2). The normal is
-  straight up.
+- **Roof:** each polygon's rings are triangulated with the `earcut` crate (§2.2 k) at `z` =
+  height. The normal is straight up.
 - **No floor.** At pitch ≥ 25° it is never seen.
 
 All buildings are one Bevy mesh, baked like the roads relative to the fit's centre `(fx,
@@ -498,7 +513,9 @@ repo is MIT OR Apache-2.0. So:
 - the spec and its review record quote counts, a few Overture ids and measured numbers, not
   data.
 
-Where the credit goes — the README, the video, or both — is OQ-3.
+The credit goes in both places (§2.2 l). Phase 1's close-out adds it to the README. A
+credit line in the video is a small phase of its own (§2.13), which must ship before any
+Midtown video is shown outside. The wording is the user's to set.
 
 ### 2.11 Build cost
 
@@ -506,16 +523,17 @@ Where the credit goes — the README, the video, or both — is OQ-3.
 - **Reading:** `serde_json` and `serde`'s `derive`, both already dependencies; 0 packages.
 - **Triangulation:** `earcut` 0.4.11 (georust; MIT OR Apache-2.0; a port of Mapbox's
   earcut; holes supported). Its one dependency, `num-traits` 0.2, is already compiled
-  (through `approx` and arrow). So it is **+1 package and +1 compiled crate** (OQ-2).
+  (through `approx` and arrow). So it is **+1 package and +1 compiled crate** (§2.2 k).
   `bevy_mesh` 0.19.1 meshes a `ConvexPolygon` but has no triangulator for concave polygons
   or holes.
-- **The projection:** 0 packages if copied, +1 if `assimilator-import` is added (OQ-1).
+- **The projection:** copied, so 0 packages (§2.2 j). Depending on `assimilator-import`
+  would have added 1 (§2.5.1).
 - **Bevy: no feature added.** `DirectionalLight` and `GlobalAmbientLight` are in
   `bevy_light`, already built through `bevy_pbr`.
 - **`network-extent`** is a binary of this crate: no package.
 
-With the recommendations, `Cargo.lock` gains **1 package** and a clean release build
-compiles **363 crates** (362 at vis-001 Phase 5).
+So `Cargo.lock` gains **1 package** and a clean release build compiles **363 crates** (362
+at vis-001 Phase 5).
 
 ### 2.12 Measured while drafting
 
@@ -528,8 +546,12 @@ Nothing was built.
 ### 2.13 Roadmap (not yet phases)
 
 Each item becomes a phase appended here when it is drafted and reviewed. Each ends with a
-video, unless it says why not. The order is the user's to set.
-- **An ODbL credit in the video**, if OQ-3 asks for one and Phase 1 does not carry it.
+video, unless it says why not. The order is the user's to set, except for the first item's
+constraint.
+- **An ODbL credit line in the video** (§2.2 l). It is a small phase of its own, and it
+  **must ship before any Midtown video is shown outside**. This machine's ffmpeg has no
+  `drawtext`, so it is Bevy text in the headless render (OQ-3), and `render` without
+  `--buildings` stays byte-identical.
 - **Nicer buildings:**
   - Overture `building_part` (towers on podiums; OQ-5) and raised bases;
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
@@ -544,19 +566,25 @@ video, unless it says why not. The order is the user's to set.
 ## 3. Open questions
 
 - **OQ-1** — Depend on `assimilator-import` for the projection, or copy its three lines?
+  **RESOLVED.**
   - *Costs* are in §2.5.1: +1 package, a 10.8k-line crate compiled, and coupling to the
     importer, against a copy pinned by a bit-exact test.
   - *Recommendation:* copy.
-  - *(design call: the user; blocks Phase 1's `Cargo.toml` and gate 6's form. Either way
-    gate 6's values hold.)*
-- **OQ-2** — Triangulate roofs with the `earcut` crate, or by hand?
+  - ~~*(design call: the user; blocks Phase 1's `Cargo.toml` and gate 6's form. Either way
+    gate 6's values hold.)*~~
+  - *(answered 2026-10-01, user)* **Copy the three lines.** Gate 6's bit-exact test pins
+    the values, and there is no dependency on `assimilator-import`. Recorded as §2.2 j and
+    §2.5.1.
+- **OQ-2** — Triangulate roofs with the `earcut` crate, or by hand? **RESOLVED.**
   - *Earcut* adds 1 package; its only dependency is already compiled.
   - *By hand:* 0 packages, but ear clipping with hole bridging is about 150–250 lines, and
     hole bridging is where hand-written triangulators fail. Bevy has none for concave
     polygons (§2.11). 33 of Midtown's footprints have holes, and many are concave.
   - *Recommendation:* earcut.
-  - *(design call: the user; blocks Phase 1's `Cargo.toml`.)*
-- **OQ-3** — Where does the ODbL credit go: the README, the video, or both?
+  - ~~*(design call: the user; blocks Phase 1's `Cargo.toml`.)*~~
+  - *(answered 2026-10-01, user)* **The `earcut` crate**, +1 package. Recorded as §2.2 k,
+    §2.6 and §2.11.
+- **OQ-3** — Where does the ODbL credit go: the README, the video, or both? **RESOLVED.**
   - *The licence:* Overture's buildings are ODbL, and so are Midtown's roads, so this
     concerns any video of an imported network, with or without buildings. ODbL 1.0 §4.3
     asks that a publicly used Produced Work carry a notice that makes its viewers aware of
@@ -571,8 +599,15 @@ video, unless it says why not. The order is the user's to set.
   - *Recommendation:* both. The README text goes in Phase 1's close-out, and the in-video
     line comes before any Midtown video is shown outside: as a phase of its own (§2.13), or
     added to Phase 1 if the user prefers.
-  - *(needs-input: the user; blocks Phase 1's close-out, and Phase 1's scope if it goes
-    there.)*
+  - ~~*(needs-input: the user; blocks Phase 1's close-out, and Phase 1's scope if it goes
+    there.)*~~
+  - *(answered 2026-10-01, user)* **Both, split.**
+    - Phase 1's close-out adds the ODbL credit to the README.
+    - The in-video credit line is its own small phase, listed in §2.13, and it must ship
+      before any Midtown video is shown outside.
+    - Phase 1's scope does not change.
+
+    Recorded as §2.2 l, §2.10, §2.13 and Phase 1's close-out.
 - **OQ-4** — Midtown gridlocks at the pin, at both demand levels. This looks like an engine
   fault.
   - *The symptom:* vehicles freeze at a link end, often just after a late lane change,
@@ -597,6 +632,7 @@ video, unless it says why not. The order is the user's to set.
   - *(design call; deferred by evidence to Phase 1's gate 16; blocks nothing in Phase 1. If
     yes, it is the next phase.)*
 - **OQ-6** — Where should a copy of the cache live once its release leaves S3?
+  **RESOLVED.**
   - *Why it matters:* Overture keeps only recent releases (§2.3.3). If
     `scratch/midtown/buildings.geojson` is lost after `2026-09-23.1` is gone, Phase 1's
     predictions cannot be reproduced. A re-fetch from a newer release moves every count.
@@ -604,7 +640,10 @@ video, unless it says why not. The order is the user's to set.
   - *Option (b):* keep a copy outside this repo, which ODbL allows. One place is the user's
     own project or another private place; that is the user's to write.
   - *Recommendation:* (b) if there is such a place, else (a).
-  - *(design call: the user; non-blocking.)*
+  - ~~*(design call: the user; non-blocking.)*~~
+  - *(answered 2026-10-01, user)* **Option (a): keep no copy.** If `2026-09-23.1` is gone
+    from S3 and `scratch/` is lost, re-pin a newer release and re-predict, recording the
+    change and never rewriting. Recorded as §2.2 m and §2.3.3.
 
 ## 4. Implementation phases
 
@@ -618,12 +657,9 @@ buildings around its roads. With `--camera`, the flight passes among them. Witho
 
 Drafted 2026-10-01; the design is §2, and the user's decisions are §2.2. It builds on vis-001
 Phase 5 (the perspective camera, the keyframe file) and changes none of its behaviour without
-`--buildings`. It assumes OQ-1 and OQ-2 as recommended (copy; earcut). If they go the other
-way:
-- OQ-1: one more line in `Cargo.toml`, gate 2's count +1, and gate 6 compares against the
-  engine's function itself;
-- OQ-2: a hand-written triangulator in `src/buildings.rs` replaces `earcut`, and gate 2's
-  count drops by 1. Gates 9, 11 and 12 then carry the triangulation.
+`--buildings`. The projection is copied (§2.2 j) and roofs are triangulated with `earcut`
+(§2.2 k). Phase 1 adds the ODbL credit to the README only; the in-video credit is its own
+phase (§2.2 l, §2.13).
 
 - **Scope:**
   - **The fetch.**
@@ -888,8 +924,10 @@ way:
       to `rules/buildings.md`, reworded to fit. No `max_lines` is raised;
     - the README gains the fetch script with its prerequisites (DuckDB ≥ 1.5.1 with
       `httpfs` and `spatial`; the network, for the fetch only), `--buildings`, `B`, the
-      Midtown fixture (it needs the user's project), and the ODbL notice as OQ-3 settles
-      it;
+      Midtown fixture (it needs the user's project), and the ODbL credit (§2.2 l). The
+      credit covers Overture's buildings and the roads of an imported network, in wording
+      the user sets. The README also says that a credit line in the video is a later
+      phase, and that it must ship before any Midtown video is shown outside;
     - `CLAUDE.md` gains one line beside the licence: nothing derived from OSM or Overture
       (ODbL) is committed; fetched buildings and imported networks stay out of the repo.
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and its
