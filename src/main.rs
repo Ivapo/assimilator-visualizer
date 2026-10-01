@@ -62,6 +62,10 @@ enum Cmd {
         /// Default: the top-down camera fitted to the network.
         #[arg(long)]
         camera: Option<PathBuf>,
+        /// A buildings.geojson cache (scripts/fetch-buildings.sh): draw the buildings
+        /// around a georeferenced network.
+        #[arg(long)]
+        buildings: Option<PathBuf>,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -89,6 +93,10 @@ enum Cmd {
         /// Window height, logical pixels.
         #[arg(long, default_value_t = 720)]
         height: u32,
+        /// A buildings.geojson cache (scripts/fetch-buildings.sh): draw the buildings
+        /// around a georeferenced network; `B` hides and shows them.
+        #[arg(long)]
+        buildings: Option<PathBuf>,
         /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
         #[arg(long, hide = true)]
         bench: Option<f64>,
@@ -135,6 +143,7 @@ fn run(cli: Cli) -> Result<()> {
             width,
             height,
             camera,
+            buildings,
         } => render(
             RenderOptions {
                 project,
@@ -151,6 +160,7 @@ fn run(cli: Cli) -> Result<()> {
             },
             out,
             camera,
+            buildings,
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -163,6 +173,7 @@ fn run(cli: Cli) -> Result<()> {
             to,
             width,
             height,
+            buildings,
             bench,
         } => view::run(&ViewOptions {
             load: LoadOptions {
@@ -174,6 +185,7 @@ fn run(cli: Cli) -> Result<()> {
                 from,
                 to,
             },
+            buildings,
             width,
             height,
             bench,
@@ -181,14 +193,16 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
-fn render(opts: RenderOptions, out: PathBuf, camera: Option<PathBuf>) -> Result<()> {
+fn render(
+    opts: RenderOptions,
+    out: PathBuf,
+    camera: Option<PathBuf>,
+    buildings: Option<PathBuf>,
+) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
     };
-    let mut job = match &camera {
-        None => Job::prepare(&opts)?,
-        Some(file) => Job::prepare_with_camera(&opts, file)?,
-    };
+    let mut job = Job::prepare_with(&opts, camera.as_deref(), buildings.as_deref())?;
 
     let n_frames = job.clock.frames;
     let mut enc = encode::Encoder::start(&ffmpeg, &out, opts.width, opts.height, opts.fps)?;

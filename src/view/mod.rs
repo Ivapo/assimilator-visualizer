@@ -1,14 +1,15 @@
 //! `assimilator-video view` (vis-001 §2.9): a window over a finished run. Each frame turns
 //! Bevy's input into a [`ViewInput`], applies it to the [`ViewState`], prints a returned
 //! keyframe line on stdout, and draws the state: the perspective camera at the state's
-//! pose (§2.11), the shaded boxes at `t`, the readout and the time slider (§2.10).
+//! pose (§2.11), the shaded boxes at `t`, the readout and the time slider (§2.10). With
+//! `--buildings` (vis-002 §2.8), the buildings and the sun, shown or hidden by `B`.
 
 pub mod slider;
 pub mod state;
 
 use std::io::Write;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use bevy::input::keyboard::Key;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
@@ -22,6 +23,8 @@ pub use state::{Fit, ViewInput, ViewState};
 #[derive(Debug, Clone)]
 pub struct ViewOptions {
     pub load: LoadOptions,
+    /// The `--buildings` file.
+    pub buildings: Option<std::path::PathBuf>,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -41,6 +44,8 @@ struct Viewer {
     pool: Vec<Entity>,
     materials: Vec<Handle<StandardMaterial>>,
     camera: Entity,
+    /// The buildings' mesh and sun; `None` without `--buildings`.
+    buildings: Option<draw::BuildingEntities>,
     readout: Entity,
     bar: BarNodes,
     bench: Option<Bench>,
@@ -85,6 +90,13 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         bail!("--bench must be positive (got {s})");
     }
     let run = run::load(&o.load)?;
+    let buildings = match &o.buildings {
+        None => None,
+        Some(file) => Some(
+            crate::buildings::read(file, &run.placement.network)
+                .map_err(|e| anyhow!("--buildings {}: {e}", file.display()))?,
+        ),
+    };
     let fit = Fit::new(&run.strips, o.width, o.height);
     let snaps = run.fcd.snapshots.iter().map(|s| s.time).collect();
     let mut state = ViewState::new(run.from, run.to, snaps, fit);
@@ -128,6 +140,9 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         Transform::IDENTITY,
     ));
     let pool = draw::spawn_pool(world, &box_mesh, &speed_mats[0], run.motion.max_drawn());
+    let buildings = buildings
+        .as_ref()
+        .map(|b| draw::spawn_buildings(world, b, (fit.cx, fit.cy)));
     let readout = world
         .spawn((
             Text::new(state.readout()),
@@ -154,6 +169,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         pool,
         materials: speed_mats,
         camera,
+        buildings,
         readout,
         bar,
         bench: o.bench.map(|secs| Bench {
@@ -221,6 +237,7 @@ fn input(world: &mut World) -> ViewInput {
             e: keys.just_pressed(KeyCode::KeyE),
             r: keys.just_pressed(KeyCode::KeyR),
             f: keys.just_pressed(KeyCode::KeyF),
+            b: keys.just_pressed(KeyCode::KeyB),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -269,6 +286,20 @@ fn frame(world: &mut World) {
             (fx, fy),
             draw::RANK_LIFT_3D,
         );
+        if let Some(b) = v.buildings {
+            let want = if s.buildings_shown {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            };
+            for e in [b.mesh, b.sun] {
+                let mut ent = world.entity_mut(e);
+                let mut vis = ent.get_mut::<Visibility>().unwrap();
+                if *vis != want {
+                    *vis = want;
+                }
+            }
+        }
         let text = s.readout();
         let mut ent = world.entity_mut(v.readout);
         let mut t = ent.get_mut::<Text>().unwrap();

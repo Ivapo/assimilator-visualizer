@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# vis-002 Phase 1 exit gates 3, 4 and 5 (specs/city_spec.md), on the Midtown fixture of
-# `scripts/fixture.sh midtown` and urban_grid's of `scripts/fixture.sh`. Gate 6 is
+# vis-002 Phase 1 exit gates 3, 4, 5, 7 (the CLI cases) and 13 (specs/city_spec.md), on
+# the Midtown fixture of `scripts/fixture.sh midtown` and urban_grid's of
+# `scripts/fixture.sh`. Gates 6–12 and 14 are
 #   cargo test --release --test buildings -- --include-ignored --test-threads=1 --nocapture
+# Gate 1 is scripts/gates.sh, and its --camera frames compared by hand; gates 2 and 15
+# are recorded by hand in specs/reviews/vis-002.md. Gate 16 is the user's.
 # Offline, except gate 5's second fetch and missing-release case, which use the network
-# and run only with REFETCH=1. Needs duckdb, python3 and read access (git show) to the
-# user's project.
+# and run only with REFETCH=1. Needs ffmpeg/ffprobe, duckdb, python3, perl, sandbox-exec
+# and read access (git show) to the user's project.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,7 +19,8 @@ SRC="${MIDTOWN_PROJECT:-$HOME/assimilator/projects/midtown-section}"
 COMMIT=e2de274
 CACHE="$MID/buildings.geojson"
 mkdir -p "$OUT"
-cargo build --release --quiet --bin network-extent || exit 1
+cargo build --release --quiet --bin assimilator-video --bin network-extent || exit 1
+BIN="$ROOT/target/release/assimilator-video"
 EXTENT="$ROOT/target/release/network-extent"
 FAIL=0
 fail() { echo "FAIL: $*"; FAIL=1; }
@@ -149,5 +153,111 @@ else
     echo "gate5: the second fetch and the missing release use the network; run with REFETCH=1"
 fi
 
-[ $FAIL = 0 ] && echo "vis-002 gates 3, 4 and 5: PASS" || echo "vis-002 gates 3, 4 and 5: FAIL"
+# ── Gate 7: reading errors, through the CLI ──────────────────────────────────
+CASES="$OUT/gate7"
+rm -rf "$CASES" && mkdir -p "$CASES"
+python3 - "$CASES" <<'PY' || fail "gate7 cases"
+import json, math, os, sys
+d = sys.argv[1]
+OLNG, OLAT = -73.9775152177763, 40.76472024499192
+def ll(x, y):
+    return [OLNG + x / (111320.0 * math.cos(OLAT * math.pi / 180.0)), OLAT + y / 111320.0]
+sq = [ll(120, -5), ll(130, -5), ll(130, 5), ll(120, 5), ll(120, -5)]
+def poly(*rings):
+    return {"type": "Polygon", "coordinates": list(rings)}
+def feat(props, geom):
+    return {"type": "Feature", "properties": props, "geometry": geom}
+def fc(*features):
+    return json.dumps({"type": "FeatureCollection", "features": list(features)})
+cases = {
+    "not_json": "{ not json",
+    "array": "[]",
+    "top_feature": json.dumps(feat({"id": "x", "height": 10}, poly(sq))),
+    "no_id": fc(feat({"height": 10}, poly(sq))),
+    "point": fc(feat({"id": "p"}, {"type": "Point", "coordinates": sq[0]})),
+    "ring3": fc(feat({"id": "r3"}, poly([sq[0], sq[1], sq[0]]))),
+    "unclosed": fc(feat({"id": "open"}, poly(sq[:4]))),
+    "position_a": fc(feat({"id": "pa"}, poly([sq[0], ["a", 40.7], sq[2], sq[3], sq[0]]))),
+    "lat91": fc(feat({"id": "l91"}, poly([sq[0], sq[1], [sq[2][0], 91], [sq[3][0], 91], sq[0]]))),
+    "metres": fc(feat({"id": "m"}, poly([[294.2, -240.2], [304.2, -240.2], [304.2, -230.2], [294.2, -240.2]]))),
+    "height0": fc(feat({"id": "h0", "height": 0}, poly(sq))),
+    "height_neg": fc(feat({"id": "h-5", "height": -5}, poly(sq))),
+    "floors0": fc(feat({"id": "f0", "num_floors": 0}, poly(sq))),
+    "floors2.5": fc(feat({"id": "f2.5", "num_floors": 2.5}, poly(sq))),
+    "empty": fc(),
+    "far": fc(feat({"id": "far"}, poly([[0, 0], [0.0001, 0], [0.0001, 0.0001], [0, 0]]))),
+}
+for k, v in cases.items():
+    open(os.path.join(d, k + ".geojson"), "w").write(v)
+print(f"gate7: {len(cases)} case files")
+PY
+gate7() { # <label> <cmd: render|view> <project> <buildings file>
+    local label=$1 cmd=$2 proj=$3 file=$4 code
+    local out="$CASES/$label.$cmd.mp4"
+    rm -f "$out" "$out.partial"
+    if [ "$cmd" = render ]; then
+        "$BIN" render --project "$proj" --scenario baseline --seed 42 --out "$out" \
+            --buildings "$file" > "$CASES/$label.$cmd.stdout" 2> "$CASES/$label.$cmd.stderr"
+        code=$?
+    else
+        # A window that opens fails the case instead of hanging: SIGALRM after 60 s.
+        perl -e 'alarm 60; exec @ARGV' "$BIN" view --project "$proj" --scenario baseline \
+            --seed 42 --buildings "$file" > "$CASES/$label.$cmd.stdout" 2> "$CASES/$label.$cmd.stderr"
+        code=$?
+    fi
+    one_error "gate7 $label ($cmd)" $code "$CASES/$label.$cmd.stderr" "$CASES/$label.$cmd.stdout" \
+        "error: --buildings"
+    [ ! -e "$out" ] || fail "gate7 $label left $out"
+    [ ! -e "$out.partial" ] || fail "gate7 $label left $out.partial"
+}
+gate7 missing render "$MID" "$CASES/does_not_exist.geojson"
+for f in "$CASES"/*.geojson; do
+    gate7 "$(basename "$f" .geojson)" render "$MID" "$f"
+done
+gate7 no_map_origin render "$UG" "$ROOT/tests/shapes.geojson"
+gate7 missing view "$MID" "$CASES/does_not_exist.geojson"
+gate7 no_map_origin view "$UG" "$ROOT/tests/shapes.geojson"
+gate7 far view "$MID" "$CASES/far.geojson"
+
+# ── Gate 13: deterministic and offline ───────────────────────────────────────
+render13() { # <tag> <sandboxed: 0|1> [extra args…]
+    local tag=$1 sb=$2 t0=$SECONDS probe code
+    shift 2
+    local cmd=("$BIN" render --project "$MID" --scenario baseline --seed 42 --buildings "$CACHE"
+        --from 300 --to 360 --speedup 1 --out "$OUT/$tag.mp4" "$@")
+    rm -f "$OUT/$tag.mp4" "$OUT/$tag.framemd5"
+    if [ "$sb" = 1 ]; then
+        sandbox-exec -p '(version 1)(allow default)(deny network*)' "${cmd[@]}" 2> "$OUT/$tag.stderr"
+    else
+        "${cmd[@]}" 2> "$OUT/$tag.stderr"
+    fi
+    code=$?
+    echo "gate13 $tag: exit $code in $((SECONDS - t0)) s, last line $(tail -1 "$OUT/$tag.stderr")"
+    [ "$code" = 0 ] || { fail "gate13 $tag exited $code"; return; }
+    probe=$(ffprobe -v error -select_streams v:0 -count_frames \
+        -show_entries stream=width,height,r_frame_rate,nb_read_frames -of csv=p=0 "$OUT/$tag.mp4")
+    echo "gate13 $tag: ffprobe $probe (expected 1920,1080,30/1,1800)"
+    [ "$probe" = "1920,1080,30/1,1800" ] || fail "gate13 $tag ffprobe"
+    ffmpeg -y -v error -i "$OUT/$tag.mp4" -f framemd5 "$OUT/$tag.framemd5"
+}
+same13() { # <a> <b>
+    python3 - "$OUT/$1.framemd5" "$OUT/$2.framemd5" <<'PY' || fail "gate13 $1 vs $2"
+import sys
+a = [l for l in open(sys.argv[1]) if not l.startswith("#")]
+b = [l for l in open(sys.argv[2]) if not l.startswith("#")]
+eq = sum(x == y for x, y in zip(a, b))
+print(f"gate13 {sys.argv[1].rsplit('/', 1)[1]} vs {sys.argv[2].rsplit('/', 1)[1]}: {eq} of {len(a)} frames equal ({len(b)})")
+assert eq == len(a) == len(b) == 1800
+PY
+}
+render13 flight1 0 --camera "$ROOT/tests/city-flight.toml"
+render13 flight2 0 --camera "$ROOT/tests/city-flight.toml"
+render13 flight3 1 --camera "$ROOT/tests/city-flight.toml"
+same13 flight1 flight2
+same13 flight1 flight3
+render13 ortho1 0
+render13 ortho2 0
+same13 ortho1 ortho2
+
+[ $FAIL = 0 ] && echo "vis-002 gates 3, 4, 5, 7 (CLI) and 13: PASS" || echo "vis-002 gates 3, 4, 5, 7 (CLI) and 13: FAIL"
 exit $FAIL

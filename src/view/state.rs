@@ -62,6 +62,8 @@ pub struct Pressed {
     /// Pitch 5° toward the horizon, and 5° toward straight down.
     pub r: bool,
     pub f: bool,
+    /// Hide or show the buildings (vis-002 §2.8), by position.
+    pub b: bool,
 }
 
 /// Keys held this frame.
@@ -212,6 +214,8 @@ pub struct ViewState {
     pub scrub: Option<bool>,
     pub orbit: Option<Orbit>,
     pub follow: Option<Follow>,
+    /// Whether the buildings are drawn; `B` flips it. Read only with `--buildings`.
+    pub buildings_shown: bool,
 }
 
 impl ViewState {
@@ -234,6 +238,7 @@ impl ViewState {
             scrub: None,
             orbit: None,
             follow: None,
+            buildings_shown: true,
         }
     }
 
@@ -322,6 +327,9 @@ impl ViewState {
 
         if input.pressed.esc {
             self.follow = None;
+        }
+        if input.pressed.b {
+            self.buildings_shown = !self.buildings_shown;
         }
 
         // Orbit: a right press, or a left press with Control held, off the bar and with no

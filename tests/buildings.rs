@@ -11,6 +11,11 @@ use assimilator_config::network::NetworkConfig;
 use assimilator_video::buildings::{
     self, Building, Buildings, HeightRule, building_mesh, lnglat_to_xy, xy_to_lnglat,
 };
+use assimilator_video::camera::{Pose, project};
+use assimilator_video::draw::{self, SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG};
+use assimilator_video::render::VehicleBox;
+use assimilator_video::view::state::{Fit, Follow, ViewInput, ViewState};
+use assimilator_video::{Job, RenderOptions};
 use serde_json::{Value, json};
 
 /// Midtown's `metadata.map_origin`, `[lng, lat]`.
@@ -596,4 +601,365 @@ fn gate10_alignment() {
     );
     assert!((total - 33530.0).abs() < 0.05, "centreline length {total}");
     assert!(share <= 3.0, "{share} % inside footprints");
+}
+
+// ── Gate 11: top-down coverage ───────────────────────────────────────────────
+
+#[test]
+fn gate11_ortho_eye() {
+    for (tallest, eye) in [(0.0, 500.0), (472.0, 500.0), (490.0, 500.0), (495.0, 505.0)] {
+        assert_eq!(
+            draw::ortho_eye(tallest),
+            (eye, eye + 500.0),
+            "tallest {tallest}"
+        );
+    }
+}
+
+fn midtown_options(width: u32, height: u32) -> RenderOptions {
+    RenderOptions {
+        project: midtown(),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from: Some(300.0),
+        to: Some(301.0),
+        speedup: None,
+        fps: 30,
+        width,
+        height,
+    }
+}
+
+/// Is `p` within `d` of segment `a → b`?
+fn near_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64), d: f64) -> bool {
+    let (vx, vy) = (b.0 - a.0, b.1 - a.1);
+    let len2 = vx * vx + vy * vy;
+    let t = if len2 > 0.0 {
+        (((p.0 - a.0) * vx + (p.1 - a.1) * vy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let (cx, cy) = (a.0 + t * vx - p.0, a.1 + t * vy - p.1);
+    cx * cx + cy * cy <= d * d
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture and the GPU"]
+fn gate11_top_down_coverage() {
+    let (w, h) = (3840u32, 2160u32);
+    let cache = midtown().join("buildings.geojson");
+    let mut plain = Job::prepare_with(&midtown_options(w, h), None, None).unwrap();
+    let mut city = Job::prepare_with(&midtown_options(w, h), None, Some(&cache)).unwrap();
+    assert_eq!(plain.camera(), city.camera(), "the fit");
+    let tallest = |j: &Job| j.buildings().map_or(0.0, |b| b.tallest);
+    println!("gate11 tallest {} m", tallest(&city));
+    assert_eq!(draw::ortho_eye(tallest(&plain)), (500.0, 1000.0));
+    assert_eq!(draw::ortho_eye(tallest(&city)), (500.0, 1000.0));
+    let a = plain.render_empty().unwrap();
+    let b = city.render_empty().unwrap();
+
+    let cam = *city.camera();
+    let (wu, hu) = (w as usize, h as usize);
+    let mut inside = vec![false; wu * hu];
+    let mut edge = vec![false; wu * hu];
+    let px = |p: [f64; 2]| cam.world_to_pixel(p[0], p[1]);
+    for poly in city
+        .buildings()
+        .unwrap()
+        .buildings
+        .iter()
+        .flat_map(|b| b.polygons.iter())
+    {
+        let ext: Vec<[f64; 2]> = poly.exterior.iter().map(|&p| px(p).into()).collect();
+        let holes: Vec<Vec<[f64; 2]>> = poly
+            .holes
+            .iter()
+            .map(|r| r.iter().map(|&p| px(p).into()).collect())
+            .collect();
+        let range = |lo: f64, hi: f64, n: usize| {
+            let a = (lo - 2.5).floor().max(0.0) as usize;
+            let b = ((hi + 2.5).ceil().max(0.0) as usize).min(n);
+            a..b
+        };
+        let xs = ext.iter().map(|p| p[0]);
+        let ys = ext.iter().map(|p| p[1]);
+        let (x0, x1) = (
+            xs.clone().fold(f64::INFINITY, f64::min),
+            xs.fold(f64::NEG_INFINITY, f64::max),
+        );
+        let (y0, y1) = (
+            ys.clone().fold(f64::INFINITY, f64::min),
+            ys.fold(f64::NEG_INFINITY, f64::max),
+        );
+        for j in range(y0, y1, hu) {
+            for i in range(x0, x1, wu) {
+                let c = [i as f64 + 0.5, j as f64 + 0.5];
+                if in_ring(&ext, c) && !holes.iter().any(|r| in_ring(r, c)) {
+                    inside[j * wu + i] = true;
+                }
+            }
+        }
+        for ring in std::iter::once(&ext).chain(holes.iter()) {
+            let n = ring.len();
+            for k in 0..n {
+                let (p, q) = (ring[k], ring[(k + 1) % n]);
+                for j in range(p[1].min(q[1]), p[1].max(q[1]), hu) {
+                    for i in range(p[0].min(q[0]), p[0].max(q[0]), wu) {
+                        let c = (i as f64 + 0.5, j as f64 + 0.5);
+                        if near_segment(c, (p[0], p[1]), (q[0], q[1]), 2.0) {
+                            edge[j * wu + i] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let (mut differ, mut inside_n, mut v_outside, mut v_same) = (0usize, 0usize, 0usize, 0usize);
+    for k in 0..wu * hu {
+        let d = a[4 * k..4 * k + 4] != b[4 * k..4 * k + 4];
+        differ += d as usize;
+        inside_n += inside[k] as usize;
+        if d && !inside[k] && !edge[k] {
+            v_outside += 1;
+        }
+        if inside[k] && !edge[k] && !d {
+            v_same += 1;
+        }
+    }
+    println!(
+        "gate11: {differ} pixels differ, {inside_n} inside a footprint; violations: {v_outside} differing outside, {v_same} inside but equal"
+    );
+    assert_eq!((v_outside, v_same), (0, 0));
+}
+
+// ── Gate 12: shapes in perspective ───────────────────────────────────────────
+
+#[test]
+fn gate12_sun_direction() {
+    let d = draw::sun_direction(SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG);
+    let want = [0.25, -(3f64.sqrt()) / 2.0, -(3f64.sqrt()) / 4.0];
+    println!("gate12 sun direction {d:?}");
+    for (got, want) in [d.x, d.y, d.z].into_iter().zip(want) {
+        assert!((got as f64 - want).abs() <= 1e-6, "{d:?} vs {want:?}");
+    }
+}
+
+fn write_camera(name: &str, line: &str) -> PathBuf {
+    write_case(name, &format!("keyframes = [\n  {line},\n]\n"))
+}
+
+/// The frames of one pose with and without the shapes, and the pose.
+fn shape_frames(name: &str, line: &str) -> (Vec<u8>, Vec<u8>, Pose) {
+    let cam = write_camera(name, line);
+    let o = midtown_options(1920, 1080);
+    let mut plain = Job::prepare_with(&o, Some(&cam), None).unwrap();
+    let mut city = Job::prepare_with(&o, Some(&cam), Some(&shapes())).unwrap();
+    let pose = city.pose_at(city.clock.from).unwrap();
+    (
+        plain.render_empty().unwrap(),
+        city.render_empty().unwrap(),
+        pose,
+    )
+}
+
+fn pixel(frame: &[u8], i: usize, j: usize) -> [u8; 4] {
+    let k = 4 * (j * 1920 + i);
+    [frame[k], frame[k + 1], frame[k + 2], frame[k + 3]]
+}
+
+/// The 3×3 mean red at the pixel holding `x`; each sample must be neutral grey and not
+/// the ground.
+fn sample(ground: &[u8], city: &[u8], pose: &Pose, x: [f64; 3], what: &str) -> f64 {
+    let (pi, pj) = project(pose, 1920.0, 1080.0, x);
+    let (ci, cj) = (pi.floor() as usize, pj.floor() as usize);
+    let mut sum = 0.0;
+    for j in cj - 1..=cj + 1 {
+        for i in ci - 1..=ci + 1 {
+            let (g, c) = (pixel(ground, i, j), pixel(city, i, j));
+            assert!(
+                c[0] == c[1] && c[1] == c[2],
+                "{what}: pixel ({i}, {j}) {c:?} is not neutral"
+            );
+            assert_ne!(c, g, "{what}: pixel ({i}, {j}) is the ground");
+            sum += c[0] as f64;
+        }
+    }
+    let mean = sum / 9.0;
+    println!("gate12 {what}: ({pi:.1}, {pj:.1}) mean red {mean:.2}");
+    mean
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture and the GPU"]
+fn gate12_shapes_in_perspective() {
+    let (ground, city, pose) = shape_frames(
+        "gate12_roof.toml",
+        "{ t = 300.000, x = -100.00, y = 0.00, height_m = 120.00, yaw_deg = 45.00, pitch_deg = 45.00 }",
+    );
+    let roof = sample(&ground, &city, &pose, [-100.0, 0.0, 30.0], "roof");
+    let south = sample(&ground, &city, &pose, [-100.0, -15.0, 15.0], "south wall");
+    let west = sample(&ground, &city, &pose, [-115.0, 0.0, 15.0], "west wall");
+    assert!(
+        roof > south && south > west,
+        "roof {roof}, south {south}, west {west}"
+    );
+    assert!(roof < 255.0, "the roof clips at {roof}");
+
+    let centre_is_ground = |ground: &[u8], city: &[u8], what: &str| {
+        for (i, j) in [(959, 539), (960, 539), (959, 540), (960, 540)] {
+            assert_eq!(
+                pixel(city, i, j),
+                pixel(ground, i, j),
+                "{what}: centre pixel ({i}, {j})"
+            );
+        }
+    };
+    let (ground, city, pose) = shape_frames(
+        "gate12_courtyard.toml",
+        "{ t = 300.000, x = 0.00, y = 0.00, height_m = 60.00, yaw_deg = 0.00, pitch_deg = 90.00 }",
+    );
+    centre_is_ground(&ground, &city, "courtyard");
+    sample(&ground, &city, &pose, [0.0, 14.0, 20.0], "courtyard roof");
+
+    let (ground, city, pose) = shape_frames(
+        "gate12_notch.toml",
+        "{ t = 300.000, x = 90.00, y = 10.00, height_m = 60.00, yaw_deg = 0.00, pitch_deg = 90.00 }",
+    );
+    centre_is_ground(&ground, &city, "L notch");
+    sample(&ground, &city, &pose, [70.0, -10.0, 14.0], "L roof");
+}
+
+// ── Gate 14: `B`, headless ───────────────────────────────────────────────────
+
+const W: f64 = 1280.0;
+const H: f64 = 720.0;
+const DT: f64 = 1.0 / 60.0;
+
+/// Phase 3's `plain_state`: `[0, 300]`, centre (0, 0), `k` = 1, 1280×720.
+fn plain_state() -> ViewState {
+    let fit = Fit {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        rect: (-1e4, -1e4, 1e4, 1e4),
+        size: (W, H),
+    };
+    ViewState::new(0.0, 300.0, vec![], fit)
+}
+
+fn at(c: (f64, f64)) -> ViewInput {
+    ViewInput {
+        cursor: Some(c),
+        pointer: Some(c),
+        size: (W, H),
+        dt: DT,
+        ..Default::default()
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+/// `input` with `b` pressed flips the flag and does exactly what `input` alone does.
+fn step_b(s: &mut ViewState, input: ViewInput) {
+    let mut without = s.clone();
+    let line = without.frame(&input, no_boxes);
+    let before = s.buildings_shown;
+    let mut with_b = input;
+    with_b.pressed.b = true;
+    assert_eq!(s.frame(&with_b, no_boxes), line, "the keyframe line");
+    assert_eq!(s.buildings_shown, !before, "b flips the flag");
+    let mut flipped_back = s.clone();
+    flipped_back.buildings_shown = before;
+    assert_eq!(flipped_back, without, "b changes nothing else");
+}
+
+fn step(s: &mut ViewState, input: ViewInput) {
+    let before = s.buildings_shown;
+    s.frame(&input, no_boxes);
+    assert_eq!(s.buildings_shown, before, "only b flips the flag");
+}
+
+#[test]
+fn gate14_b() {
+    let mut s = plain_state();
+    assert!(s.buildings_shown, "shown at start");
+    step_b(&mut s, at((640.0, 360.0)));
+    assert!(!s.buildings_shown);
+    step_b(&mut s, at((640.0, 360.0)));
+    assert!(s.buildings_shown);
+
+    // Playing, following, with K pressed in the same frame.
+    s.playing = true;
+    s.follow = Some(Follow {
+        vehicle_id: 7,
+        drawn: false,
+    });
+    let mut k = at((640.0, 360.0));
+    k.pressed.k = true;
+    step_b(&mut s, k);
+    step_b(&mut s, at((640.0, 360.0)));
+    s.playing = false;
+    s.follow = None;
+
+    // A right-button orbit.
+    step(
+        &mut s,
+        ViewInput {
+            right_press: true,
+            ..at((640.0, 360.0))
+        },
+    );
+    assert!(s.orbit.is_some());
+    step_b(&mut s, at((700.0, 330.0)));
+    assert!(s.orbit.is_some(), "the orbit goes on");
+    step(
+        &mut s,
+        ViewInput {
+            right_release: true,
+            ..at((700.0, 330.0))
+        },
+    );
+    assert!(s.orbit.is_none());
+
+    // A left drag.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((400.0, 300.0))
+        },
+    );
+    step_b(&mut s, at((460.0, 340.0)));
+    assert!(s.press.is_some(), "the drag goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((460.0, 340.0))
+        },
+    );
+
+    // A scrub.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((640.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_some());
+    step_b(&mut s, at((300.0, 706.0)));
+    assert!(s.scrub.is_some(), "the scrub goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((300.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_none());
 }
