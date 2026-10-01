@@ -58,6 +58,10 @@ enum Cmd {
         width: u32,
         #[arg(long, default_value_t = 1080)]
         height: u32,
+        /// A keyframe file (TOML): fly a perspective camera through its keyframes.
+        /// Default: the top-down camera fitted to the network.
+        #[arg(long)]
+        camera: Option<PathBuf>,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -130,6 +134,7 @@ fn run(cli: Cli) -> Result<()> {
             fps,
             width,
             height,
+            camera,
         } => render(
             RenderOptions {
                 project,
@@ -145,6 +150,7 @@ fn run(cli: Cli) -> Result<()> {
                 height,
             },
             out,
+            camera,
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -175,11 +181,14 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
-fn render(opts: RenderOptions, out: PathBuf) -> Result<()> {
+fn render(opts: RenderOptions, out: PathBuf, camera: Option<PathBuf>) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
     };
-    let mut job = Job::prepare(&opts)?;
+    let mut job = match &camera {
+        None => Job::prepare(&opts)?,
+        Some(file) => Job::prepare_with_camera(&opts, file)?,
+    };
 
     let n_frames = job.clock.frames;
     let mut enc = encode::Encoder::start(&ffmpeg, &out, opts.width, opts.height, opts.fps)?;

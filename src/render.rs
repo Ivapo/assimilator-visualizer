@@ -1,5 +1,6 @@
-//! Headless Bevy (vis-001 §2.3): no window, a top-down orthographic camera rendering to
-//! an offscreen image, and a lossless readback of every frame.
+//! Headless Bevy (vis-001 §2.3): no window, a camera rendering to an offscreen image, and
+//! a lossless readback of every frame. The camera is Phase 1's top-down orthographic one,
+//! or, for a keyframed render, a perspective one set from a pose each frame (§2.11.2).
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -22,10 +23,11 @@ use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy::window::ExitCondition;
 use bevy::winit::WinitPlugin;
 
+use crate::camera::Pose;
 use crate::draw;
 use crate::motion::TrackPos;
 use crate::place::Placed;
-use crate::scene::{Camera as SceneCamera, Strip};
+use crate::scene::{self, Camera as SceneCamera, Strip};
 
 /// One box to draw.
 #[derive(Debug, Clone, Copy)]
@@ -49,12 +51,36 @@ pub struct Renderer {
     pool: Vec<Entity>,
     materials: Vec<Handle<StandardMaterial>>,
     slot: Arc<Mutex<Option<Vec<u8>>>>,
+    /// The perspective camera's entity; `None` on the orthographic path.
+    perspective: Option<Entity>,
+    /// Metres of lift per rank.
+    lift: f64,
 }
 
 impl Renderer {
     /// Build the scene: road strips in link order, and `pool` hidden boxes that frames
     /// fill in `vehicle_id` order.
     pub fn new(strips: &[Strip], camera: SceneCamera, pool: usize) -> Result<Self> {
+        Self::build(strips, camera, pool, None)
+    }
+
+    /// The same scene through a perspective camera at `pose` (§2.11.2): shaded boxes and
+    /// `draw::RANK_LIFT_3D`. `camera` is the fit, the scene's bake origin and image size.
+    pub fn new_perspective(
+        strips: &[Strip],
+        camera: SceneCamera,
+        pool: usize,
+        pose: &Pose,
+    ) -> Result<Self> {
+        Self::build(strips, camera, pool, Some(pose))
+    }
+
+    fn build(
+        strips: &[Strip],
+        camera: SceneCamera,
+        pool: usize,
+        pose: Option<&Pose>,
+    ) -> Result<Self> {
         let mut app = App::new();
         app.add_plugins(
             DefaultPlugins
@@ -102,19 +128,42 @@ impl Renderer {
             let mut meshes = world.resource_mut::<Assets<Mesh>>();
             (
                 meshes.add(draw::road_mesh(strips, camera.cx, camera.cy)),
-                meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+                match pose {
+                    None => meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+                    Some(_) => meshes.add(draw::shaded_box_mesh()),
+                },
             )
         };
 
-        world.spawn((
-            draw::camera_fixed(),
-            RenderTarget::Image(target.clone().into()),
-            draw::projection(
-                (camera.width as f64 * camera.k) as f32,
-                (camera.height as f64 * camera.k) as f32,
-            ),
-            draw::look_down(0.0, 0.0),
-        ));
+        let perspective = match pose {
+            None => {
+                world.spawn((
+                    draw::camera_fixed(),
+                    RenderTarget::Image(target.clone().into()),
+                    draw::projection(
+                        (camera.width as f64 * camera.k) as f32,
+                        (camera.height as f64 * camera.k) as f32,
+                    ),
+                    draw::look_down(0.0, 0.0),
+                ));
+                None
+            }
+            Some(pose) => {
+                let aspect = camera.width as f64 / camera.height as f64;
+                let (transform, projection) =
+                    draw::perspective(pose, camera.cx, camera.cy, aspect);
+                Some(
+                    world
+                        .spawn((
+                            draw::camera_fixed(),
+                            RenderTarget::Image(target.clone().into()),
+                            projection,
+                            transform,
+                        ))
+                        .id(),
+                )
+            }
+        };
         world.spawn((
             Mesh3d(road_mesh),
             MeshMaterial3d(road_mat),
@@ -129,6 +178,11 @@ impl Renderer {
             pool,
             materials: speed_mats,
             slot: Arc::new(Mutex::new(None)),
+            perspective,
+            lift: match pose {
+                None => scene::RANK_LIFT,
+                Some(_) => draw::RANK_LIFT_3D,
+            },
         };
         // Let assets and pipelines settle before the first frame that counts.
         for _ in 0..3 {
@@ -139,6 +193,18 @@ impl Renderer {
 
     pub fn camera(&self) -> &SceneCamera {
         &self.camera
+    }
+
+    /// Set the perspective camera to `pose` for the next frames; nothing on the
+    /// orthographic path.
+    pub fn set_pose(&mut self, pose: &Pose) {
+        let Some(e) = self.perspective else { return };
+        let cam = self.camera;
+        let aspect = cam.width as f64 / cam.height as f64;
+        let (transform, projection) = draw::perspective(pose, cam.cx, cam.cy, aspect);
+        let mut ent = self.apps.main.world_mut().entity_mut(e);
+        *ent.get_mut::<Transform>().unwrap() = transform;
+        *ent.get_mut::<Projection>().unwrap() = projection;
     }
 
     /// Render one frame with exactly these boxes (in draw order) and return its RGBA8
@@ -153,7 +219,14 @@ impl Renderer {
         }
         let cam = self.camera;
         let world = self.apps.main.world_mut();
-        draw::fill_pool(world, &self.pool, &self.materials, boxes, cam.cx, cam.cy);
+        draw::fill_pool(
+            world,
+            &self.pool,
+            &self.materials,
+            boxes,
+            (cam.cx, cam.cy),
+            self.lift,
+        );
         *self.slot.lock().unwrap() = None;
         let slot = self.slot.clone();
         world.spawn(Screenshot::image(self.target.clone())).observe(

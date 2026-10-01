@@ -1,7 +1,7 @@
 //! `assimilator-video view` (vis-001 §2.9): a window over a finished run. Each frame turns
 //! Bevy's input into a [`ViewInput`], applies it to the [`ViewState`], prints a returned
-//! keyframe line on stdout, and draws the state: the camera, the boxes at `t`, the readout
-//! and the time slider (§2.10).
+//! keyframe line on stdout, and draws the state: the perspective camera at the state's
+//! pose (§2.11), the shaded boxes at `t`, the readout and the time slider (§2.10).
 
 pub mod slider;
 pub mod state;
@@ -110,15 +110,17 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         let mut meshes = world.resource_mut::<Assets<Mesh>>();
         (
             meshes.add(draw::road_mesh(&run.strips, fit.cx, fit.cy)),
-            meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            meshes.add(draw::shaded_box_mesh()),
         )
     };
+    let (transform, projection) = draw::perspective(
+        &state.pose(),
+        fit.cx,
+        fit.cy,
+        fit.size.0 / fit.size.1,
+    );
     let camera = world
-        .spawn((
-            draw::camera_fixed(),
-            draw::projection((fit.size.0 * fit.k) as f32, (fit.size.1 * fit.k) as f32),
-            draw::look_down(0.0, 0.0),
-        ))
+        .spawn((draw::camera_fixed(), projection, transform))
         .id();
     world.spawn((
         Mesh3d(road_mesh),
@@ -215,6 +217,10 @@ fn input(world: &mut World) -> ViewInput {
             right: keys.just_pressed(KeyCode::ArrowRight),
             esc: keys.just_pressed(KeyCode::Escape),
             k: keys.just_pressed(KeyCode::KeyK),
+            q: keys.just_pressed(KeyCode::KeyQ),
+            e: keys.just_pressed(KeyCode::KeyE),
+            r: keys.just_pressed(KeyCode::KeyR),
+            f: keys.just_pressed(KeyCode::KeyF),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -222,11 +228,14 @@ fn input(world: &mut World) -> ViewInput {
             a: keys.pressed(KeyCode::KeyA),
             s: keys.pressed(KeyCode::KeyS),
             d: keys.pressed(KeyCode::KeyD),
+            ctrl: keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
         },
         cursor,
         pointer: world.resource::<Pointer>().0,
         press: mouse.just_pressed(MouseButton::Left),
         release: mouse.just_released(MouseButton::Left),
+        right_press: mouse.just_pressed(MouseButton::Right),
+        right_release: mouse.just_released(MouseButton::Right),
         scroll_lines,
         scroll_pixels,
         size,
@@ -247,13 +256,19 @@ fn frame(world: &mut World) {
 
         let s = &v.state;
         let (fx, fy) = (s.fit.cx, s.fit.cy);
+        let (transform, projection) = draw::perspective(&s.pose(), fx, fy, s.size.0 / s.size.1);
         let mut cam = world.entity_mut(v.camera);
-        *cam.get_mut::<Transform>().unwrap() =
-            draw::look_down((s.cx - fx) as f32, -(s.cy - fy) as f32);
-        *cam.get_mut::<Projection>().unwrap() =
-            draw::projection((s.size.0 * s.k) as f32, (s.size.1 * s.k) as f32);
+        *cam.get_mut::<Transform>().unwrap() = transform;
+        *cam.get_mut::<Projection>().unwrap() = projection;
         let boxes = run.boxes_at(s.t);
-        draw::fill_pool(world, &v.pool, &v.materials, &boxes, fx, fy);
+        draw::fill_pool(
+            world,
+            &v.pool,
+            &v.materials,
+            &boxes,
+            (fx, fy),
+            draw::RANK_LIFT_3D,
+        );
         let text = s.readout();
         let mut ent = world.entity_mut(v.readout);
         let mut t = ent.get_mut::<Text>().unwrap();

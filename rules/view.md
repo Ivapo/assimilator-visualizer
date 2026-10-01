@@ -8,9 +8,9 @@ sources:
   - src/main.rs
 covers: >
   The `assimilator-video view` window over a finished run: its CLI and checks, the
-  wall-clock view clock, the camera (pan, zoom, centre bound), picking and following,
-  the readout, the keyframe line and the hidden `--bench`. The time slider is
-  `rules/slider.md`.
+  wall-clock view clock, the camera (orbit and tilt, pan, zoom, centre bound), picking
+  and following, the readout, the keyframe line and the hidden `--bench`. The time
+  slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.
 max_lines: 60
 generated: 2026-09-30
 ---
@@ -21,21 +21,18 @@ generated: 2026-09-30
 
 ## CLI
 `assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd]
-[--from] [--to] [--width 1280] [--height 720]`. The size is the window's in logical pixels
-(any positive size; 2× physical on a Retina display).
+[--from] [--to] [--width 1280] [--height 720]`: logical pixels, any positive size.
 - `run::load` runs `render`'s checks after width and height, before any `App` is built;
   ffmpeg is not looked for. An error is one `error: …` line on stderr, exit 1, no window.
 - Stdout carries only keyframe lines, one per `K`, flushed. Stderr carries only the
   error line or `--bench`'s JSON. Closing the window exits 0.
-- One Bevy app on the main thread: `DefaultPlugins` with a primary window titled
-  `assimilator-video view`, vsync. Per frame `track_pointer`, then one exclusive system:
-  Bevy input → `ViewInput` → `ViewState::frame` → camera, boxes, readout, slider.
+- One Bevy app on the main thread (a window titled `assimilator-video view`, vsync). Per
+  frame `track_pointer`, then input → `ViewInput` → `ViewState::frame` → the drawing.
 
 ## Drawing (`src/draw.rs`, shared with `render`)
-- The road mesh and the box pool (`motion.max_drawn()` boxes) are `render`'s, baked
-  relative to the launch fit's centre `(fx, fy)`; the camera sits at
-  `(cx − fx, 500, −(cy − fy))`, straight down, with an ortho projection of `W·k × H·k` m
-  set every frame from the window's current logical size.
+- The road mesh and the box pool (`motion.max_drawn()` boxes, shaded, 0.001 m lift) are
+  baked relative to the launch fit's centre `(fx, fy)`. The camera is perspective at the
+  state's pose (`height_m = H·k`), set every frame by `draw::perspective`.
 - The readout is a 14 px white UI text line at left 16, bottom 30, just above the slider.
 
 ## Clock (`ViewState`, no Bevy types)
@@ -48,28 +45,31 @@ generated: 2026-09-30
   the earliest above `t + 1e-6` (the snapshots include the one before `from`); none, no move.
 
 ## Camera
-- Launch: `render`'s fit at the launch size (`k_fit`) and the fitted rectangle (the
-  strips' bbox plus 20 m), fixed across resizes; it bounds the centre after pan and zoom.
-- Cursor `(px, py)` is over `(cx + (px − W/2)·k, cy − (py − H/2)·k)`.
-- A left press becomes a drag at a net 4 px; the centre is then the press's centre plus
-  `(−dx·k, +dy·k)`. A zoom during a drag re-anchors it. `WASD` pan `0.5·W·k` m/s.
+- Launch: `render`'s fit at the launch size (`k_fit`), yaw 0, pitch 90; the fitted
+  rectangle (strips' bbox + 20 m), fixed across resizes, bounds the centre.
+- **Orbit:** a right press, or Ctrl + left (fixed at the press), off the bar, with no
+  orbit, left press or scrub on; to that button's release `yaw ← wrap(yaw₀ − 0.25·dx)`,
+  `pitch ← clamp(pitch₀ + 0.25·dy, 25, 90)`, with no pan, pick or scrub. `Q`/`E` ∓15° yaw,
+  `R`/`F` −/+5° pitch, by position; not during an orbit, a left press or a scrub.
+- The cursor's ground point is `ray_to_plane(pose, cursor, 0)`. A left press drags at a net
+  4 px, keeping the press's ground point under the cursor; a zoom re-anchors it. `WASD` pan
+  `0.5·W·k` m/s along the image's up and right on the ground.
 - Scroll `n` lines (trackpad: 20 px a line): `k ← clamp(k·1.1^−n, 0.02, 2·k_fit)` about
-  the cursor's world point, or about the centre while following.
+  the cursor's ground point, or about the centre while following.
 
 ## Pick and follow
-- A release that never became a drag picks the box nearest the cursor's world point, by
-  distance to its `length × 1.8 m` footprint at its heading, within `8·k` m; ties go to
+- A release that never became a drag picks the box nearest the cursor's point at 0.80 m,
+  by distance to its `length × 1.8 m` footprint at its heading, within `8·k` m; ties go to
   the higher `vehicle_id`. No box in reach changes nothing.
 - Following sets the centre to the vehicle's placed point each frame it is drawn. When it
-  is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops it.
-- Frame order: bar press; clock; scrub; `Esc`; pan and zoom; click; follow; `K`.
+  is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops
+  it; an orbit or a key step does not.
+- Frame order: bar press; clock; scrub; `Esc`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`
   (the Esc hint whenever following; "(not drawn)" only on hold).
-- `K`: `{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }`, or
-  `{ t = 200.000, follow = 103, height_m = 60.00 }` while following a drawn vehicle.
-  `height_m = H·k`. `Keyframe::parse` accepts exactly these two forms.
+- `K` prints the full camera (`rules/camera.md`); `follow` only for a drawn vehicle.
 
 ## `--bench <s>` (hidden)
 Starts at `t = 140` playing at 2× at the launch fit, skips 3 s, records `s` s of real frame

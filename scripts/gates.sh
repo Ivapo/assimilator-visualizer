@@ -9,6 +9,8 @@
 # gate 6 and Phase 2's gate 12.
 # Phase 3 (view): gate 1's reference comparison is below; gates 2 (view) and 4–9 are
 #   cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture
+# Phase 5 (3D camera): gate 10, the keyframed render, is below; gates 4–9, 11 and 12 are
+#   cargo test --release --test camera -- --include-ignored --test-threads=1 --nocapture
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -98,6 +100,23 @@ else
     echo "phase3 gate1: no $REF, skipped"
 fi
 
+# Phase 5 gate 10 — a keyframed render (vis-001 §2.11.5): the defaults with
+# --camera tests/flight.toml, twice; the frames of both runs must be equal.
+t0=$(date +%s)
+render camera --camera "$ROOT/tests/flight.toml" || fail "phase5 gate10 render exited $?"
+dt=$(( $(date +%s) - t0 ))
+echo "phase5 gate10: rendered $N_DEFAULT frames with --camera in $dt s"
+check_video camera 1920 1080 30 "$N_DEFAULT"
+render camera2 --camera "$ROOT/tests/flight.toml" || fail "phase5 gate10 second render exited $?"
+rm -f "$OUT/camera.framemd5" "$OUT/camera2.framemd5"
+ffmpeg -y -v error -i "$OUT/camera.mp4" -f framemd5 "$OUT/camera.framemd5"
+ffmpeg -y -v error -i "$OUT/camera2.mp4" -f framemd5 "$OUT/camera2.framemd5"
+if cmp -s "$OUT/camera.framemd5" "$OUT/camera2.framemd5"; then
+    echo "phase5 gate10: $(grep -vc '^#' "$OUT/camera.framemd5") frame hashes equal"
+else
+    fail "phase5 gate10 frame hashes differ"
+fi
+
 # Gate 4 — input errors: non-zero exit, exactly one stderr line, no progress, no file.
 gate4() { # <label> <env PATH> [args…]
     local label=$1 path=$2; shift 2
@@ -119,5 +138,5 @@ gate4 missing-fcd "$PATH" --fcd "$ROOT/scratch/derived/does_not_exist.parquet"
 gate4 unknown-link "$PATH" --fcd "$ROOT/scratch/derived/unknown_link.parquet"
 gate4 no-ffmpeg "/usr/bin:/bin"
 
-[ $FAIL = 0 ] && echo "gates 1, 2, 4: PASS" || echo "gates 1, 2, 4: FAIL"
+[ $FAIL = 0 ] && echo "gates 1, 2, 4 (and Phase 5 gate 10): PASS" || echo "gates 1, 2, 4 (and Phase 5 gate 10): FAIL"
 exit $FAIL

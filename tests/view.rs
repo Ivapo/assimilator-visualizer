@@ -766,7 +766,7 @@ fn gate9_keyframe_line() {
     s.k = 1.0 / 3.0;
     assert_eq!(
         s.keyframe_line(),
-        "{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }"
+        "{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00, yaw_deg = 0.00, pitch_deg = 90.00 }"
     );
     let line = s
         .frame(
@@ -782,7 +782,7 @@ fn gate9_keyframe_line() {
         .expect("K prints");
     assert_eq!(
         line,
-        "{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }"
+        "{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00, yaw_deg = 0.00, pitch_deg = 90.00 }"
     );
 
     let mut s = plain_state();
@@ -794,7 +794,7 @@ fn gate9_keyframe_line() {
     });
     assert_eq!(
         s.keyframe_line(),
-        "{ t = 200.000, follow = 103, height_m = 60.00 }"
+        "{ t = 200.000, follow = 103, height_m = 60.00, yaw_deg = 0.00, pitch_deg = 90.00 }"
     );
     s.follow = Some(Follow {
         vehicle_id: 103,
@@ -802,14 +802,16 @@ fn gate9_keyframe_line() {
     });
     assert_eq!(
         s.keyframe_line(),
-        "{ t = 200.000, x = 0.00, y = 0.00, height_m = 60.00 }"
+        "{ t = 200.000, x = 0.00, y = 0.00, height_m = 60.00, yaw_deg = 0.00, pitch_deg = 90.00 }"
     );
 
+    // Phase 3's lines still read, straight down and north up (vis-001 §2.11.4).
     for line in [
         "{ t = 64.100, x = 512.30, y = -133.20, height_m = 240.00 }",
         "{ t = 200.000, follow = 103, height_m = 60.00 }",
     ] {
-        assert_eq!(Keyframe::parse(line).unwrap().format(), line);
+        let kf = Keyframe::parse(line).unwrap();
+        assert_eq!((kf.yaw_deg, kf.pitch_deg), (0.0, 90.0), "{line}");
     }
     let kf = Keyframe::parse("{ t = 200.000, follow = 103, height_m = 60.00 }").unwrap();
     assert_eq!(kf.at, At::Follow(103));
@@ -819,9 +821,14 @@ fn gate9_keyframe_line() {
         t: 1.0,
         at: At::Centre(-0.001, 0.0),
         height_m: 10.0,
+        yaw_deg: 0.0,
+        pitch_deg: 90.0,
     };
     let line = neg.format();
-    assert_eq!(line, "{ t = 1.000, x = -0.00, y = 0.00, height_m = 10.00 }");
+    assert_eq!(
+        line,
+        "{ t = 1.000, x = -0.00, y = 0.00, height_m = 10.00, yaw_deg = 0.00, pitch_deg = 90.00 }"
+    );
     assert_eq!(Keyframe::parse(&line).unwrap().format(), line);
 
     for bad in [
@@ -831,14 +838,10 @@ fn gate9_keyframe_line() {
         // an extra key
         "{ t = 1.000, x = 1.00, y = 2.00, height_m = 2.00, z = 1.00 }",
         "{ t = 1.000, follow = 3, height_m = 2.00, x = 1.00 }",
-        // keys out of order
-        "{ x = 1.00, t = 1.000, y = 2.00, height_m = 2.00 }",
-        "{ t = 1.000, height_m = 2.00, follow = 3 }",
         // both x and follow
         "{ t = 1.000, x = 1.00, y = 2.00, follow = 3, height_m = 2.00 }",
         "{ t = 1.000, follow = 3, x = 1.00, y = 2.00, height_m = 2.00 }",
         // not the written shape
-        "{t = 1.000, x = 1.00, y = 2.00, height_m = 2.00}",
         "{ t = 1.000, x = 1.00, y = 2.00, height_m = 2.00 },",
         "{ t = inf, x = 1.00, y = 2.00, height_m = 2.00 }",
         "{ t = 1.000, follow = -3, height_m = 2.00 }",

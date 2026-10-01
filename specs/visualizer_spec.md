@@ -31,7 +31,7 @@ phases:
     by: null
   - name: "Phase 5 — 3D camera: orbit and tilt in view, keyframed flights in render"
     reviewed: 2026-09-30
-    shipped: null
+    shipped: 2026-09-30
     cut: null
     by: null
 
@@ -1308,7 +1308,9 @@ Decided by the user, 2026-09-30, on the Phase 5 draft, before review round 1:
   today the user must repeat the first and last `t` as `--from` and `--to`. Phase 5 keeps
   §2.4's defaults, so a flag's meaning does not depend on another flag. *(design call;
   non-blocking; recommendation: keep §2.4's defaults in Phase 5 and decide from Phase 5
-  gate 13, where the user renders a file.)*
+  gate 13, where the user renders a file.)* *Note (2026-09-30, Phase 5 gate 13):* the user
+  rendered a file and left this open. The orchestrator's recommendation: keep the full-run
+  default, and let `--from`/`--to` cut it.
 - ~~**OQ-11** — Does orbiting need a second binding for a trackpad, for example Ctrl +
   left-drag? Right-drag on a Mac trackpad is a two-finger press and drag, which may be
   awkward to hold, and the `Q E R F` keys only step. *(design call; deferred by evidence to
@@ -1323,7 +1325,9 @@ Decided by the user, 2026-09-30, on the Phase 5 draft, before review round 1:
 - **OQ-13** — Should `view` preview a keyframe file (`view --camera <file>`, playing the
   flight in the window)? Phase 5 writes paths blind: `K` in `view`, then a `render` to see
   the flight. Whether that loop is too slow is for the user to say. *(design call; deferred
-  by evidence to Phase 5 gate 13; if yes, a phase of its own.)*
+  by evidence to Phase 5 gate 13; if yes, a phase of its own.)* *Note (2026-09-30, Phase 5
+  gate 13):* the user left this open. The orchestrator's recommendation: a later phase; a
+  2-minute render is enough for now.
 
 ## 4. Implementation phases
 

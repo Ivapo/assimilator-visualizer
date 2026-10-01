@@ -1,8 +1,10 @@
-//! `view`'s state (vis-001 §2.9, §2.10): the clock, the camera, the time slider, picking,
-//! following and the keyframe line. Plain Rust with no Bevy types: one frame's input goes
+//! `view`'s state (vis-001 §2.9, §2.10, §2.11.3): the clock, the camera and its orbit, the
+//! time slider, picking, following and the keyframe line. Plain Rust with no Bevy types: one frame's input goes
 //! in, the new state comes out, so the gates drive it with scripted input and no window.
 
 use super::slider::Bar;
+use crate::camera::{self, PITCH_MAX, PITCH_MIN, Pose, cos_deg, sin_deg, wrap360};
+pub use crate::keyframes::{At, Keyframe};
 use crate::render::VehicleBox;
 use crate::scene::{self, Camera, Strip};
 
@@ -22,6 +24,13 @@ pub const PICK_PX: f64 = 8.0;
 pub const ZOOM_STEP: f64 = 1.1;
 /// Trackpad pixels per scroll line.
 pub const PX_PER_LINE: f64 = 20.0;
+/// Orbit rate, degrees per logical pixel (§2.11.3).
+pub const ORBIT_DEG_PER_PX: f64 = 0.25;
+/// `Q`/`E` yaw step and `R`/`F` pitch step, degrees.
+pub const YAW_STEP: f64 = 15.0;
+pub const PITCH_STEP: f64 = 5.0;
+/// The plane a click is cast to: the boxes' mid-height, metres (§2.11.3).
+pub const PICK_Z: f64 = scene::BOX_HEIGHT / 2.0 + 0.05;
 /// The speed ladder is `2^(i − 3)` for `i` in `0..=9`: 1/8× to 64×.
 pub const SPEED_STEPS: usize = 10;
 const SPEED_ONE: usize = 3;
@@ -47,6 +56,12 @@ pub struct Pressed {
     pub right: bool,
     pub esc: bool,
     pub k: bool,
+    /// Yaw −15° and +15° (§2.11.3), by position.
+    pub q: bool,
+    pub e: bool,
+    /// Pitch 5° toward the horizon, and 5° toward straight down.
+    pub r: bool,
+    pub f: bool,
 }
 
 /// Keys held this frame.
@@ -57,6 +72,8 @@ pub struct Held {
     pub a: bool,
     pub s: bool,
     pub d: bool,
+    /// Either Control key.
+    pub ctrl: bool,
 }
 
 /// One frame of input.
@@ -73,6 +90,10 @@ pub struct ViewInput {
     pub press: bool,
     /// The left button went up this frame.
     pub release: bool,
+    /// The right button went down this frame.
+    pub right_press: bool,
+    /// The right button went up this frame.
+    pub right_release: bool,
     /// Scroll in lines, positive up (zoom in).
     pub scroll_lines: f64,
     /// Scroll in trackpad pixels, positive up.
@@ -139,6 +160,25 @@ pub struct Press {
     pub dragging: bool,
 }
 
+/// Which button ends an orbit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrbitButton {
+    Right,
+    /// Ctrl + left: the mode is fixed at the press.
+    Left,
+}
+
+/// An orbit in progress (§2.11.3).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Orbit {
+    /// Where it was pressed, logical pixels.
+    pub at: (f64, f64),
+    /// The yaw and pitch at the press.
+    pub yaw: f64,
+    pub pitch: f64,
+    pub button: OrbitButton,
+}
+
 /// The vehicle followed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Follow {
@@ -162,11 +202,15 @@ pub struct ViewState {
     pub cy: f64,
     /// Metres per logical pixel.
     pub k: f64,
+    /// The camera's yaw and pitch, degrees (§2.11.1).
+    pub yaw_deg: f64,
+    pub pitch_deg: f64,
     /// The window's logical size, as of the last frame.
     pub size: (f64, f64),
     pub press: Option<Press>,
     /// A scrub on the time slider in progress: whether the clock was playing at its press.
     pub scrub: Option<bool>,
+    pub orbit: Option<Orbit>,
     pub follow: Option<Follow>,
 }
 
@@ -183,9 +227,12 @@ impl ViewState {
             cx: fit.cx,
             cy: fit.cy,
             k: fit.k,
+            yaw_deg: 0.0,
+            pitch_deg: PITCH_MAX,
             size: fit.size,
             press: None,
             scrub: None,
+            orbit: None,
             follow: None,
         }
     }
@@ -195,13 +242,35 @@ impl ViewState {
         2f64.powi(self.speed as i32 - SPEED_ONE as i32)
     }
 
-    /// The world point under a cursor at `(px, py)` logical pixels.
-    pub fn world(&self, (px, py): (f64, f64)) -> (f64, f64) {
-        let (w, h) = self.size;
-        (
-            self.cx + (px - w / 2.0) * self.k,
-            self.cy - (py - h / 2.0) * self.k,
-        )
+    /// The camera's pose: the centre, `height_m = H·k`, the yaw and the pitch.
+    pub fn pose(&self) -> Pose {
+        Pose {
+            cx: self.cx,
+            cy: self.cy,
+            height_m: self.size.1 * self.k,
+            yaw_deg: self.yaw_deg,
+            pitch_deg: self.pitch_deg,
+        }
+    }
+
+    /// The point on the plane at height `z` under a cursor at logical pixels `c`.
+    pub fn at_height(&self, c: (f64, f64), z: f64) -> (f64, f64) {
+        camera::ray_to_plane(&self.pose(), self.size.0, self.size.1, c, z)
+    }
+
+    /// The ground point under a cursor at `(px, py)` logical pixels (§2.11.3).
+    pub fn world(&self, c: (f64, f64)) -> (f64, f64) {
+        self.at_height(c, 0.0)
+    }
+
+    /// The cursor's ground point relative to the centre.
+    fn ground_offset(&self, c: (f64, f64)) -> (f64, f64) {
+        let pose = Pose {
+            cx: 0.0,
+            cy: 0.0,
+            ..self.pose()
+        };
+        camera::ray_to_plane(&pose, self.size.0, self.size.1, c, 0.0)
     }
 
     /// The time slider's geometry at the current window size; `None` when too small.
@@ -209,9 +278,9 @@ impl ViewState {
         Bar::new(self.size)
     }
 
-    /// Apply one frame of input (§2.10.5): the size and the bar; a bar press; clock; scrub;
-    /// `Esc`; pan and zoom; click; follow; then `K`, whose line describes the state after
-    /// the frame.
+    /// Apply one frame of input (§2.10.5, §2.11.3): the size and the bar; a bar press;
+    /// clock; scrub; `Esc`; orbit and the `Q E R F` steps; pan and zoom; click; follow;
+    /// then `K`, whose line describes the state after the frame.
     pub fn frame(
         &mut self,
         input: &ViewInput,
@@ -221,8 +290,14 @@ impl ViewState {
         let bar = self.bar();
         let on_bar = |c: Option<(f64, f64)>| matches!((bar, c), (Some(b), Some(c)) if b.hit(c));
 
-        // A press on the bar starts a scrub and pauses; it never makes a `Press`.
-        let bar_press = input.press && self.scrub.is_none() && on_bar(input.cursor);
+        // A press on the bar starts a scrub and pauses; it never makes a `Press`. The bar
+        // owns a plain left press only.
+        let ctrl = input.held.ctrl;
+        let bar_press = input.press
+            && !ctrl
+            && self.orbit.is_none()
+            && self.scrub.is_none()
+            && on_bar(input.cursor);
         if bar_press {
             self.scrub = Some(self.playing);
             self.playing = false;
@@ -249,9 +324,69 @@ impl ViewState {
             self.follow = None;
         }
 
-        // Pan and zoom.
+        // Orbit: a right press, or a left press with Control held, off the bar and with no
+        // orbit, left press or scrub on.
+        let orbit_was_on = self.orbit.is_some();
+        if !orbit_was_on
+            && self.press.is_none()
+            && self.scrub.is_none()
+            && let Some(c) = input.cursor
+            && !on_bar(Some(c))
+        {
+            let button = if input.right_press {
+                Some(OrbitButton::Right)
+            } else if input.press && ctrl {
+                Some(OrbitButton::Left)
+            } else {
+                None
+            };
+            if let Some(button) = button {
+                self.orbit = Some(Orbit {
+                    at: c,
+                    yaw: self.yaw_deg,
+                    pitch: self.pitch_deg,
+                    button,
+                });
+            }
+        }
+        let orbiting = self.orbit.is_some();
+        if let Some(o) = self.orbit {
+            if let Some(c) = input.pointer.or(input.cursor) {
+                let (dx, dy) = (c.0 - o.at.0, c.1 - o.at.1);
+                self.yaw_deg = wrap360(o.yaw - ORBIT_DEG_PER_PX * dx);
+                self.pitch_deg =
+                    (o.pitch + ORBIT_DEG_PER_PX * dy).clamp(PITCH_MIN, PITCH_MAX);
+            }
+            let released = match o.button {
+                OrbitButton::Right => input.right_release,
+                OrbitButton::Left => input.release,
+            };
+            if released {
+                self.orbit = None;
+            }
+        }
+        // Key steps, never under an orbit, a left press or a scrub.
+        if !orbiting && self.press.is_none() && self.scrub.is_none() {
+            let p = input.pressed;
+            if p.q {
+                self.yaw_deg = wrap360(self.yaw_deg - YAW_STEP);
+            }
+            if p.e {
+                self.yaw_deg = wrap360(self.yaw_deg + YAW_STEP);
+            }
+            if p.r {
+                self.pitch_deg = (self.pitch_deg - PITCH_STEP).clamp(PITCH_MIN, PITCH_MAX);
+            }
+            if p.f {
+                self.pitch_deg = (self.pitch_deg + PITCH_STEP).clamp(PITCH_MIN, PITCH_MAX);
+            }
+        }
+
+        // Pan and zoom. An orbit press, or any press during an orbit, makes no `Press`.
         if input.press
             && !bar_press
+            && !ctrl
+            && !orbiting
             && let Some(c) = input.cursor
         {
             self.press = Some(Press {
@@ -267,25 +402,34 @@ impl ViewState {
                 self.follow = None;
             }
             if p.dragging {
-                self.cx = p.centre.0 - dx * self.k;
-                self.cy = p.centre.1 + dy * self.k;
+                // The ground point under the cursor at the press stays under it.
+                let (at, centre) = (p.at, p.centre);
+                let (gp, gc) = (self.ground_offset(at), self.ground_offset(c));
+                self.cx = centre.0 + gp.0 - gc.0;
+                self.cy = centre.1 + gp.1 - gc.1;
             }
         }
         let held = input.held;
         if held.w || held.a || held.s || held.d {
             self.follow = None;
             let v = 0.5 * self.size.0 * self.k * dt;
+            // Up the image on the ground, and right.
+            let (s, c) = (sin_deg(self.yaw_deg), cos_deg(self.yaw_deg));
             if held.w {
-                self.cy += v;
+                self.cx += v * s;
+                self.cy += v * c;
             }
             if held.s {
-                self.cy -= v;
+                self.cx -= v * s;
+                self.cy -= v * c;
             }
             if held.a {
-                self.cx -= v;
+                self.cx -= v * c;
+                self.cy += v * s;
             }
             if held.d {
-                self.cx += v;
+                self.cx += v * c;
+                self.cy -= v * s;
             }
         }
         // Scroll over the bar or during a scrub does nothing (§2.10.3).
@@ -322,7 +466,7 @@ impl ViewState {
             && let Some(p) = self.press.take()
             && !p.dragging
         {
-            let at = self.world(input.cursor.unwrap_or(p.at));
+            let at = self.at_height(input.cursor.unwrap_or(p.at), PICK_Z);
             let bs = boxes.get_or_insert_with(|| boxes_at(self.t));
             if let Some(id) = pick(bs, at, self.k) {
                 self.follow = Some(Follow {
@@ -420,6 +564,8 @@ impl ViewState {
             t: self.t,
             at,
             height_m: self.size.1 * self.k,
+            yaw_deg: self.yaw_deg,
+            pitch_deg: self.pitch_deg,
         }
     }
 
@@ -481,82 +627,4 @@ pub fn pick(boxes: &[VehicleBox], p: (f64, f64), k: f64) -> Option<u64> {
         };
     }
     best.map(|(_, id)| id)
-}
-
-/// Where a keyframe's camera is.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum At {
-    Centre(f64, f64),
-    Follow(u64),
-}
-
-/// One keyframe line (§2.9.5).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Keyframe {
-    pub t: f64,
-    pub at: At,
-    pub height_m: f64,
-}
-
-impl Keyframe {
-    pub fn format(&self) -> String {
-        match self.at {
-            At::Centre(x, y) => format!(
-                "{{ t = {:.3}, x = {:.2}, y = {:.2}, height_m = {:.2} }}",
-                self.t, x, y, self.height_m
-            ),
-            At::Follow(id) => format!(
-                "{{ t = {:.3}, follow = {id}, height_m = {:.2} }}",
-                self.t, self.height_m
-            ),
-        }
-    }
-
-    /// Parse exactly the two forms [`Keyframe::format`] writes; reject anything else.
-    pub fn parse(line: &str) -> Result<Keyframe, String> {
-        let inner = line
-            .strip_prefix("{ ")
-            .and_then(|s| s.strip_suffix(" }"))
-            .ok_or_else(|| format!("not an inline table: {line:?}"))?;
-        let mut keys = Vec::new();
-        let mut vals = Vec::new();
-        for part in inner.split(", ") {
-            let (k, v) = part
-                .split_once(" = ")
-                .ok_or_else(|| format!("not `key = value`: {part:?}"))?;
-            keys.push(k);
-            vals.push(v);
-        }
-        let num = |v: &str| -> Result<f64, String> {
-            let ok = !v.is_empty()
-                && v.chars()
-                    .all(|c| c.is_ascii_digit() || c == '-' || c == '.')
-                && v.chars().any(|c| c.is_ascii_digit());
-            match (ok, v.parse::<f64>()) {
-                (true, Ok(x)) => Ok(x),
-                _ => Err(format!("not a number: {v:?}")),
-            }
-        };
-        match keys.as_slice() {
-            ["t", "x", "y", "height_m"] => Ok(Keyframe {
-                t: num(vals[0])?,
-                at: At::Centre(num(vals[1])?, num(vals[2])?),
-                height_m: num(vals[3])?,
-            }),
-            ["t", "follow", "height_m"] => {
-                let id = vals[1];
-                if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
-                    return Err(format!("not a vehicle id: {id:?}"));
-                }
-                Ok(Keyframe {
-                    t: num(vals[0])?,
-                    at: At::Follow(id.parse().map_err(|e| format!("{id:?}: {e}"))?),
-                    height_m: num(vals[2])?,
-                })
-            }
-            _ => Err(format!(
-                "keys must be t, x, y, height_m or t, follow, height_m: {line:?}"
-            )),
-        }
-    }
 }

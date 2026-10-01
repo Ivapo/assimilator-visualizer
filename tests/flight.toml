@@ -1,0 +1,11 @@
+# vis-001 Phase 5 gates 7 and 10: a Phase 3 line unchanged, two holds, a tilt, a turn
+# the short way and a follow with a zoom, on the fixture of scripts/fixture.sh.
+keyframes = [
+  { t = 20.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+  { t = 50.000, x = 0.00, y = 300.00, height_m = 1240.00 },
+  { t = 64.100, follow = 1, height_m = 120.00, yaw_deg = 90.00, pitch_deg = 45.00 },
+  { t = 140.000, follow = 1, height_m = 60.00, yaw_deg = 90.00, pitch_deg = 45.00 },
+  { t = 160.000, x = 600.00, y = 300.00, height_m = 400.00, yaw_deg = 0.00, pitch_deg = 60.00 },
+  { t = 220.000, x = 300.00, y = 600.00, height_m = 700.00, yaw_deg = 315.00, pitch_deg = 35.00 },
+  { t = 250.000, x = 300.00, y = 600.00, height_m = 700.00, yaw_deg = 315.00, pitch_deg = 35.00 },
+]
