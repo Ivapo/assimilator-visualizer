@@ -4,5 +4,5 @@
 
 - **[visualizer](visualizer_spec.md)** — `vis-001` · accepted · done
   What the visualizer is for: it renders a 3D video of one Assimilator simulation run, for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
-- **[city](city_spec.md)** — `vis-002` · draft · pending
+- **[city](city_spec.md)** — `vis-002` · accepted · pending
   Real buildings around a georeferenced network, in render and view. Overture footprints are fetched once by a script into a cached GeoJSON, then projected with the engine's formula, extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture.

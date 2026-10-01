@@ -5,12 +5,12 @@ note: >
   Real buildings around a georeferenced network, in render and view. Overture footprints are
   fetched once by a script into a cached GeoJSON, then projected with the engine's formula,
   extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture.
-status: draft
+status: accepted
 last_updated: 2026-10-01
 
 phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
-    reviewed: null
+    reviewed: 2026-10-01
     shipped: null
     cut: null
     by: null
@@ -99,9 +99,9 @@ Decided by the user, 2026-09-30, and checked against the methodology's §6.1:
 
 vis-001 §2.7 item 4 ("`prepare`: Overture buildings and land use for the network area,
 chunked meshes, a cached scene bundle") is **narrowed** here to buildings via a fetch
-script. It gets one dated note pointing here (2026-10-01). `prepare`, land use, chunked
-meshes and the bundle are either later (§2.13) or dropped: §2.6 shows Midtown needs no
-chunks.
+script. It gets one dated note pointing here (2026-10-01). Land use is a roadmap item
+(§2.13). `prepare`, chunked meshes and the scene bundle are dropped: the fetch script does
+`prepare`'s job, and §2.6 shows Midtown needs no chunks.
 
 ### 2.2 The user's decisions (decision, recorded)
 
@@ -146,7 +146,8 @@ OQ-2, OQ-3 and OQ-6; OQ-4 and OQ-5 stay open):
   bit for bit by gate 6. No dependency on `assimilator-import` (§2.5.1).
 - (k) **Roofs are triangulated with the `earcut` crate**, +1 package (§2.6, §2.11).
 - (l) **The ODbL credit goes in both places, split** (§2.10):
-  - Phase 1's close-out adds it to the README;
+  - Phase 1's close-out adds it to the README, in the exact wording the user set in OQ-7
+    (answered 2026-10-01);
   - a credit line in the video is a small phase of its own (§2.13), which must ship before
     any Midtown video is shown outside. Phase 1's scope does not change.
 - (m) **No copy of the cache is kept elsewhere** (§2.3.3). If `2026-09-23.1` is gone from
@@ -164,8 +165,9 @@ scripts/fetch-buildings.sh --project <dir> --out <file.geojson>
 ```
 
 It is the only step that uses the network. It needs the DuckDB CLI (≥ 1.5.1; `INSTALL`s
-`httpfs` and `spatial` on first use) and a build of this repo, for the extent. It never
-writes into `--project`.
+`httpfs` and `spatial` on first use) and a build of this repo, for the extent. It only reads
+`--project`, and writes nothing but `--out`, through a temporary directory beside it that it
+removes. (The fixture's `--out` is inside its own project folder, §2.9.)
 
 #### 2.3.1 The extent: the network's own, not the import's
 
@@ -175,7 +177,8 @@ metres. The import bbox is not used. Why:
 - **A network is often a cut, then an edit, of an import.** Midtown's import (1,369 links)
   was cut to 255 links. The user's edits moved its west endpoint, N940, to x = −1126.5 m:
   78 m *outside* the import bbox (x ±1048.5 m). The import bbox plus 250 m would leave
-  172 m on that side and 174–185 m too much on the others.
+  172 m on that side and 65–185 m too much on the others (south 65 m, north 173 m, east
+  185 m).
 - **Not every network has an import report.** One drawn by hand has only `map_origin`.
 - **The network is what the video shows.** The resolved network is also what `render`
   draws, overrides applied.
@@ -211,7 +214,9 @@ COPY (
 - **Intersects, not contains.** A building that straddles the margin is fetched whole, never
   clipped.
 - **`ORDER BY id`** fixes the order, so the same release and bbox give the same bytes (§2.12:
-  three fetches, one SHA-256).
+  three fetches gave one SHA-256 once the collection's `name` was fixed).
+- The drafting fetches ran without the `SET geometry_always_xy` line. Review round 1
+  re-exported the cache through DuckDB 1.5.1 with and without it, and the bytes are the same.
 - **The file name is fixed.** GDAL writes the output file's stem as the collection's `name`.
   So the script writes `buildings.geojson` in a temporary directory beside `--out`, then
   moves it. The bytes do not depend on `--out`, and a failed fetch leaves nothing at `--out`.
@@ -277,8 +282,8 @@ as they are.
 - else 10 m (`DEFAULT_HEIGHT_M`).
 
 `height` wins over `num_floors` when both are present. For Midtown: 4,277 by `height`, 8 by
-`num_floors` (1, 1, 1, 1, 3, 4, 6 and 10 floors), and 51 at 10 m. Heights run from 1.0 m to
-472.0 m, median 18.5 m, p99 186.2 m.
+`num_floors` (1, 1, 1, 1, 3, 4, 6 and 10 floors), and 51 at 10 m. The heights drawn run from
+1.0 m to 472.0 m, median 18.4 m, p99 185.5 m (review round 1).
 
 #### 2.4.3 Errors
 
@@ -288,7 +293,9 @@ window.
 
 Each error is one line, `error: --buildings <file>: …`, with exit 1. There is no progress
 line, no output file and no window (vis-001 §2.4). A feature is named by its `id`, or by its
-index from 1 when it has none. The errors:
+index from 1 when it has none. The checks run in the order below and stop at the first error:
+the file-level ones, then each feature in file order with its own checks in order, then
+`map_origin`, then the extent. The errors:
 - the file is missing, or is not JSON (with serde's line and column);
 - it is not a `FeatureCollection` with a `features` array;
 - a feature has no string `properties.id`;
@@ -325,7 +332,8 @@ centre (`crates/import/src/common/mod.rs:run_pipeline`).
 
 The visualizer projects every position with exactly this formula, **in this operation
 order**, so a result is bit-identical to the engine's. The order matters:
-`origin_lat * PI / 180.0` is not `to_radians()`, which multiplies by a rounded `π/180`.
+`origin_lat * PI / 180.0` is not `to_radians()`, which multiplies by a rounded `π/180`. At
+Midtown's origin the two happen to agree, so gate 6 adds a made-up origin where they do not.
 Note the argument order, `(lat, lng)` against `map_origin`'s `[lng, lat]`. A swap is the
 likeliest bug. Gate 6 catches it, and so would the reader's extent check (§2.4.3), since a
 swap puts every building thousands of kilometres away.
@@ -354,7 +362,7 @@ draft weighed:
 
 | | Depend on `assimilator-import` | Copy the three lines |
 |---|---|---|
-| `Cargo.lock` | +1 package (its other dependencies — config, serde, serde_json, anyhow, thiserror 2, log — are already in it) | 0 |
+| `Cargo.lock` | +1 package, plus every optional dependency it declares that is not locked already: `reqwest` 0.12 with its HTTP stack, and `parquet` and `arrow-*` 54 beside the 60 already locked. A lock file lists optional dependencies whatever the features (vis-001 Phase 5's `toml_writer`). Corrected in review round 1; the draft said +1 | 0 |
 | Build | compiles the importer, 10,806 lines at the pin (OSM, Overture and HERE parsers, topology), for one 3-line function | 3 lines in `src/buildings.rs` |
 | Coupling | a crate under active work: 9 commits to `crates/import` between the pin and engine main on 2026-10-01; a pin move may break the build there | none; gate 6 pins the values bit for bit |
 | An engine change to the projection | followed at the next pin move | not followed |
@@ -382,7 +390,9 @@ Built once, before the first frame or the window, from the projected footprints 
   courtyard has walls. Each quad has its own four vertices and one normal: the right of the
   ring's direction, which with that orientation points out of the solid.
 - **Roof:** each polygon's rings are triangulated with the `earcut` crate (§2.2 k) at `z` =
-  height. The normal is straight up.
+  height. The normal is straight up. `Earcut::<f64>::earcut` takes the vertices without each
+  ring's closing duplicate and the start index of each hole, counted in vertices. It emits
+  counter-clockwise triangles (`y` up): 0 clockwise of Midtown's 34,178 (review round 1).
 - **No floor.** At pitch ≥ 25° it is never seen.
 
 All buildings are one Bevy mesh, baked like the roads relative to the fit's centre `(fx,
@@ -393,11 +403,15 @@ culled, so the winding must be right; gates 9, 11 and 12 check it.
 Midtown has 4,336 buildings, 4,373 rings (37 holes in 33 buildings) and 42,776 edges, none
 of zero length. That gives:
 - 42,776 wall quads (85,552 triangles, 171,104 vertices);
-- at most 34,178 roof triangles: Σ (n + 2h − 2) over polygons of n vertices and h holes.
-  The triangulator may drop collinear points.
+- **34,178 roof triangles**: Σ (n + 2h − 2) over polygons of n distinct vertices (closing
+  duplicates not counted) and h holes. earcut 0.4.11 on `f64` gives exactly that on Midtown,
+  with no roof-area failure (worst 9.8e-12 relative), measured in review round 1.
 
-About 120,000 triangles in all. No chunks: one mesh, always submitted, and frustum-culled as
-a whole.
+About 120,000 triangles in all. No chunks: one mesh, always submitted. It carries Bevy's
+`NoFrustumCulling`, so it is never culled (§2.8).
+
+The mesh data is in `f64` world metres. The Bevy mesh converts to `f32` only at the bake, as
+`src/draw.rs:road_mesh` does.
 
 The camera fit does not change: `src/scene.rs:Camera` is still fitted to the road strips
 alone, in `render` and in `view`'s launch. So every keyframe line frames what it framed
@@ -411,10 +425,19 @@ fetched building is drawn" means it is in the scene, not in every frame.
 - **One fixed sun:** a directional light from azimuth `SUN_AZIMUTH_DEG` = 210° (where the
   light comes from, clockwise from north) at elevation `SUN_ELEVATION_DEG` = 60°. It has no
   shadows. The ambient light is weaker than the sun.
-- **Roofs are lighter than every wall by construction.** A roof gets the sun's `sin 60°` =
-  0.866. A wall gets at most `cos 60°` = 0.5, and only when it faces the sun. Any elevation
-  above 45° keeps every roof lighter. With 210°, a south wall gets 0.433 and a west wall
-  0.25 (gate 12).
+- **The sun's direction.** For azimuth `a` and elevation `e`, the light travels along world
+  `(−cos e·sin a, −cos e·cos a, −sin e)`, which is Bevy `(−cos e·sin a, −sin e,
+  cos e·cos a)`. At 210° and 60° that is Bevy `(1/4, −√3/2, −√3/4)` ≈ `(0.25, −0.866,
+  −0.433)`: north-east and down (gate 12).
+- **Roofs are lighter than every wall.** By Lambert's law:
+  - a roof gets the sun's `sin 60°` = 0.866;
+  - a wall gets at most `cos 60°` = 0.5, and only when it faces the sun, so any elevation
+    above 45° keeps every roof lighter;
+  - with 210°, a south wall gets 0.433, a west wall 0.25 and an east wall nothing.
+
+  Bevy's diffuse term is Burley's, which depends a little on the view. At gate 12's pose it
+  gives about 0.88, 0.50 and 0.36, in the same order (review round 1). Gate 12 measures the
+  order.
 - **A building's pixel can never equal a road or background pixel.** Light and material are
   neutral, so its pixels are neutral grey. The road `#5c6068` and the background `#12161e`
   are not neutral. Gate 11 rests on this.
@@ -423,8 +446,13 @@ fetched building is drawn" means it is in the scene, not in every frame.
   `render` byte-identical (§2.2 f).
 
 The base grey, the ambient level, the sun's illuminance and the exact angles are iteration
-(vis-001 §2.6). The constraints above are not: neutral colour, elevation above 45°, and
-nothing spawned without `--buildings`.
+(vis-001 §2.6). These constraints are not:
+- a neutral colour;
+- an elevation above 45°;
+- a roof below full white. The camera has `Tonemapping::None`, so a channel clips at 255,
+  and a clipped roof and wall would compare equal in gate 12. Bevy's default sun of
+  10,000 lux likely clips;
+- nothing spawned without `--buildings`.
 
 ### 2.8 `render` and `view`
 
@@ -433,16 +461,19 @@ Both gain `--buildings <file.geojson>`. Without it, nothing changes.
 `render`:
 - **With or without `--camera`.** Without it the camera is vis-001's orthographic top-down
   fit, and only roofs show.
-- **The orthographic camera rises above the tallest roof.** Today it sits 500 m up with a
-  depth range of 1,000 m (`src/draw.rs:look_down`, `src/draw.rs:projection`), and a roof
-  above 500 m would be behind it. With buildings, both grow by the tallest height (472 m for
-  Midtown). Without buildings they are unchanged.
-- **The perspective far plane covers the buildings.** It is `20·d` (vis-001 §2.11.1). That
-  can cut off a distant tower in a low, zoomed shot, because towers rise into view above the
-  ground's far edge. With buildings, `far` is the larger of `20·d` and the distance from the
-  eye to the farthest corner of the buildings' 3D bounding box. Bevy's projection is
-  reverse-Z with an infinite far plane, so `far` only culls. Without buildings it is
-  unchanged.
+- **The orthographic camera rises only for a roof that would reach it.** Today it sits
+  500 m up with a depth range of 1,000 m (`src/draw.rs:look_down`,
+  `src/draw.rs:projection`), and a roof above 500 m would be behind it.
+  - With buildings, the eye is at `max(500, tallest + 10)` m and the depth range is the
+    eye's height + 500 m. Without buildings, `tallest` is 0, so they are unchanged.
+  - Midtown's tallest is 472 m, so its camera does not move. That matters: moving the eye
+    moves every ground vertex by a few 1e-5 px, through `f32` rounding in `looking_at`
+    (`m11` comes out 5.96e-8, not 0; review round 1). Along road edges that flips MSAA
+    samples, and gate 11's two frames would differ where no building is.
+- **The perspective camera is unchanged** (`src/draw.rs:perspective`, `far = 20·d`, vis-001
+  §2.11.1). Bevy's projection is reverse-Z with an infinite far plane, so `far` only culls
+  whole meshes. The building mesh carries `NoFrustumCulling` (§2.6), so no tower drops out
+  of a low, zoomed shot.
 - **The checks:** after `run::load` and `--camera`, before the encoder starts (§2.4.3).
 
 `view`:
@@ -452,7 +483,8 @@ Both gain `--buildings <file.geojson>`. Without it, nothing changes.
 - **Without `--buildings`, `B`** flips a flag that nothing reads.
 - **Unchanged:** the readout, the keyframe line and the slider. `B`'s state is not in a `K`
   line: `render` takes `--buildings` as a flag.
-- **The far plane** follows `render`'s rule, every frame.
+- **The camera is unchanged.** `view` draws through `src/draw.rs:perspective` only, and the
+  mesh carries `NoFrustumCulling`, as in `render`.
 - **Pick, pan and zoom** keep vis-001 §2.11.3's planes. A click on a roof may pick a box
   hidden under it, and the point under the cursor is the ground's, behind a building. `B`
   clears the view when that matters.
@@ -515,7 +547,8 @@ repo is MIT OR Apache-2.0. So:
 
 The credit goes in both places (§2.2 l). Phase 1's close-out adds it to the README. A
 credit line in the video is a small phase of its own (§2.13), which must ship before any
-Midtown video is shown outside. The wording is the user's to set.
+Midtown video is shown outside. The README's wording is the user's, set in OQ-7 (answered
+2026-10-01) and used exactly as written there.
 
 ### 2.11 Build cost
 
@@ -527,7 +560,7 @@ Midtown video is shown outside. The wording is the user's to set.
   `bevy_mesh` 0.19.1 meshes a `ConvexPolygon` but has no triangulator for concave polygons
   or holes.
 - **The projection:** copied, so 0 packages (§2.2 j). Depending on `assimilator-import`
-  would have added 1 (§2.5.1).
+  would have added it and its optional dependencies (§2.5.1).
 - **Bevy: no feature added.** `DirectionalLight` and `GlobalAmbientLight` are in
   `bevy_light`, already built through `bevy_pbr`.
 - **`network-extent`** is a binary of this crate: no package.
@@ -543,6 +576,12 @@ counts, coverage, file size, timings, alignment, extents and hashes. The record 
 read-only against the pin and the Midtown project, with output only under `scratch/`.
 Nothing was built.
 
+Review round 1 (same file) re-measured some of them and added others; the spec marks each
+where it is used ("review round 1"). Among them are gate 6's new cases, the drawn heights'
+median and p99, and an earcut 0.4.11 run on Midtown's footprints (gate 9). That run was a
+throwaway crate built outside the repo. OQ-4's counts are the engine
+question's, which gives their method.
+
 ### 2.13 Roadmap (not yet phases)
 
 Each item becomes a phase appended here when it is drafted and reviewed. Each ends with a
@@ -551,7 +590,9 @@ constraint.
 - **An ODbL credit line in the video** (§2.2 l). It is a small phase of its own, and it
   **must ship before any Midtown video is shown outside**. This machine's ffmpeg has no
   `drawtext`, so it is Bevy text in the headless render (OQ-3), and `render` without
-  `--buildings` stays byte-identical.
+  `--buildings` stays byte-identical. One question is that phase's to settle. Midtown's
+  roads are ODbL too (OQ-3), so a roads-only Midtown video needs the credit as well. The
+  line may then have to key on an imported network, not on `--buildings`.
 - **Nicer buildings:**
   - Overture `building_part` (towers on podiums; OQ-5) and raised bases;
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
@@ -567,8 +608,9 @@ constraint.
 
 - **OQ-1** — Depend on `assimilator-import` for the projection, or copy its three lines?
   **RESOLVED.**
-  - *Costs* are in §2.5.1: +1 package, a 10.8k-line crate compiled, and coupling to the
-    importer, against a copy pinned by a bit-exact test.
+  - *Costs* are in §2.5.1: +1 package and its optional dependencies (the draft said +1;
+    corrected in review round 1), a 10.8k-line crate compiled, and coupling to the importer,
+    against a copy pinned by a bit-exact test.
   - *Recommendation:* copy.
   - ~~*(design call: the user; blocks Phase 1's `Cargo.toml` and gate 6's form. Either way
     gate 6's values hold.)*~~
@@ -612,7 +654,8 @@ constraint.
   fault.
   - *The symptom:* vehicles freeze at a link end, often just after a late lane change,
     while their FCD keeps reporting driving speed. Followers brake and queue. There are 21
-    such cases in the 2850 run, 36 at 5650, and 0 in urban_grid.
+    such cases in the 2850 run, 36 at 5650, and 0 in urban_grid ("position frozen ≥ 10 s
+    while speed > 5 m/s", counted 2026-09-30; the engine question below has the method).
   - *Where:* the worst sites are simple unsignalised diverges with no conflict pairs
     (N442, N115, N717). Engine `231ec605` fixes a similar symptom only for trips that end
     at a junction, and all of Midtown's destinations are boundary nodes.
@@ -644,6 +687,25 @@ constraint.
   - *(answered 2026-10-01, user)* **Option (a): keep no copy.** If `2026-09-23.1` is gone
     from S3 and `scratch/` is lost, re-pin a newer release and re-predict, recording the
     change and never rewriting. Recorded as §2.2 m and §2.3.3.
+- **OQ-7** — The README credit's wording (§2.2 l, §2.10). **RESOLVED.**
+  - OQ-3 settled where the credit goes, not what it says.
+  - ~~*Review round 1's proposal*, to be checked against Overture's published attribution for
+    the buildings and transportation themes: "Buildings and roads © OpenStreetMap
+    contributors and Overture Maps Foundation, under the Open Database License (ODbL 1.0)."~~
+  - ~~*(needs-input: the user; blocks Phase 1's close-out, not its build or its gates.)*~~
+  - *(answered 2026-10-01, user)* **The README credit reads exactly:**
+
+    > Building footprints and imported road networks come from Overture Maps (Overture Maps
+    > Foundation, overturemaps.org). © OpenStreetMap contributors. Available under the Open
+    > Database License (ODbL). Overture's buildings also include data from other sources
+    > under their own licences, such as Esri Community Maps contributors, Microsoft Global
+    > ML Building Footprints and Google Open Buildings; see
+    > https://docs.overturemaps.org/attribution/.
+
+    The source is Overture's attribution page. The OSM credit is required for both themes,
+    buildings and transportation, while crediting Overture is optional. The buildings
+    theme also has CC BY 4.0 sources. Recorded as §2.2 l, §2.10 and Phase 1's close-out.
+    No gate or prediction changes.
 
 ## 4. Implementation phases
 
@@ -670,19 +732,26 @@ phase (§2.2 l, §2.13).
     - `lnglat_to_xy(origin, lng, lat)` and `xy_to_lnglat(origin, x, y)` (§2.5), with
       `origin` as `map_origin` (`[lng, lat]`);
     - `network_extent(&NetworkConfig)` and `fetch_bbox(&NetworkConfig, margin)` (§2.3.1);
-    - `read(path, &NetworkConfig) -> Result<Buildings>`, with every check of §2.4.3 in the
-      order listed. `Buildings` holds each building's `id`, its projected and oriented
-      polygons, its height and the rule that gave it (§2.4.2), the counts per rule, the
-      tallest height and the 3D bounding box;
-    - `mesh_data(&Buildings)`: positions, normals and indices in world metres (§2.6), with
-      the count of wall quads and roof triangles; roofs through `earcut`.
+    - `read(path, &NetworkConfig) -> Result<Buildings>`, with every check of §2.4.3 in its
+      order. `Buildings` holds each building's `id`, its projected and oriented polygons,
+      its height and the rule that gave it (§2.4.2), the counts per rule, and the tallest
+      height;
+    - `building_mesh(&Building)`: one building's positions, normals and indices in `f64`
+      world metres (§2.6), with its wall-quad and roof-triangle counts; roofs through
+      `earcut`. `mesh_data(&Buildings)` appends every building's, in file order. Gate 9
+      calls `building_mesh` per building.
   - **Drawing (`src/draw.rs`).**
-    - The Bevy mesh from that data, baked at `(fx, fy)`;
+    - The Bevy mesh from that data, baked at `(fx, fy)` and converted to `f32` there.
+      `render` and `view` both spawn it with `NoFrustumCulling`
+      (`bevy::camera::visibility::NoFrustumCulling`, not in the prelude);
     - the lit material and the sun (§2.7), with `SUN_AZIMUTH_DEG`, `SUN_ELEVATION_DEG` and
-      the ambient level as named constants;
-    - `src/draw.rs:look_down` and `src/draw.rs:projection` take the extra height (§2.8),
-      and the perspective `far` takes the buildings' box, both only when buildings are
-      given.
+      the ambient level as named constants. `draw::sun_direction(azimuth_deg,
+      elevation_deg) -> Vec3` gives the direction the light travels, in Bevy coordinates,
+      and the sun's `Transform` faces along it (gate 12);
+    - `draw::ortho_eye(tallest_m) -> (eye, far)` is §2.8's rule: `(500, 1000)` for a
+      `tallest_m` of 0, which is what a job without buildings passes.
+      `src/draw.rs:look_down` and `src/draw.rs:projection` take its two values.
+      `src/draw.rs:perspective` is not edited.
   - **`render` (`src/render.rs`, `src/lib.rs`, `src/main.rs`).**
     - `--buildings <file>` on `render`;
     - `src/render.rs:Renderer` takes an optional building mesh and spawns it and the sun
@@ -694,17 +763,25 @@ phase (§2.2 l, §2.13).
     - `--buildings <file>` on `view`. `src/view/state.rs:Pressed` gains `b`, and
       `src/view/state.rs:ViewState` a `buildings_shown` flag, true at `new`, flipped by `b`;
     - the window reads `KeyCode::KeyB`, spawns the mesh and the sun when buildings are
-      given, sets their visibility from the flag every frame, and applies §2.8's far plane;
+      given, and sets their visibility from the flag every frame;
     - nothing else in the frame order changes.
   - **The fixture.** `scripts/fixture.sh midtown`, §2.9.
   - **`Cargo.toml`.** `earcut` 0.4 (§2.11). No Bevy feature changes.
   - **Tests.**
-    - `tests/buildings.rs` (new): gates 6–12 and 14. The headless ones (6, 7's library
-      cases, 8 on the shapes, 14) need no fixture. Those that need the Midtown fixture or
-      the GPU are `#[ignore]`d, like `tests/camera.rs`.
+    - `tests/buildings.rs` (new): gates 6–12 and 14, with gate 7's accepted cases. The
+      headless ones (6, 7's library cases, 8 on the shapes, 11's eye rule, 12's sun
+      direction, 14) need no fixture. Those that need the Midtown fixture or the GPU are
+      `#[ignore]`d, like `tests/camera.rs`.
+    - The headless tests build their network in the test with `serde_yaml::from_str`
+      (already a dependency). It has a `metadata.name`, Midtown's `map_origin`, two
+      `endpoint` nodes at `point: [-130, -30]` and `[200, 30]`, and `links: []`. So
+      `read`'s `map_origin` and extent checks pass on the shapes, and no file is needed.
     - `tests/shapes.geojson` (new): six hand-written shapes, given in metres about
       Midtown's origin. They are written as lng/lat to 7 decimals through
-      `xy_to_lnglat`:
+      `xy_to_lnglat`. `shape-cube`'s exterior is written clockwise and `shape-courtyard`'s
+      hole counter-clockwise, the opposite of what the mesh needs, so the reader's
+      reorientation is tested (gates 8 and 12). The other rings are counter-clockwise, with
+      clockwise holes.
 
       | `id` | shape (metres) | properties | height |
       |---|---|---|---|
@@ -723,22 +800,38 @@ phase (§2.2 l, §2.13).
         { t = 360.000, x = 100.00, y = 500.00, height_m = 300.00, yaw_deg = 330.00, pitch_deg = 30.00 },
       ]
       ```
-    - `scripts/gates-city.sh` (new): gates 3 and 4, 5's re-fetch (only with `REFETCH=1`,
-      since it uses the network), 7's CLI cases and 13. `scripts/gates.sh` is not edited.
-      Gate 15 is run by hand, as vis-001's `--bench` was.
+    - `scripts/gates-city.sh` (new) runs:
+      - gates 3 and 4;
+      - gate 5's offline checks: the report line in `scratch/midtown/fetch.log`, and the
+        cache's bytes and SHA-256. Only with `REFETCH=1`, since they use the network: its
+        second fetch and its missing-release case;
+      - gate 7's CLI cases. Each `view` case runs under `perl -e 'alarm 60; exec @ARGV'`, so
+        a window that opens fails the case instead of hanging;
+      - gate 13.
+
+      `scripts/gates.sh` is not edited. Gate 1's `--camera` reference is kept and
+      compared by hand, after `scripts/gates.sh` has run: the non-`#` lines of its
+      `scratch/out/camera.framemd5` against the reference, as its own reference check
+      does.
+      Gate 15 is recorded by hand, as vis-001's `--bench` was.
     - `tests/gates.rs`, `tests/view.rs`, `tests/slider.rs` and `tests/camera.rs` are not
       edited.
 - **Exit gate.** On the development machine (Apple M3, macOS), on two fixtures:
   - vis-001's urban_grid (engine `df8aec0`, baseline, seed 42), for what must not change;
   - Midtown (`scripts/fixture.sh midtown`, §2.9) for the rest.
 
-  Gates 3–5 use the network: they are the fixture's fetch. Every other gate runs offline,
-  after it. The predictions are §2.12's drafting measurements; nothing was built. Distances
-  are compared to 1e-9 m, unless a gate says otherwise.
+  Only fetches use the network: the fixture's step 5, and gate 5's second fetch and
+  missing-release case. Every other check runs offline. The predictions are §2.12's
+  measurements: the drafting ones, and review round 1's. Nothing of this repo was built.
+  Distances are compared to 1e-9 m, unless a gate says otherwise.
   - **What must not change:**
   1. **`render` without `--buildings`.**
      - `scripts/gates.sh` passes, and its reference comparison gives **8700 of 8700**
        against `scratch/ref-8eb9052.framemd5` (§2.2 f).
+     - The `--camera` path, too. Before the first code change, `scripts/gates.sh` runs at
+       the base commit, as every vis-001 phase began. Its `--camera tests/flight.toml`
+       frames are kept as `scratch/ref-camera-<base>.framemd5`. After the change, that
+       render's `framemd5` equals it, **8700 of 8700**.
      - With `--include-ignored --test-threads=1`, `tests/gates.rs` (5), `tests/view.rs`
        (10), `tests/slider.rs` (8) and `tests/camera.rs` (19) pass, with none of those
        files edited.
@@ -749,7 +842,7 @@ phase (§2.2 l, §2.13).
      - A clean release build, counted from its `Compiling` lines in a throwaway
        `CARGO_TARGET_DIR` under `scratch/` (vis-001 Phase 5 gate 3's method), compiles
        **363** crates.
-     - The working `target/` growth is recorded. Prediction: under 0.2 GB.
+     - The working `target/` growth is recorded.
   - **The fixture and the fetch (network):**
   3. **The fixture** (`scripts/fixture.sh midtown`).
      - `scratch/midtown/`'s `project.yaml`, `network.yaml` and `import_report.json` are
@@ -782,11 +875,19 @@ phase (§2.2 l, §2.13).
        (−1048.5305648910369, −961.7316680111448);
      - its north-east corner (40.773359588039085, −73.96507911877812) →
        (1048.5305648898386, 961.7316680103539);
-     - (lng −73.9740258, lat 40.7625626) → (294.2048943683543, −240.18904050031864).
+     - a made-up point (review round 1), (lng −73.974, lat 40.7625) →
+       (296.3801816977122, −247.1576725002842). Regrouped as `(lng − origin_lng) · (111320
+       · cos …)`, its `x` would be 296.38018169771215.
+
+     And with a made-up origin `[−0.1, 51.5]` (review round 1), (lng −0.09, lat 51.51) →
+     (692.9832935049988, 1113.1999999997786). Here `to_radians()` would give `x` =
+     692.9832935049986. At Midtown's origin the two agree, so this case is what pins that
+     part of the order (§2.5).
 
      These are the engine formula's values in IEEE doubles, with its operation order (Python
      on this machine, which uses the same libm `cos` as Rust). `xy_to_lnglat` of each gives
-     back the lng/lat to 1e-12°.
+     back the lng/lat to 1e-12°. No point here is taken from map data (§2.10). The bbox
+     corners are the user's import request.
   7. **Reading errors** (§2.4.3).
      - Each case exits 1 with one stderr line beginning `error: --buildings`, with no
        progress line, no file at `--out` and no window. Each runs through `render`; the
@@ -808,8 +909,10 @@ phase (§2.2 l, §2.13).
   8. **Heights** (§2.4.2).
      - `tests/shapes.geojson` gives the table's heights. Its counts are 4 by `height`, 1 by
        `num_floors` and 1 at the default. `shape-multi` is one building of two polygons.
+     - Gate 9's roof-area and outward-wall checks pass on the shapes too, including the cube
+       and the courtyard's hole, which are written in the wrong orientation.
      - Midtown gives 4,277, 8 and 51, equal to the fetch report's.
-  9. **The mesh, on Midtown's 4,336 buildings** (§2.6):
+  9. **The mesh, on Midtown's 4,336 buildings** (§2.6), through `building_mesh` per building:
      - all **4,336** are meshed;
      - for each building, the roof triangles' total area equals its footprint's area
        (exterior minus holes, by the shoelace formula) to 1e-9 relative: **0 failures**;
@@ -818,7 +921,7 @@ phase (§2.2 l, §2.13).
        midpoint is outside the footprint (outside the exterior, or inside a hole). **0
        inward**;
      - every roof vertex is at its building's height;
-     - roof triangles at most 34,178, recorded.
+     - roof triangles: **34,178** (earcut 0.4.11 on `f64`, review round 1).
   10. **Alignment** (§2.5). Of the 255 links' centreline length (raw `geometry`, 33,530.0 m),
       the share inside a projected footprint is **at most 3 %**.
       - The footprints are taken as a union: each point counts once, holes are outside.
@@ -829,6 +932,13 @@ phase (§2.2 l, §2.13).
   11. **Top-down coverage.** Midtown at 3840×2160, the orthographic job (no `--camera`),
       with and without `--buildings`.
       - `Job::camera()` is equal for both, and `render_empty()` is taken of each.
+      - The orthographic eye is 500 m up with a far of 1,000 m in both, since Midtown's
+        472 m does not raise it (§2.8). That is `draw::ortho_eye` of each job's tallest
+        height (`Job::buildings()`'s, 0 without), which is `(500, 1000)` for both.
+        Headless, `ortho_eye` gives 500 for a tallest of 0, 472 and 490, and 505 for 495,
+        with far = eye + 500.
+      - A pixel is *inside a footprint* when its centre is inside the union of the
+        projected footprints, holes outside (as in gate 10).
       - An *edge pixel* has its centre within 2 px of a projected footprint boundary.
       - Every pixel that differs between the two frames is inside a footprint or is an edge
         pixel. Every pixel inside a footprint that is not an edge pixel differs.
@@ -843,8 +953,15 @@ phase (§2.2 l, §2.13).
       - **Roof over walls:** look-at (−100, 0), `height_m` 120, yaw 45, pitch 45. Take the
         3×3 mean of the red channel at `project` of the roof's centre (−100, 0, 30), of the
         south wall's centre (−100, −15, 15) and of the west wall's (−115, 0, 15).
-        Prediction: **roof > south wall > west wall** (0.866, 0.433 and 0.25 of the sun,
-        §2.7).
+        Prediction: **roof > south wall > west wall** (0.866, 0.433 and 0.25 of the sun by
+        Lambert, about 0.88, 0.50 and 0.36 by Bevy's Burley term, §2.7). Each of the three
+        samples is neutral (R = G = B) and not ground, so a culled wall cannot pass by
+        showing the ground behind it. The roof's red is below 255.
+      - **The sun's side (headless):** `draw::sun_direction(SUN_AZIMUTH_DEG,
+        SUN_ELEVATION_DEG)` is §2.7's formula. At 210° and 60° it equals Bevy `(0.25,
+        −0.8660254037844386, −0.4330127018922194)`, which is `(1/4, −√3/2, −√3/4)`, to
+        1e-6 per component. A sun mirrored to 150° would pass the order above, but not
+        this.
       - **Courtyard:** look-at (0, 0), pitch 90, `height_m` 60. The image centre is ground;
         `project` of (0, 14, 20) on the roof is not.
       - **The L's notch:** look-at (90, 10), pitch 90, `height_m` 60. The image centre is
@@ -854,7 +971,8 @@ phase (§2.2 l, §2.13).
         --from 300 --to 360 --speedup 1`, twice: `ffprobe` gives `1920,1080,30/1,1800`, and
         `framemd5` is equal, **1800 of 1800**.
       - A third run under `sandbox-exec -p '(version 1)(allow default)(deny network*)'`
-        completes, equal to both.
+        completes, equal to both. This is a prediction. While drafting, the profile was
+        tried only on `curl` and `echo`, not on Bevy with Metal and an ffmpeg child.
       - The same window rendered twice without `--camera` (orthographic, roofs only) is
         equal too.
   14. **`B`, headless.**
@@ -863,9 +981,11 @@ phase (§2.2 l, §2.13).
       - `t`, the clock, the pose, `k` and `follow` stay exactly as they were.
       - During a right-button orbit, a left drag and a scrub, `b` flips the flag and the
         gesture goes on unchanged.
-  15. **Frame rate.** `view --bench 20` on Midtown at the default window. With
-      `--buildings`, the mean is **at least 30 fps**, vis-001's bar. Prediction: 60.00 fps
-      with and without (vsync; urban_grid gave 60.00 at vis-001 Phases 4 and 5).
+  15. **Frame rate: recorded, not gated**, by vis-001 §2.9.8 decision 2, the user's.
+      - `view --bench 20` runs on Midtown at the default window, with and without
+        `--buildings`, and its JSON is recorded with the load average.
+      - For comparison, not a prediction: urban_grid gave 60.00 fps at vis-001 Phase 4 and
+        59.99 at Phase 5 (vsync).
   - **The user's check:**
   16. **The user looks at Midtown with buildings:**
       - in `view` with `--buildings`, check that buildings line up with the roads and the
@@ -882,54 +1002,68 @@ phase (§2.2 l, §2.13).
 
   | What | Prediction | Gate |
   |---|---|---|
-  | `render` without `--buildings`, urban_grid | 8700 of 8700 frames equal to the reference | 1 |
+  | `render` without `--buildings`, urban_grid: default and `--camera` | 8700 of 8700 frames equal to each reference | 1 |
   | `Cargo.lock` packages added; HTTP clients; release crates | 1 (`earcut`); 0; 363 | 2 |
-  | `target/` growth | under 0.2 GB (recorded) | 2 |
   | Fixture FCD | 280,872 rows, 985 vehicles, 1.1…1199.1 s | 3 |
   | Fetch bbox (W S E N) | −73.9938413 40.7544211 −73.9643086 40.7740495 | 4, 5 |
   | Buildings: by height / by num_floors / at 10 m | 4,336: 4,277 / 8 / 51 | 5, 8 |
   | Cache file | 2,140,989 bytes, one SHA-256 on every fetch | 5 |
   | Fetch time | 122–145 s (recorded) | 5 |
-  | Projection | 4 exact values | 6 |
-  | Roof-area failures; inward walls; wall quads | 0; 0; 42,776 | 9 |
+  | Projection | 5 exact values, at two origins | 6 |
+  | Roof-area failures; inward walls; wall quads; roof triangles | 0; 0; 42,776; 34,178 | 9 |
   | Centreline inside footprints | 2.239 % (bar 3 %) | 10 |
+  | Orthographic eye for Midtown, with buildings | 500 m, far 1,000 m (unchanged) | 11 |
   | Top-down coverage violations | 0 and 0 | 11 |
-  | Shape luminance | roof > south wall > west wall | 12 |
+  | Shape luminance; sun direction at 210°, 60° | roof > south wall > west wall; Bevy (1/4, −√3/2, −√3/4) to 1e-6 | 12 |
   | Keyframed render with buildings, twice and sandboxed | 1800 of 1800 | 13 |
-  | `view` frame rate with buildings | 60.00 fps (bar 30) | 15 |
-  | Midtown default render (9,000 frames), with / without buildings | at most 1.10× (recorded) | — |
 
 - **Not predicted, and so not gated:**
   - the look: the grey, the ambient level, the sun's illuminance and the shading of the
     shapes beyond gate 12's order;
-  - wall times: the fetch (gate 5), the engine run (gate 3), the clean build (gate 2) and
-    the Midtown render with and without buildings, of which only the ratio is predicted.
-    Other sessions load this machine, so times are recorded (vis-001);
-  - the building pixel count (gate 11) and the roof triangle count (gate 9).
+  - `view`'s frame rate (gate 15; vis-001 §2.9.8 decision 2);
+  - wall times: the fetch (gate 5), the engine run (gate 3) and the clean build (gate 2).
+    Also the Midtown default render (9,000 frames) with `--buildings`, recorded once by
+    hand at close-out beside the drafting record's 503.3 s without (§2.12). Other sessions load this machine,
+    so times are recorded (vis-001);
+  - the working `target/` growth (gate 2) and the building pixel count (gate 11).
 - **Close-out (standing plan steps, the methodology's §3):**
   - **Commit plan:** one branch (`vis-002-phase-1`), one push. The commits:
-    - the fetch, `network-extent` and the Midtown fixture (gates 3–5);
-    - reading, projection and mesh data (gates 6–10);
-    - drawing in `render` and `view`, and `B` (gates 1, 2, 11–15);
+    - the projection and extent half of `src/buildings.rs` (`lnglat_to_xy`,
+      `xy_to_lnglat`, `network_extent`, `fetch_bbox`), `network-extent`, the fetch and the
+      Midtown fixture (gates 3–6);
+    - reading and mesh data (gate 7's library cases, gates 8–10);
+    - drawing in `render` and `view`, and `B` (gates 1, 2, 7's CLI cases, 11–15);
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
-    - a new `rules/buildings.md` for §2.3–§2.8 as built: the fetch and its report, the
-      cache format and its checks, the projection, the height rule, the mesh, the light and
-      `B`. Its `sources` are `src/buildings.rs`, `src/bin/network-extent.rs`,
-      `scripts/fetch-buildings.sh` and `src/draw.rs`;
-    - `rules/render.md` (60/60), `rules/view.md` (60/60), `rules/camera.md` (60/60) and
-      `rules/inputs.md` (50/50) are at their caps. They gain only `--buildings`, `B`, the
-      check's place in the order, the far plane and the orthographic height, as pointers
-      to `rules/buildings.md`, reworded to fit. No `max_lines` is raised;
-    - the README gains the fetch script with its prerequisites (DuckDB ≥ 1.5.1 with
-      `httpfs` and `spatial`; the network, for the fetch only), `--buildings`, `B`, the
-      Midtown fixture (it needs the user's project), and the ODbL credit (§2.2 l). The
-      credit covers Overture's buildings and the roads of an imported network, in wording
-      the user sets. The README also says that a credit line in the video is a later
-      phase, and that it must ship before any Midtown video is shown outside;
+    - a new `rules/buildings.md` (`max_lines: 60`) for §2.3–§2.8 as built: the fetch and
+      its report, the cache format and its checks, the projection, the height rule, the
+      mesh, the light, the orthographic eye rule and `B`. Its `sources` are
+      `src/buildings.rs`, `src/bin/network-extent.rs`, `scripts/fetch-buildings.sh`,
+      `src/draw.rs`, `src/view/state.rs` and `src/view/mod.rs`;
+    - four rules are at their caps: `rules/render.md` (60/60), `rules/view.md` (60/60),
+      `rules/camera.md` (60/60) and `rules/inputs.md` (50/50). Each gains a pointer to
+      `rules/buildings.md`, reworded to fit; no `max_lines` is raised:
+      - `render.md`: `--buildings` on `render`;
+      - `view.md`: `--buildings` on `view`, and `B`;
+      - `camera.md`: the orthographic eye rule, and `NoFrustumCulling` on the building mesh;
+      - `inputs.md`: the `--buildings` check's place, after `--camera`'s;
+    - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
+    - the README gains:
+      - the fetch script with its prerequisites (DuckDB ≥ 1.5.1 with `httpfs` and
+        `spatial`; the network, for the fetch only);
+      - `--buildings` and `B`;
+      - the Midtown fixture (it needs the user's project) and the new gate commands:
+        `scripts/fixture.sh midtown`, `scripts/gates-city.sh` with `REFETCH=1`, and
+        `cargo test --release --test buildings -- --include-ignored --test-threads=1`;
+      - the ODbL credit (§2.2 l), exactly OQ-7's text (answered 2026-10-01). It covers
+        Overture's buildings and the roads of an imported network. The README also says that a
+        credit line in the video is a later phase, and that it must ship before any
+        Midtown video is shown outside;
     - `CLAUDE.md` gains one line beside the licence: nothing derived from OSM or Overture
-      (ODbL) is committed; fetched buildings and imported networks stay out of the repo.
+      (ODbL) is committed; fetched buildings and imported networks stay out of the repo;
+    - status artifact: none needed, since this repo has none (`.spec-lint.yaml`'s
+      `status_artifacts` is empty).
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and its
     cause.
   - Write this phase's `shipped` date.
