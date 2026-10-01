@@ -8,6 +8,7 @@
 //! perspective camera ([`Job::prepare_with_camera`]) and its pose at any time
 //! ([`Job::pose_at`]).
 
+pub mod buildings;
 pub mod camera;
 pub mod clock;
 pub mod draw;
