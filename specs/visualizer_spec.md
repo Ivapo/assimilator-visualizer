@@ -311,6 +311,11 @@ drafted and reviewed. Each ends with a video.
      today's roads and boxes. It produces the observable.
 4. **City** — `prepare`: Overture buildings and land use for the network area, chunked
    meshes, a cached scene bundle; `render` makes no network calls.
+   *Note (2026-10-01):* narrowed by vis-002 (`specs/city_spec.md`), a spec of its own:
+   real buildings from Overture only, fetched once by `scripts/fetch-buildings.sh` into a
+   cached `buildings.geojson` that `render` and `view` read with `--buildings`, so neither
+   makes a network call. `prepare`, land use, chunked meshes and the scene bundle are not
+   in it; vis-002's roadmap (§2.13 there) carries what remains.
 5. **Data** — links colored by speed or flow; HUD with clock, legend, one chart;
    signal states from the plans (moved from item 2, 2026-09-29).
 6. **Harness contract (v1)** — `check`, supported schema version ranges, stable
