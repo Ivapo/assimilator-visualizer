@@ -11,7 +11,7 @@ last_updated: 2026-10-02
 phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
     reviewed: 2026-10-01
-    shipped: null
+    shipped: 2026-10-02
     cut: null
     by: null
 
@@ -599,7 +599,7 @@ constraint.
   roads are ODbL too (OQ-3), so a roads-only Midtown video needs the credit as well. The
   line may then have to key on an imported network, not on `--buildings`.
 - **A deterministic `--camera` render on Midtown** (OQ-8): a small phase in vis-001
-  §2.11's draw path.
+  §2.11's draw path. The user scheduled it right after the credit (2026-10-02).
 - **Nicer buildings:**
   - Overture `building_part` (towers on podiums; OQ-5) and raised bases;
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
@@ -700,16 +700,25 @@ constraint.
     urban_grid, run twice the same way on copies in a scratch folder, gave equal FCDs:
     21,557 rows each, 0 rows apart either way. Gate 3's FCD check is a recorded miss, and
     the run in `scratch/midtown` is the fixture (§2.9).
+  - *(the engine orchestrator's answer, 2026-10-02, relayed by the user)* The pin gives a
+    different Midtown FCD on every run, and neither the seed nor the build is the cause.
+    Engine main (`aef76a5`) gives byte-identical FCDs over 11 runs, some of them run at the
+    same time. But main only masks the cause, which is likely the stray-vehicle path main
+    removes. The commit the engine names must give a byte-identical FCD on repeated Midtown
+    runs, checked on our inputs. At the pin, urban_grid is deterministic: two runs gave
+    equal FCDs (Phase 1's gate run, above).
   - *(needs-input: engine. It blocks nothing in Phase 1, whose gates measure geometry and
     the user's check expects the gridlock. It does block a presentable Midtown video.)*
-- **OQ-5** — Should Overture's building parts come sooner?
+- **OQ-5** — Should Overture's building parts come sooner? **RESOLVED.**
   - *The data:* 487 of Midtown's 4,336 buildings (11 %) have `building_part`s. The
     `building` footprint carries the whole building's height, so a tower on a podium is
     drawn as one slab as tall as the tower. Two buildings have a raised base
     (`min_height` > 0), and are drawn from the ground.
   - *Whether that is acceptable* is for the user to see.
-  - *(design call; deferred by evidence to Phase 1's gate 16; blocks nothing in Phase 1. If
-    yes, it is the next phase.)*
+  - ~~*(design call; deferred by evidence to Phase 1's gate 16; blocks nothing in Phase 1. If
+    yes, it is the next phase.)*~~
+  - *(answered 2026-10-02, user, at gate 16)* **Not sooner.** Building parts wait for the
+    "nicer buildings" work on the roadmap (§2.13).
 - **OQ-6** — Where should a copy of the cache live once its release leaves S3?
   **RESOLVED.**
   - *Why it matters:* Overture keeps only recent releases (§2.3.3). If
@@ -766,6 +775,12 @@ constraint.
   - *Where the fix belongs:* the `--camera` draw path of vis-001 §2.11, as a small phase of
     its own (§2.13). Until then, any gate that compares two Midtown flight renders will
     miss the same way. vis-001 is not edited here.
+  - *Testing the fix:* it must be tested with boxes made to overlap on purpose, not only on
+    Midtown. Use two or more boxes at one point and heading, in different colours, seen
+    through a tilted camera. A fixed engine may stop stacking frozen vehicles, and that
+    would hide the bug on Midtown.
+  - *(2026-10-02, user)* Stays open. Its fix phase is scheduled right after the in-video
+    credit (§2.13).
   - *(design call: the user; non-blocking.)*
 
 ## 4. Implementation phases
@@ -1059,6 +1074,12 @@ phase (§2.2 l, §2.13).
 
       And say whether the grey, the sun or the ambient should change (iteration, §2.7), and
       answer OQ-5 (building parts).
+
+      *(Passed by the user, 2026-10-02.)* The user checked in `view`: alignment, the tilt to
+      25°, `B`, and roofs lighter than walls. They also checked
+      `scratch/out/city/flight1.mp4` and `midtown-buildings.mp4`. The look stays as built,
+      and colour tuning is later iteration. OQ-5 is answered: not sooner. The gate record is
+      in `specs/reviews/vis-002.md`.
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
