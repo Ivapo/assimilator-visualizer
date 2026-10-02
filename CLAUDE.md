@@ -14,6 +14,7 @@ project). Copy a project to a scratch folder and run it there.
 `dynamic_linking` by default, and don't create extra worktrees without asking.
 
 **Licensed MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`): every crate sets `license = "MIT OR Apache-2.0"` in its `Cargo.toml`.
+**Nothing derived from OSM or Overture (ODbL) is committed:** fetched buildings and imported networks stay out of the repo (vis-002 §2.10).
 
 ## Development flow
 

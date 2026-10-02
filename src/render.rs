@@ -1,6 +1,7 @@
 //! Headless Bevy (vis-001 §2.3): no window, a camera rendering to an offscreen image, and
 //! a lossless readback of every frame. The camera is Phase 1's top-down orthographic one,
 //! or, for a keyframed render, a perspective one set from a pose each frame (§2.11.2).
+//! With buildings (vis-002), the scene adds their mesh and the sun.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -23,6 +24,7 @@ use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy::window::ExitCondition;
 use bevy::winit::WinitPlugin;
 
+use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::draw;
 use crate::motion::TrackPos;
@@ -59,9 +61,15 @@ pub struct Renderer {
 
 impl Renderer {
     /// Build the scene: road strips in link order, and `pool` hidden boxes that frames
-    /// fill in `vehicle_id` order.
-    pub fn new(strips: &[Strip], camera: SceneCamera, pool: usize) -> Result<Self> {
-        Self::build(strips, camera, pool, None)
+    /// fill in `vehicle_id` order. With `buildings`, their mesh and the sun too, and the
+    /// orthographic eye rises above the tallest roof (`draw::ortho_eye`).
+    pub fn new(
+        strips: &[Strip],
+        camera: SceneCamera,
+        pool: usize,
+        buildings: Option<&Buildings>,
+    ) -> Result<Self> {
+        Self::build(strips, camera, pool, None, buildings)
     }
 
     /// The same scene through a perspective camera at `pose` (§2.11.2): shaded boxes and
@@ -71,8 +79,9 @@ impl Renderer {
         camera: SceneCamera,
         pool: usize,
         pose: &Pose,
+        buildings: Option<&Buildings>,
     ) -> Result<Self> {
-        Self::build(strips, camera, pool, Some(pose))
+        Self::build(strips, camera, pool, Some(pose), buildings)
     }
 
     fn build(
@@ -80,6 +89,7 @@ impl Renderer {
         camera: SceneCamera,
         pool: usize,
         pose: Option<&Pose>,
+        buildings: Option<&Buildings>,
     ) -> Result<Self> {
         let mut app = App::new();
         app.add_plugins(
@@ -137,14 +147,16 @@ impl Renderer {
 
         let perspective = match pose {
             None => {
+                let (eye, far) = draw::ortho_eye(buildings.map_or(0.0, |b| b.tallest));
                 world.spawn((
                     draw::camera_fixed(),
                     RenderTarget::Image(target.clone().into()),
                     draw::projection(
                         (camera.width as f64 * camera.k) as f32,
                         (camera.height as f64 * camera.k) as f32,
+                        far as f32,
                     ),
-                    draw::look_down(0.0, 0.0),
+                    draw::look_down(0.0, 0.0, eye as f32),
                 ));
                 None
             }
@@ -170,6 +182,10 @@ impl Renderer {
             Transform::IDENTITY,
         ));
         let pool = draw::spawn_pool(world, &box_mesh, &speed_mats[0], pool);
+        // Nothing is spawned without buildings, so such a render is unchanged.
+        if let Some(b) = buildings {
+            draw::spawn_buildings(world, b, (camera.cx, camera.cy));
+        }
 
         let mut r = Renderer {
             apps,

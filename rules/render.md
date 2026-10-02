@@ -13,7 +13,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-09-30
+generated: 2026-10-01
 ---
 
 # Render
@@ -23,15 +23,14 @@ generated: 2026-09-30
 ## CLI
 `assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
 [--results] [--fcd] [--from] [--to] [--speedup] [--fps 30] [--width 1920] [--height 1080]
-[--camera <file.toml>]`. `--camera` changes no other flag's default.
+[--camera <file.toml>] [--buildings <file.geojson>]`; neither changes another default.
 - Width and height must be even. Stderr: one `{"frame": n, "of": N}` per frame, then `{"done": "<out>"}`.
 - On error it prints a single `error: …` line and exits 1. A clap usage error exits 2
   with its first line.
 - No logger: Bevy's `bevy_log` feature is off, so neither Bevy nor wgpu prints.
 
 ## Clock
-- `D = to − from`. The default speedup is `D / clamp(D, 30, 300)`.
-- `N = ceil(D · fps / speedup − 1e-6)`, with a minimum of 1.
+- `D = to − from`; default speedup `D / clamp(D, 30, 300)`; `N = ceil(D·fps/speedup − 1e-6)` ≥ 1.
 - Frame `n` (from 0) shows `from + n · speedup / fps`, never wall-clock time.
 
 ## Scene (built by `src/draw.rs`, shared with `view`: `rules/view.md`)
@@ -47,6 +46,7 @@ generated: 2026-09-30
   - Yawed by `90° − heading` about +Y; unlit colour from 5 speed bins (< 2, 5, 9, 13, ∞ m/s).
 - **Colours.** Background `#12161e`, road `#5c6068`, speed colours distinct from both.
   World to Bevy is `(x − cx, height, −(y − cy))`.
+- **Buildings**, only with `--buildings`: one lit mesh and a sun (`rules/buildings.md`).
 
 ## Camera
 - Without `--camera`: top-down orthographic, north up, fitted to the strips' bounding box
@@ -65,10 +65,10 @@ generated: 2026-09-30
 - Per frame: set the boxes, spawn `Screenshot::image(target)`, then update and
   `poll(Wait)` until the observer has the readback (at most 200 updates). The readback
   is the lossless frame, `W·H·4` bytes, top row first.
-- `Job::prepare`: size, fps, speedup, then `run::load` (`rules/inputs.md`);
-  `prepare_with_camera(o, file)` then reads the file and builds the flight. `Job` exposes
-  `render_frame(n)`, `render_at(t)`, `render_empty()`, `camera()`/`k()` (the fit),
-  `pose_at(t)`, `boxes_at(t)` and `motion_report()` for the gates.
+- `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate):
+  size, fps, speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings.
+  `Job` exposes `render_frame(n)`, `render_at(t)`, `render_empty()`, `camera()`/`k()` (the
+  fit), `pose_at(t)`, `boxes_at(t)`, `buildings()` and `motion_report()` for the gates.
 
 ## Output
 - `ffmpeg -f rawvideo -pix_fmt rgba -s WxH -r fps -i - -c:v libx264 -pix_fmt yuv420p

@@ -1,14 +1,17 @@
 //! What `render` and `view` draw the same way (vis-001 §2.9.6): the road mesh, the box
 //! pool's materials and transforms, and the camera's fixed parts. Moved from
 //! `src/render.rs`, so `render`'s frames do not change. The perspective path (§2.11.2)
-//! adds a camera built from a pose, a shaded box mesh and a smaller rank lift.
+//! adds a camera built from a pose, a shaded box mesh and a smaller rank lift. vis-002
+//! adds the buildings: one lit mesh, a sun and the orthographic eye's rule.
 
 use bevy::asset::RenderAssetUsages;
+use bevy::camera::visibility::NoFrustumCulling;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
 
+use crate::buildings::{Buildings, MeshData};
 use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
@@ -71,17 +74,18 @@ pub fn camera_fixed() -> impl Bundle {
     )
 }
 
-/// Straight down from `(x, 500, z)`, north (−Z) at the top of the image.
-pub fn look_down(x: f32, z: f32) -> Transform {
-    Transform::from_xyz(x, 500.0, z).looking_at(Vec3::new(x, 0.0, z), Vec3::NEG_Z)
+/// Straight down from `(x, eye, z)`, north (−Z) at the top of the image; `eye` is
+/// [`ortho_eye`]'s.
+pub fn look_down(x: f32, z: f32, eye: f32) -> Transform {
+    Transform::from_xyz(x, eye, z).looking_at(Vec3::new(x, 0.0, z), Vec3::NEG_Z)
 }
 
-/// The ortho projection showing `width × height` metres.
-pub fn projection(width: f32, height: f32) -> Projection {
+/// The ortho projection showing `width × height` metres, to `far` ([`ortho_eye`]'s).
+pub fn projection(width: f32, height: f32, far: f32) -> Projection {
     Projection::from(OrthographicProjection {
         scaling_mode: bevy::camera::ScalingMode::Fixed { width, height },
         near: 0.0,
-        far: 1000.0,
+        far,
         ..OrthographicProjection::default_3d()
     })
 }
@@ -236,4 +240,120 @@ pub fn road_mesh(strips: &[Strip], cx: f64, cy: f64) -> Mesh {
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
     .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n])
     .with_inserted_indices(Indices::U32(idx))
+}
+
+/// The orthographic eye's height without buildings, metres; its depth range is the eye's
+/// height + [`ORTHO_DEPTH_BELOW_M`].
+pub const ORTHO_EYE_M: f64 = 500.0;
+pub const ORTHO_DEPTH_BELOW_M: f64 = 500.0;
+
+/// The orthographic eye's height and far plane for a scene whose tallest roof is
+/// `tallest_m` (vis-002 §2.8): the eye rises only for a roof that would reach it, to
+/// `max(500, tallest + 10)` m, and far is the eye's height + 500 m. A job without
+/// buildings passes 0 and gets `(500, 1000)`.
+pub fn ortho_eye(tallest_m: f64) -> (f64, f64) {
+    let eye = ORTHO_EYE_M.max(tallest_m + 10.0);
+    (eye, eye + ORTHO_DEPTH_BELOW_M)
+}
+
+/// The sun (vis-002 §2.7): where the light comes from, clockwise from north, and its
+/// elevation, degrees. Above 45°, every roof is lighter than every wall.
+pub const SUN_AZIMUTH_DEG: f64 = 210.0;
+pub const SUN_ELEVATION_DEG: f64 = 60.0;
+/// The sun's illuminance, lux, and the ambient light's brightness: low enough that a
+/// roof stays below full white (the camera has no tonemapping), the ambient weaker than
+/// the sun.
+pub const SUN_LUX: f32 = 4000.0;
+pub const AMBIENT_BRIGHTNESS: f32 = 250.0;
+/// The buildings' one material: neutral grey (sRGB), so a building pixel is never a road
+/// or background pixel.
+pub const BUILDING_GREY: [u8; 3] = [188, 188, 188];
+
+/// The direction the sun's light travels, in Bevy coordinates: world
+/// `(−cos e·sin a, −cos e·cos a, −sin e)` is Bevy `(−cos e·sin a, −sin e, cos e·cos a)`.
+pub fn sun_direction(azimuth_deg: f64, elevation_deg: f64) -> Vec3 {
+    let (a, e) = (azimuth_deg.to_radians(), elevation_deg.to_radians());
+    Vec3::new(
+        (-e.cos() * a.sin()) as f32,
+        (-e.sin()) as f32,
+        (e.cos() * a.cos()) as f32,
+    )
+}
+
+/// The buildings' mesh data as one Bevy mesh, baked relative to `(fx, fy)` like the
+/// roads: world `(x, y, z)` is Bevy `(x − fx, z, −(y − fy))`, converted to `f32` here.
+pub fn buildings_mesh(data: &MeshData, fx: f64, fy: f64) -> Mesh {
+    let pos: Vec<[f32; 3]> = data
+        .positions
+        .iter()
+        .map(|p| [(p[0] - fx) as f32, p[2] as f32, -(p[1] - fy) as f32])
+        .collect();
+    let normals: Vec<[f32; 3]> = data
+        .normals
+        .iter()
+        .map(|n| [n[0] as f32, n[2] as f32, -n[1] as f32])
+        .collect();
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_indices(Indices::U32(data.indices.clone()))
+}
+
+/// What [`spawn_buildings`] spawned, for `view`'s `B`.
+#[derive(Debug, Clone, Copy)]
+pub struct BuildingEntities {
+    pub mesh: Entity,
+    pub sun: Entity,
+}
+
+/// Spawn the buildings as one lit, never-culled mesh, the sun and the ambient light
+/// (vis-002 §2.7). Called only with buildings: without them nothing is spawned.
+pub fn spawn_buildings(
+    world: &mut World,
+    buildings: &Buildings,
+    (fx, fy): (f64, f64),
+) -> BuildingEntities {
+    let data = crate::buildings::mesh_data(buildings);
+    let mesh = world
+        .resource_mut::<Assets<Mesh>>()
+        .add(buildings_mesh(&data, fx, fy));
+    let material = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial {
+            base_color: srgb(BUILDING_GREY),
+            perceptual_roughness: 1.0,
+            reflectance: 0.0,
+            metallic: 0.0,
+            ..default()
+        });
+    let mesh = world
+        .spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::IDENTITY,
+            // One mesh, always submitted: no tower drops out of a low, zoomed shot.
+            NoFrustumCulling,
+        ))
+        .id();
+    let sun = world
+        .spawn((
+            DirectionalLight {
+                illuminance: SUN_LUX,
+                shadow_maps_enabled: false,
+                contact_shadows_enabled: false,
+                ..default()
+            },
+            Transform::IDENTITY
+                .looking_to(sun_direction(SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG), Vec3::Y),
+        ))
+        .id();
+    world.insert_resource(GlobalAmbientLight {
+        color: Color::WHITE,
+        brightness: AMBIENT_BRIGHTNESS,
+        ..default()
+    });
+    BuildingEntities { mesh, sun }
 }

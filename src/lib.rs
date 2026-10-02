@@ -6,8 +6,10 @@
 //! adds the boxes at any time with their track positions ([`Job::boxes_at`]) and the
 //! motion report ([`Job::motion_report`]). Phase 5 adds a keyframed render through a
 //! perspective camera ([`Job::prepare_with_camera`]) and its pose at any time
-//! ([`Job::pose_at`]).
+//! ([`Job::pose_at`]). vis-002 adds the buildings of a `--buildings` file
+//! ([`Job::prepare_with`], [`Job::buildings`]).
 
+pub mod buildings;
 pub mod camera;
 pub mod clock;
 pub mod draw;
@@ -26,6 +28,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
+use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::keyframes::Flight;
 
@@ -78,36 +81,69 @@ pub struct Job {
     renderer: Renderer,
     /// The keyframed camera; `None` for the orthographic job.
     flight: Option<Flight>,
+    /// The `--buildings` file's buildings; `None` without one.
+    buildings: Option<Buildings>,
 }
 
 impl Job {
     /// Run every check that can fail on the inputs, place every row, build every
     /// vehicle's track from the whole file, and build the scene. No frame is rendered.
     pub fn prepare(o: &RenderOptions) -> Result<Job> {
-        let (clock, run) = Self::load(o)?;
-        let camera = Camera::fit(&run.strips, o.width, o.height);
-        let renderer = Renderer::new(&run.strips, camera, run.motion.max_drawn())?;
-        Ok(Self::assemble(clock, run, renderer, None))
+        Self::prepare_with(o, None, None)
     }
 
-    /// [`Job::prepare`]'s run, then the keyframe file at `camera` (vis-001 §2.11.4): read,
-    /// checked against the run, and built into a flight, before the scene is built. The
-    /// scene is Phase 1's, through a perspective camera set from the flight each frame.
+    /// [`Job::prepare`] with a keyframe file at `camera` (vis-001 §2.11.4).
     pub fn prepare_with_camera(o: &RenderOptions, camera: &Path) -> Result<Job> {
-        let (clock, run) = Self::load(o)?;
-        let err = |e: String| anyhow!("--camera {}: {e}", camera.display());
-        let keyframes = keyframes::read(camera).map_err(err)?;
-        keyframes::check_follows(&keyframes, &run.motion, &run.fcd, &run.placement)
-            .map_err(err)?;
-        let flight = Flight::new(keyframes, &run.fcd);
-        let fit = Camera::fit(&run.strips, o.width, o.height);
-        let pose = flight.pose_at(clock.from, &run.motion, &run.fcd, &run.placement);
-        let renderer =
-            Renderer::new_perspective(&run.strips, fit, run.motion.max_drawn(), &pose)?;
-        Ok(Self::assemble(clock, run, renderer, Some(flight)))
+        Self::prepare_with(o, Some(camera), None)
     }
 
-    fn assemble(clock: Clock, run: run::Run, renderer: Renderer, flight: Option<Flight>) -> Job {
+    /// [`Job::prepare`]'s run, then the keyframe file at `camera`, if any: read, checked
+    /// against the run and built into a flight (vis-001 §2.11.4). Then the buildings file
+    /// at `buildings`, if any: read and checked against the run's network (vis-002
+    /// §2.4.3). Then the scene: Phase 1's, through a perspective camera set from the
+    /// flight each frame when there is one, with the buildings and the sun when given.
+    pub fn prepare_with(
+        o: &RenderOptions,
+        camera: Option<&Path>,
+        buildings: Option<&Path>,
+    ) -> Result<Job> {
+        let (clock, run) = Self::load(o)?;
+        let flight = match camera {
+            None => None,
+            Some(camera) => {
+                let err = |e: String| anyhow!("--camera {}: {e}", camera.display());
+                let keyframes = keyframes::read(camera).map_err(err)?;
+                keyframes::check_follows(&keyframes, &run.motion, &run.fcd, &run.placement)
+                    .map_err(err)?;
+                Some(Flight::new(keyframes, &run.fcd))
+            }
+        };
+        let buildings = match buildings {
+            None => None,
+            Some(file) => Some(
+                crate::buildings::read(file, &run.placement.network)
+                    .map_err(|e| anyhow!("--buildings {}: {e}", file.display()))?,
+            ),
+        };
+        let fit = Camera::fit(&run.strips, o.width, o.height);
+        let pool = run.motion.max_drawn();
+        let renderer = match &flight {
+            None => Renderer::new(&run.strips, fit, pool, buildings.as_ref())?,
+            Some(flight) => {
+                let pose = flight.pose_at(clock.from, &run.motion, &run.fcd, &run.placement);
+                Renderer::new_perspective(&run.strips, fit, pool, &pose, buildings.as_ref())?
+            }
+        };
+        Ok(Self::assemble(clock, run, renderer, flight, buildings))
+    }
+
+    fn assemble(
+        clock: Clock,
+        run: run::Run,
+        renderer: Renderer,
+        flight: Option<Flight>,
+        buildings: Option<Buildings>,
+    ) -> Job {
         let run::Run {
             fcd,
             placed,
@@ -123,6 +159,7 @@ impl Job {
             motion,
             renderer,
             flight,
+            buildings,
         }
     }
 
@@ -179,6 +216,11 @@ impl Job {
     /// The fit: the scene's bake origin, and the orthographic job's camera.
     pub fn camera(&self) -> &Camera {
         self.renderer.camera()
+    }
+
+    /// The `--buildings` file's buildings; `None` without one.
+    pub fn buildings(&self) -> Option<&Buildings> {
+        self.buildings.as_ref()
     }
 
     /// Metres per pixel.
