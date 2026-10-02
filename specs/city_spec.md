@@ -6,7 +6,7 @@ note: >
   fetched once by a script into a cached GeoJSON, then projected with the engine's formula,
   extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture.
 status: accepted
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 
 phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
@@ -523,6 +523,11 @@ urban_grid. With `midtown` it:
 `FORCE=1` redoes steps 1–4 and **keeps `buildings.geojson`**, because the release may be
 gone (§2.3.3). After step 5 every gate runs offline.
 
+*(Note, 2026-10-01, Phase 1's gate run.)* The fixture's traffic cannot be reproduced at
+the pin: four runs of the same Midtown inputs at `df8aec0` gave four FCDs (OQ-4). So the
+run in `scratch/midtown` is the fixture, and `FORCE=1` gives different traffic. Gate 3's
+FCD check is a recorded miss: `specs/reviews/vis-002.md`, "Phase 1 gate run".
+
 **The traffic gridlocks** at the pin, at both demand levels: an engine fault, asked of the
 engine and not yet answered (OQ-4). Buildings need only the network's geometry and
 `map_origin`, so vis-002 does not wait. When the engine is fixed:
@@ -593,6 +598,8 @@ constraint.
   `--buildings` stays byte-identical. One question is that phase's to settle. Midtown's
   roads are ODbL too (OQ-3), so a roads-only Midtown video needs the credit as well. The
   line may then have to key on an imported network, not on `--buildings`.
+- **A deterministic `--camera` render on Midtown** (OQ-8): a small phase in vis-001
+  §2.11's draw path.
 - **Nicer buildings:**
   - Overture `building_part` (towers on podiums; OQ-5) and raised bases;
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
@@ -664,6 +671,35 @@ constraint.
     `~/dev/ivapo/Orchtr-assimilator-visualizer/engine-question-midtown.md`.
   - *The plan* (§2.9): vis-002 does not wait. When the engine is fixed, the user moves the
     pin, every gate is re-run, and the fixture's traffic is frozen again.
+  - *(the engine's answer, 2026-10-01, relayed by the user)* Reproduced at `df8aec0`. A
+    real engine fault, with three causes:
+    1. a junction lock at unsignalised `conflict_area` junctions without a priority rule
+       (N717, N332): new;
+    2. a vehicle held at a link end keeps its speed: known, not fixed;
+    3. a vehicle that misses its exit lane can circle a block, its route never repaired:
+       new.
+
+    It is not fixed on engine main (`aef76a5`). Main now removes stray vehicles and counts
+    them as completed, so its numbers look better while traffic does not move better. The
+    fix is two engine phases, and the pin stays at `df8aec0` until the engine names the
+    commit. A stopgap, removing `conflict_area` from Midtown's 9 unsignalised junctions
+    (tested only at `aef76a5`), was declined by the user. The engine side also saw two runs
+    of one seed at the pin differ in 75 FCD rows: 2 vehicles, after 1,155 s, speeds only.
+  - *(measured in Phase 1's gate run, 2026-10-01)* Far larger than those 75 rows. Four
+    Midtown 2850 runs of the same inputs with the same engine binary gave four FCDs, of
+    280,729 to 280,875 rows. They part from 502–721 s on, in 331–519 vehicles, and in
+    `link_id` and `lane` too, not only in speeds:
+
+    | runs | first difference | vehicles | rows apart (both ways) |
+    |---|---|---|---|
+    | 2026-09-30's (`scratch/midtown-2850`) vs the fixture's | 721.1 s | 331 | 85,777 |
+    | two scratch runs, a vs b | 721.1 s | 366 | 108,907 |
+    | a vs the fixture's | 502.1 s | 514 | 206,476 |
+    | b vs the fixture's | 502.1 s | 519 | 207,259 |
+
+    urban_grid, run twice the same way on copies in a scratch folder, gave equal FCDs:
+    21,557 rows each, 0 rows apart either way. Gate 3's FCD check is a recorded miss, and
+    the run in `scratch/midtown` is the fixture (§2.9).
   - *(needs-input: engine. It blocks nothing in Phase 1, whose gates measure geometry and
     the user's check expects the gridlock. It does block a presentable Midtown video.)*
 - **OQ-5** — Should Overture's building parts come sooner?
@@ -706,6 +742,31 @@ constraint.
     buildings and transportation, while crediting Overture is optional. The buildings
     theme also has CC BY 4.0 sources. Recorded as §2.2 l, §2.10 and Phase 1's close-out.
     No gate or prediction changes.
+- **OQ-8** — The `--camera` render is not deterministic on Midtown (found in Phase 1's gate
+  run, 2026-10-01; gate 13's flight comparison is a recorded miss).
+  - *The evidence:* `render --camera tests/city-flight.toml --from 300 --to 360 --speedup
+    1` on the Midtown fixture, run again and again, gives 1663 or 1695 of 1800 equal
+    frames. The ranges that differ are 363–499 or 395–499, with or without `--buildings`.
+    The orthographic render is equal, 1800 of 1800, and vis-001's own flight on urban_grid
+    is too. Decoded, the first differing frame differs in 16 pixels by 2 in blue or
+    green, and every range ends before frame 500, the encoder's next full frame.
+  - *Where (bounded check, 2026-10-02):* in raw frames rendered by two processes, without
+    buildings, only 3 frames of 350–380 differ, each in one pixel: (390, 403) in 363 and
+    364, and (680, 329) in 367, by up to 24 in a channel. Every such pixel is covered by
+    vehicle boxes stacked at the same point. In frame 363, vehicles 72, 126, 130 and 180
+    sit at (−687.006, 367.803), 0.000 m apart, all at heading 209.23°. Three are drawn at
+    16.67 m/s and one at 12.97 m/s, and the two runs' colours are blends of those two
+    speed colours. In frame 367 there are two pairs, 0.032 m and 0.000 m apart. These are
+    OQ-4's frozen vehicles, several still at driving speed. The draw order itself was not
+    observed.
+  - *The hypothesis:* depth ties between overlapping boxes, resolved by draw order, which
+    Bevy's binned opaque pass does not keep stable. vis-001 §2.11.2's rank lift (0.001 m)
+    separates stacked boxes' tops. Their side faces still share planes, and the tilted
+    camera shows them; straight down it does not, so the orthographic path is deterministic.
+  - *Where the fix belongs:* the `--camera` draw path of vis-001 §2.11, as a small phase of
+    its own (§2.13). Until then, any gate that compares two Midtown flight renders will
+    miss the same way. vis-001 is not edited here.
+  - *(design call: the user; non-blocking.)*
 
 ## 4. Implementation phases
 

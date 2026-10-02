@@ -10,7 +10,7 @@ covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
   points, and which checks fail before the first frame.
 max_lines: 50
-generated: 2026-09-30
+generated: 2026-10-01
 ---
 
 # Inputs
@@ -20,8 +20,7 @@ generated: 2026-09-30
 ## Files (read in place, never written)
 - `<project>/project.yaml` → `assimilator_config::parse_and_check` →
   `serde_yaml::from_value::<ProjectConfig>` → `resolve_scenario(&project, scenario,
-  project_dir).network`. No `--set` overrides. The network is the project as it is at
-  render time.
+  project_dir).network`, as it is at render time; no `--set` overrides.
 - `results.db`: default `<project>/results.db`, or `--results`. It is opened as
   `file:<abs>?mode=ro&immutable=1` with SQLite's read-only and URI flags. It must hold a
   `runs` row for (scenario, seed) with `status = 'completed'`; otherwise the error is
@@ -61,4 +60,5 @@ generated: 2026-09-30
 `render`: ffmpeg on `PATH` → even, positive size; positive fps and speedup → `run::load`
 (`view`: positive size, no ffmpeg → `run::load`): project/scenario → `results.db`'s run →
 FCD file → schema → `to > from` → every link known and row placed → `--camera`'s file
-(`rules/camera.md`). An error is one `error: …` line, exit 1, no output file or window.
+(`rules/camera.md`) → `--buildings`' file (`rules/buildings.md`). An error is one
+`error: …` line, exit 1, no output file or window.

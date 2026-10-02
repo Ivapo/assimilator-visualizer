@@ -9,7 +9,7 @@ covers: >
   perspective paths draw, the keyframe line and the keyframe file with its errors,
   and the flight `render --camera` takes through the keyframes.
 max_lines: 60
-generated: 2026-09-30
+generated: 2026-10-01
 ---
 
 # Camera
@@ -30,11 +30,11 @@ generated: 2026-09-30
 - At pitch 90 it frames the ground an orthographic `height_m` does, to rounding.
 
 ## What each path draws (`src/draw.rs`)
-- **Orthographic** (`render` without `--camera`): `look_down` + `projection`, unit
-  cuboids, `scene::RANK_LIFT` 0.01 m per rank. Unchanged from Phase 4, frame for frame.
+- **Orthographic** (`render` without `--camera`): `look_down` + `projection` at `ortho_eye`'s
+  height and far (`rules/buildings.md`), unit cuboids, `scene::RANK_LIFT` 0.01 m per rank.
 - **Perspective** (`view`, `render --camera`): `draw::perspective(pose, fx, fy, aspect)`
-  maps world `(x, y, z)` to Bevy `(x − fx, z, −(y − fy))`, puts the camera at `E` looking
-  at the look-at point with up `u`, `PerspectiveProjection { fov 45°, near 0.1, far 20·d }`.
+  maps world `(x, y, z)` to Bevy `(x − fx, z, −(y − fy))`; eye `E` on the look-at point, up
+  `u`, fov 45°, near 0.1, far 20·d. The building mesh has `NoFrustumCulling`: never dropped.
 - Perspective boxes use `shaded_box_mesh()`, vertex colours × the unlit speed colour: top
   1.0, long sides 0.55, ends 0.4, bottom 0.25 (linear). The lift is `RANK_LIFT_3D`, 0.001 m.
 

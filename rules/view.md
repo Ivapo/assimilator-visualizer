@@ -12,7 +12,7 @@ covers: >
   and following, the readout, the keyframe line and the hidden `--bench`. The time
   slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.
 max_lines: 60
-generated: 2026-09-30
+generated: 2026-10-01
 ---
 
 # View
@@ -21,19 +21,22 @@ generated: 2026-09-30
 
 ## CLI
 `assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd]
-[--from] [--to] [--width 1280] [--height 720]`: logical pixels, any positive size.
-- `run::load` runs `render`'s checks after width and height, before any `App` is built;
-  ffmpeg is not looked for. An error is one `error: …` line on stderr, exit 1, no window.
+[--from] [--to] [--width 1280] [--height 720] [--buildings <file>]`: logical, positive.
+- `run::load` runs `render`'s checks after width and height, then `--buildings`'s, before
+  any `App` is built; no ffmpeg. An error is one `error: …` line, exit 1, no window.
 - Stdout carries only keyframe lines, one per `K`, flushed. Stderr carries only the
   error line or `--bench`'s JSON. Closing the window exits 0.
 - One Bevy app on the main thread (a window titled `assimilator-video view`, vsync). Per
   frame `track_pointer`, then input → `ViewInput` → `ViewState::frame` → the drawing.
+- Hidden `--bench <s>`: from `t = 140` at 2× at the launch fit, skips 3 s, records `s` s of
+  frame times, prints `{"frames", "mean_fps", "median_ms", "p99_ms", "worst_ms"}`, exits 0.
 
 ## Drawing (`src/draw.rs`, shared with `render`)
 - The road mesh and the box pool (`motion.max_drawn()` boxes, shaded, 0.001 m lift) are
   baked relative to the launch fit's centre `(fx, fy)`. The camera is perspective at the
   state's pose (`height_m = H·k`), set every frame by `draw::perspective`.
 - The readout is a 14 px white UI text line at left 16, bottom 30, just above the slider.
+- `--buildings` adds their mesh and sun; `B` hides and shows them (`rules/buildings.md`).
 
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
@@ -64,13 +67,10 @@ generated: 2026-09-30
 - Following sets the centre to the vehicle's placed point each frame it is drawn. When it
   is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops
   it; an orbit or a key step does not.
-- Frame order: bar press; clock; scrub; `Esc`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
+- Frame order: bar press; clock; scrub; `Esc`; `B`; orbit, `Q E R F`; pan, zoom; click;
+  follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`
   (the Esc hint whenever following; "(not drawn)" only on hold).
 - `K` prints the full camera (`rules/camera.md`); `follow` only for a drawn vehicle.
-
-## `--bench <s>` (hidden)
-Starts at `t = 140` playing at 2× at the launch fit, skips 3 s, records `s` s of real frame
-times, prints `{"frames", "mean_fps", "median_ms", "p99_ms", "worst_ms"}` and exits 0.

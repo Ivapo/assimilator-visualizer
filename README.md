@@ -9,12 +9,14 @@ Phase 2 makes the motion smooth between the 1 Hz FCD samples: boxes brake and
 accelerate as the run did, follow the engine's turn path through each junction, slide
 between lanes, and disappear at their last row. Phase 5 adds a 3D camera: `view` orbits
 and tilts, and `render --camera` flies a perspective camera through keyframes.
+vis-002 (`specs/city_spec.md`) Phase 1 puts the real buildings around an imported
+network: Overture footprints, fetched once into a cache and drawn as grey, sunlit blocks.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
                          [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                          [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
-                         [--camera <file.toml>]
+                         [--camera <file.toml>] [--buildings <file.geojson>]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -28,6 +30,8 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
 - **Camera.** Without `--camera` the camera looks straight down on the whole network,
   orthographically. With `--camera <file.toml>` it is perspective and flies through the
   file's keyframes (below). `--camera` changes no other default.
+- **Buildings.** `--buildings <file.geojson>` draws the buildings of a cache fetched for
+  this network (below). Without it nothing about the video changes.
 
 ### The keyframe file
 
@@ -53,12 +57,36 @@ keyframes = [
   error names the keyframe and stops before the first frame. The file's keyframes do not
   change the window: use `--from` and `--to` for a part of the run.
 
+### Buildings
+
+The buildings come from Overture Maps' `building` type, fetched once per network with
+network access into a GeoJSON cache, then read offline by `render` and `view`:
+
+```
+scripts/fetch-buildings.sh --project <dir> --out <dir>/buildings.geojson
+                           [--scenario baseline] [--margin 250] [--release 2026-09-23.1]
+```
+
+- **What it fetches.** Every building that meets the scenario's network extent plus
+  `--margin` metres, whole, from the pinned Overture release, in lng/lat with its `id`,
+  `height` and `num_floors`. It prints one JSON line: the release, the box, the number of
+  buildings by height rule and the file's size. The same release gives the same bytes.
+  Overture keeps only recent releases on S3, so keep the cache.
+- **Which networks.** Only a georeferenced one, with `metadata.map_origin`, as an import
+  writes. A drawn network such as `urban_grid` has no buildings, and `--buildings` on it
+  is an error.
+- **How they look.** Opaque grey blocks lit by one sun, roofs lighter than walls. A
+  building's height is its `height`, else `num_floors` × 3.5 m, else 10 m. The camera may
+  pass into a building; nothing collides.
+- **Errors.** A file that is missing, malformed, in metres or fetched for another network
+  is one `error: --buildings <file>: …` line before the first frame or the window.
+
 ## View a run
 
 ```
 assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
-                       [--width <px>] [--height <px>]
+                       [--width <px>] [--height <px>] [--buildings <file.geojson>]
 ```
 
 `view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
@@ -86,6 +114,7 @@ and framings worth rendering.
 | click a box | follow it; a drag, `WASD` or `Esc` stops following (orbiting does not) |
 | click or drag on the time slider | jump or scrub to that time (pauses while held, resumes on release) |
 | `K` | print the camera as a keyframe line on stdout |
+| `B` | hide / show the buildings (with `--buildings`) |
 
 The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
 with a handle at the current time and a tick at each whole minute (thinned on long runs).
@@ -105,6 +134,9 @@ project, `results.db` and the FCD in place, and never writes into the project.
 - **Rust** (edition 2024; built with 1.97).
 - **ffmpeg and ffprobe on `PATH`.** ffmpeg must have `libx264`. The gates also use
   `duckdb` and `python3`.
+- **For buildings only:** the DuckDB CLI ≥ 1.5.1 with its `httpfs` and `spatial`
+  extensions (installed on first use), and network access for `fetch-buildings.sh`.
+  `render` and `view` never use the network.
 - **Read access to the private engine repo** `github.com/Ivapo/assimilator`.
   - This crate depends on the engine's `assimilator-config`, `assimilator-core` and
     `assimilator-geometry` crates as git dependencies. They are pinned at one rev in
@@ -142,6 +174,38 @@ cargo test --release --test camera -- --include-ignored --test-threads=1 --nocap
 `scripts/gates.sh` also compares the default render's frames with
 `scratch/ref-8eb9052.framemd5` when that file exists. That is Phase 3's gate 1: the file is
 built once from a `git archive 8eb9052` build, as the spec says.
+
+vis-002's gates run on a second fixture, Midtown, built from the user's own project
+(`MIDTOWN_PROJECT`, default `~/assimilator/projects/midtown-section`, read with
+`git archive`), so only a machine with that project can run them:
+
+```
+scripts/fixture.sh midtown        # once: the project with its demand halved, the run, the one fetch
+scripts/gates-city.sh             # gates 3, 4, 5, 7 (CLI) and 13, offline
+REFETCH=1 scripts/gates-city.sh   # adds gate 5's second fetch and missing release (network)
+cargo test --release --test buildings -- --include-ignored --test-threads=1 --nocapture   # gates 6–12, 14
+```
+
+`FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps the fetched
+`buildings.geojson`. The engine at the pin does not give the same Midtown traffic twice,
+so the run in `scratch/midtown` is the fixture. Two checks of `gates-city.sh` are known
+misses until their causes are fixed, and print `FAIL`: gate 3's comparison with the
+2026-09-30 run (the engine, vis-002 OQ-4) and gate 13's flight comparison (the
+`--camera` render, OQ-8).
+
+## Map data
+
+Building footprints and imported road networks come from Overture Maps (Overture Maps
+Foundation, overturemaps.org). © OpenStreetMap contributors. Available under the Open
+Database License (ODbL). Overture's buildings also include data from other sources
+under their own licences, such as Esri Community Maps contributors, Microsoft Global
+ML Building Footprints and Google Open Buildings; see
+https://docs.overturemaps.org/attribution/.
+
+None of that data is in this repository: fetched buildings and imported networks stay
+outside it. Videos of an imported network do not carry this credit yet. A credit line in
+the video is a later phase of vis-002, and it must ship before any Midtown video is shown
+outside.
 
 ## License
 
