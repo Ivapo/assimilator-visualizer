@@ -8,7 +8,7 @@ note: >
   the data's credit line (OpenStreetMap, Overture, building sources) on every frame of an
   imported network's render.
 status: accepted
-last_updated: 2026-10-02
+last_updated: 2026-10-03
 
 phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
@@ -18,7 +18,7 @@ phases:
     by: null
   - name: "Phase 2 — Credit: a line built from the data, on every frame of an imported network's render"
     reviewed: 2026-10-02
-    shipped: null
+    shipped: 2026-10-03
     cut: null
     by: null
 
@@ -1317,6 +1317,8 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     would hide the bug on Midtown.
   - *(2026-10-02, user)* Stays open. Its fix phase is scheduled right after the in-video
     credit (§2.13).
+  - *(2026-10-03, user, at Phase 2's gate 16)* Stays open. The credit has shipped, so its
+    fix phase comes next, as §2.13 says.
   - *(design call: the user; non-blocking.)*
 - **OQ-9** — The credit line's wording, and which non-CC-BY building sources it names
   (§2.14.2). **RESOLVED.**
@@ -2017,6 +2019,12 @@ there:
       flicker of OQ-8 is expected. The user reads the line over dark ground, roads and
       roofs, and says whether the size, margin and outline should change (iteration,
       §2.14.5). The wording is settled (OQ-9).
+
+      *(Passed by the user, 2026-10-03.)* The user watched
+      `scratch/out/credit/ortho-1080-buildings.mp4`, `ortho-720-buildings.mp4` and
+      `scratch/out/city/flight1.mp4`. The look stays as built: the ratio 1/54, the margin and
+      the outline. The 13 px line at 1280×720 is accepted. The gate record is in
+      `specs/reviews/vis-002.md`.
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
