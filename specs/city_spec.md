@@ -24,7 +24,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 3 — See-through: buildings in the way cut to stubs, in a keyframed render and in view"
-    reviewed: null
+    reviewed: 2026-10-03
     shipped: null
     cut: null
     by: null
@@ -74,7 +74,9 @@ assimilator-video render --project <project> --scenario baseline --seed 42 \
 (The numbers are the Midtown fixture's, §2.9, measured while drafting, §2.12. The report
 is one line; it is wrapped here.) *(2026-10-02)* From Phase 2, the report also has
 `sources` and `no_sources`, the file is 2,284,830 bytes, and the video carries the credit
-line (§2.14).
+line (§2.14). *(2026-10-03)* From Phase 3, the `render … --buildings … --camera` above cuts
+the buildings between the camera and the point it looks at down to stubs, by default;
+`--no-see-through` gives the video as before (§2.15).
 
 Rejected candidates for the observable:
 - *`buildings.geojson`.* It is an input to a video, as vis-001 §1 says of the scene bundle.
@@ -429,7 +431,9 @@ of zero length. That gives:
   with no roof-area failure (worst 9.8e-12 relative), measured in review round 1.
 
 About 120,000 triangles in all. No chunks: one mesh, always submitted. It carries Bevy's
-`NoFrustumCulling`, so it is never culled (§2.8).
+`NoFrustumCulling`, so it is never culled (§2.8). *(2026-10-03)* From Phase 3, with
+see-through on (the default in a keyframed render and in `view`), the mesh is rebuilt
+whenever a building's cut height changes; it stays one mesh and one draw (§2.15.5).
 
 The mesh data is in `f64` world metres. The Bevy mesh converts to `f32` only at the bake, as
 `src/draw.rs:road_mesh` does.
@@ -1216,7 +1220,7 @@ The rest of this section is the draft's proposal. It settles:
 - how far down they go, and how they get there (§2.15.3);
 - which renders it applies to (§2.15.4);
 - how the cut is drawn, and its cost (§2.15.5);
-- the flag, the key and their errors (§2.15.6).
+- the flag, the key, and where the flag has no effect (§2.15.6).
 
 §2.15.7 says what it does not fix.
 
@@ -1237,7 +1241,8 @@ From the pose (`src/camera.rs:Pose`):
   0.15). `cos` is `src/camera.rs:cos_deg`, so `r` is exactly 0 at pitch 90;
 - **the wedge** `W` is the convex hull of `G` and the disc of radius `r` about `L`. That
   is the triangle from `G` to the two points where lines from `G` touch the circle,
-  together with the disc. When `G` lies inside the disc, `W` is the disc. Seen from
+  together with the disc. When `G` lies inside the disc or on its edge (`|GL| ≤ r`, as
+  straight down, where both are 0), `W` is the disc. Seen from
   above, the wedge opens from the camera's foot at a fixed half-angle,
   `asin(0.15/1.2071)` = 7.14°, whatever the pose, and ends round the look-at point;
 - **a building's distance** `δ` is the ground distance from its footprint to `W`. The
@@ -1253,9 +1258,9 @@ From the pose (`src/camera.rs:Pose`):
   The wedge widens toward `L` so that the ground around `L` shows too.
 - A building near the camera's foot stands under a sight line that is high up there, and
   hides little of the middle. A capsule of even width cuts more such buildings for the
-  same gain. In the drafting probe, both with a hard edge and without `cos(pitch)`, a
-  capsule of half-width `0.1·height_m` cut 44.7 buildings a frame on the city flight, and
-  a wedge of the same `r` cut 28.3, with the same centre cleared (12.9 %) (§2.15.9).
+  same gain. In the drafting probe, with a hard edge, a capsule of half-width
+  `0.1·height_m` cut 44.7 buildings a frame on the city flight, and a wedge of the same
+  `r` cut 28.3, with the same share of centre boxes hidden (12.9 %) (§2.15.9).
 - **Straight down, a building hides only the ground under it and a strip beside it**,
   through perspective. A disc of even radius would then cut a crater round the look-at
   point for little gain. At `view`'s launch fit on Midtown (`height_m` about 1,725 m),
@@ -1295,7 +1300,9 @@ h′ = min(h, s + (h − s) · smoothstep(δ / e))     for δ < e
 h′ = h                                           for δ ≥ e  (untouched, bit for bit)
 ```
 
-with `s` = 3 m (`see_through::STUB_M`) and `smoothstep(x) = 3x² − 2x³`. A building
+with `s` = 3 m (`see_through::STUB_M`) and `smoothstep(x) = x·x·(3 − 2x)`, written in
+that order as the probe did (`3x² − 2x³` is the same function, but differs in the last
+bits). A building
 touching the wedge is a 3 m stub. One `e` away it is at full height. One already under
 3 m keeps its own height. Only the height changes: footprint, courtyards, walls and roof
 shape stay, so a stub is the block's footprint as a low slab with its roof lighter than
@@ -1303,7 +1310,8 @@ its walls (§2.7).
 
 - **The stub's height barely matters** to what shows. A 6 m stub instead of 3 m left
   16.2 % of the city flight's centre boxes hidden instead of 16.0 %, and 0.0 % on the
-  orbit, in an earlier probe run that drew the disc as a 32-gon. Over 1–8 m, another
+  orbit, in an earlier probe run that drew the disc as a 32-gon (the probe's `geom3.txt`
+  and `geom-orbit.txt`, `s=6`). Over 1–8 m, another
   variant moved by 0.2 points (§2.15.9). 3 m is one storey, so the block still reads as a
   block. Near the middle of the frame at the 25° floor, a 3 m wall hides the ground for
   6.4 m behind it, about a sidewalk.
@@ -1365,7 +1373,7 @@ Taking it is a scope change that sends the phase back to review.
 only. Bevy 0.19 re-uploads a replaced mesh whole, and the measured cost does not call for
 it.
 
-#### 2.15.6 The flag, the key and their errors
+#### 2.15.6 The flag, the key, and where the flag has no effect
 
 *(Rewritten 2026-10-03, before review, for decision 3 as changed and OQ-14's answer. The
 draft's first proposal, an opt-in `--see-through` with two errors, is in OQ-14.)*
@@ -1374,9 +1382,11 @@ draft's first proposal, an opt-in `--see-through` with two errors, is in OQ-14.)
 - **`render`** cuts when it has both `--buildings` and `--camera`. Each frame's heights
   follow that frame's pose. Without either, nothing is cut.
 - **`view`** starts with see-through on when it has `--buildings`.
-- **`--no-see-through`**, on `render` and on `view`, turns it off. With it, the scene is
-  built and drawn exactly as today: no `BuildingsCut`, no mesh replaced, and so every
-  frame byte-identical to `2b25d5e`'s (gate 2).
+- **`--no-see-through`**, on `render` and on `view`, turns it off. With it, `render`'s
+  scene is built and drawn exactly as today: no `BuildingsCut`, no mesh replaced, and so
+  every frame byte-identical to `2b25d5e`'s (gate 2). `view` keeps its `Buildings` so
+  that `X` can turn the cut on later, and builds its `BuildingsCut` the first time it is
+  on; until then no mesh is replaced.
 - **`X`** in `view` (by position, `KeyCode::KeyX`; unbound today) flips see-through at any
   moment, like `B`, and changes nothing else. `view --no-see-through` starts it off, and
   `X` can still turn it on.
@@ -1431,9 +1441,11 @@ runs only with each other, so they still hold, and neither is edited (Phase 3 ga
 
 0 packages, no Bevy feature, no `Cargo.toml` change. One new module, `src/see_through.rs`,
 with no Bevy types. At run time, with see-through on, the building mesh's `f64` positions
-(Midtown: 213,880 vertices) are kept beside the Bevy mesh, about 5 MB. With
-`--no-see-through`, and in every render without buildings or without `--camera`, nothing
-new is kept or spawned.
+(Midtown: 213,880 vertices) are kept beside the Bevy mesh, about 5 MB, with a copy of
+the `Buildings`. `render` with `--no-see-through`, and every render without buildings or
+without `--camera`, keeps or spawns nothing new beyond the buildings' mesh entity.
+`view --no-see-through` keeps the `Buildings` it already reads, and builds the rest only
+when `X` first turns the cut on.
 
 #### 2.15.9 Measured while drafting (2026-10-03)
 
@@ -1777,7 +1789,7 @@ draft".
     `--see-through` and its two errors are dropped. The draft proposes that
     `--no-see-through` with nothing to cut is accepted with no effect. Recorded as
     §2.15.1 decision 3's dated note, §2.15.6 and Phase 3's scope and gates 2, 3, 7, 10,
-    13 and 14.
+    12, 13 and 14.
 - **OQ-15** — Should more than the wedge be cut (§2.15.7)?
   - *The facts:*
     - The wedge clears the look-at point's surroundings: centre boxes hidden fall from
@@ -2515,16 +2527,22 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
       `Assets::insert`, as `draw::set_boxes` does.
     - `spawn_buildings`, `buildings_mesh` and every box function are unchanged.
   - **`render` (`src/render.rs`, `src/lib.rs`, `src/main.rs`).**
-    - `src/render.rs:Renderer::build` keeps `spawn_buildings`' mesh entity and the
-      `Buildings`. Today it drops the returned `BuildingEntities`.
-    - `Renderer::set_see_through(&mut self, on: bool)` works only with buildings, on the
-      perspective path, and builds the `BuildingsCut` once. From then on, `set_pose`
-      computes `see_through::heights` and replaces the mesh when any height differs from
-      the last drawn. Off, nothing is built, kept or replaced.
-      `Renderer::building_heights() -> Option<&[f64]>` returns the last drawn heights.
-    - `Job::set_see_through(&mut self, on: bool)` has no effect on a job without
-      buildings or without a flight, as the flag has none (§2.15.6).
-      `Job::heights_at(t) -> Option<Vec<f64>>` is `see_through::heights` at `pose_at(t)`.
+    - `src/render.rs:Renderer::build` keeps `spawn_buildings`' mesh entity (an `Entity`;
+      today it drops the returned `BuildingEntities`). It keeps no `Buildings`.
+    - `Renderer::set_see_through(&mut self, cut: Option<&Buildings>)`:
+      - `Some(b)` on a perspective renderer with buildings turns it on. It clones `b` and
+        builds the `BuildingsCut` once. It has no effect on an orthographic renderer or
+        one without buildings.
+      - It takes effect at the next `set_pose`, which computes `see_through::heights` and
+        replaces the mesh when any height differs from the last drawn. Nothing is drawn
+        until then.
+      - `None` turns it off. Off from the start, nothing is built, kept or replaced. Off
+        after on, the next `set_pose` draws every building at its own height if the last
+        drawn differ, then drops the clone and the `BuildingsCut`.
+    - `Job::set_see_through(&mut self, on: bool)` passes the job's own `Buildings` when
+      `on`, else `None`. It has no effect on a job without buildings or without a flight,
+      as the flag has none (§2.15.6). `Job::render_at` already calls `set_pose` before
+      each render, so the cut follows the frame's pose.
       `Job::prepare*` builds a job with see-through off, so every test that builds a job
       today draws as today.
     - `render --no-see-through` is a clap flag. `src/main.rs` calls
@@ -2537,6 +2555,10 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
       `see_through`. It is false at `new`, so every test's state is unchanged, and
       `src/view/mod.rs:run` sets it from `ViewOptions` at launch. `x` flips it at any
       moment, as `b` flips `buildings_shown`, and changes nothing else.
+    - With `--buildings`, `src/view/mod.rs:Viewer` keeps the `Buildings` (today `run`
+      drops them after `spawn_buildings`), the last drawn heights, and a `BuildingsCut`
+      built the first time `see_through` is on. So `view --no-see-through` builds none
+      until `X`.
     - The window reads `KeyCode::KeyX`. With buildings, after the camera is set each
       frame, the wanted heights are `see_through::heights` at the state's pose when
       `see_through` and `buildings_shown` are both on, else each building's own. The mesh
@@ -2558,7 +2580,8 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
       ]
       ```
     - `scripts/gates-see-through.sh` (new, offline): gates 2, 7 and 10's CLI cases, and
-      the renders for gate 14. It uses the Midtown fixture and, for gate 10, urban_grid.
+      the renders for gate 14. It uses the Midtown fixture and, for gate 10, urban_grid,
+      and writes to `scratch/out/see-through/`.
     - **Not edited:**
       - the test files `tests/gates.rs`, `view.rs`, `slider.rs`, `camera.rs`,
         `buildings.rs`, `credit.rs` and `ties.rs`;
@@ -2599,35 +2622,44 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
        `--buildings`, and `--camera tests/city-flight.toml` without `--buildings`.
 
      Each `framemd5` against its `ref-ties-…-2b25d5e` copy gives **1800 of 1800**: seven
-     times. These are CLI renders, so the credit line is in them. The four renders with
-     the flag also cover gate 10's "accepted, with no effect".
+     times. The orthographic render with `--buildings` goes against `ortho-city`, without
+     against `ortho-roads`; the `--camera` render with `--buildings` against
+     `flight-city1`, without against `flight-roads1`. These are CLI renders, so the credit
+     line is in them. The three renders with the flag and nothing to cut also cover gate
+     10's "accepted, with no effect".
   3. **The shared draw path's tests and scripts.**
      - Re-run with `--include-ignored --test-threads=1`: `--test view` 10 of 10,
        `--test slider` 8 of 8 and `--test camera` 19 of 19, and `--test buildings`,
        `--test credit` and `--test ties`. Every printed number equals the baseline's, and
        no file is edited. These build their jobs through `Job::prepare*`, which leave
        see-through off.
-     - `scripts/gates-ties.sh` and `scripts/gates-city.sh` pass, unedited. Their Midtown
-       flights with `--buildings` now render cut by default (§2.15.6), and they compare
-       those runs only with each other: gates-ties' gate 9 pair is **1800 of 1800**,
-       and gates-city's gate 13 gives **1800** for run 2 and for run 3 (sandboxed)
-       against run 1. gates-city's only `FAIL` stays gate 3's FCD comparison, OQ-4's
-       recorded miss.
+     - `scripts/gates-ties.sh`, `scripts/gates-credit.sh` and `scripts/gates-city.sh`
+       run unedited. Their Midtown flights with `--buildings` now render cut by default
+       (§2.15.6), and they compare those runs only with each other: gates-ties' gate 9
+       gives **1800 of 1800** for each of its two pairs (city and roads), and
+       gates-city's gate 13 gives **1800** for run 2 and for run 3 (sandboxed) against
+       run 1. gates-ties and gates-credit pass. gates-city's only `FAIL` lines stay gate
+       3's FCD comparison, OQ-4's recorded miss, so it exits non-zero as at baseline.
   4. **Build cost** (§2.15.8). `git diff 2b25d5e -- Cargo.toml Cargo.lock` is empty:
      **0 packages**, no feature.
   - **The rule — headless, offline:**
   5. **The wedge and the heights** (`tests/see_through.rs`). The buildings are made up in
      the test through `Building`'s fields, so no file is read:
      - **straight down** (`L` (0, 0), `height_m` 100, pitch 90): `r` is exactly 0 and `g`
-       is exactly `l`. A 30 m square containing `L` gives **3**. A 30 m square whose
-       nearest edge is 5 m from `L` gives **16.5** (`3 + 27·smoothstep(0.5)`). One whose
-       nearest edge is 10 m or more away gives **its own height**, compared with `==`;
+       is exactly `l`. Each block here is a 20 m square, 30 m tall. One containing `L`
+       gives **3**. One whose nearest edge is 5 m from `L` gives **16.5** (`3 +
+       27·smoothstep(0.5)`). One whose nearest edge is 10 m or more away gives **its own
+       height**, compared with `==`;
      - **gate 6's pose** (`L` (0, 0), `height_m` 60, yaw 0, pitch 35): `r` = 0.15 · 60 ·
        cos 35° (7.372 m), the ease band is 10, and `g` is `(0, −59.328…)`, equal to
        `Pose::eye`'s. Gate 6's two blocks give **[3, 20]**, the second compared with `==`;
      - a 2 m building inside the wedge gives **2**;
-     - a courtyard building whose hole holds the whole disc about `L`: `δ` is the disc's
-       distance to the courtyard's walls, not 0.
+     - **a courtyard, straight down** (the first bullet's pose, where `W` is the point
+       `L`): a 60 m square centred on `L`, 30 m tall, with a 16 m square hole centred on
+       `L`. `L` lies in the hole, so the footprint does not contain it: `δ` is **8** (the
+       hole's walls), not 0, and the height is **27.192** (`3 + 27·smoothstep(0.8)`),
+       within 1e-9. At a tilted pose the wedge's triangle would cross the walls and give
+       `δ` = 0, so this case is straight down only.
   - **The cut — through the GPU:**
   6. **The synthetic scene** (`tests/see_through.rs`, ignored, no fixture). It is the
      probe's, written out here because the probe is not committed:
@@ -2635,27 +2667,34 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
      - two blocks: *in the way*, x −10…10, y −45…−25, `height` 30; and *off*, x 25…40,
        y −40…−25, `height` 20;
      - one box, vehicle 7 at (0, 0), heading 90°, 4.5 m long, 10 m/s;
-     - `scene::Camera { cx: 0, cy: 0, k: 1 }` at 1280×720, and the pose of gate 5;
-     - the scene goes through `Renderer::new_perspective` with a pool of 4. A box's
-       pixels are those that differ between the frame with the box and `render(&[])`.
+     - `scene::Camera { cx: 0, cy: 0, k: 1 }` at 1280×720, and gate 5's second pose
+       (`height_m` 60, yaw 0, pitch 35);
+     - the scene goes through `Renderer::new_perspective` with a pool of 4 and no credit
+       (`None`), as `tests/ties.rs` does. See-through is turned on with
+       `set_see_through(Some(&buildings))`, then `set_pose(&pose)`. A box's pixels are
+       those that differ between the frame with the box and `render(&[])`.
 
      The predictions:
      - see-through off: the box's pixels are **0**, because the block hides it;
      - on: **1,564**, the same count as the scene with no buildings;
      - on, against a scene built with the in-the-way block at 3 m: **0 pixels** apart;
-     - every pixel that differs between on and off lies inside the in-the-way block's
-       image rectangle (its eight corners projected, ±2 px): **0** outside.
+     - every pixel that differs between on and off, both rendered with `render(&[])`,
+       lies inside the in-the-way block's image rectangle (its eight corners projected,
+       ±2 px): **0** outside.
 
      A cut that does nothing fails the second and third, so the test fails without the cut.
   7. **Midtown, deterministic.** `scripts/gates-see-through.sh` renders `--buildings`
      with see-through on (the default) twice with `--camera tests/city-flight.toml`, and
-     twice with `--camera tests/see-through-flight.toml`. Each is `1920,1080,30/1,1800`
+     twice with `--camera tests/see-through-flight.toml`, each `--from 300 --to 360
+     --speedup 1`. Each is `1920,1080,30/1,1800`
      (`ffprobe`), and each pair is **1800 of 1800**. It also renders the orbit once with
      `--no-see-through`, for gate 14.
   8. **Midtown, the traffic shows** (`tests/see_through.rs`, ignored).
-     - Each flight goes through `Job::prepare_without_credit` with `--buildings`, with
-       see-through off and on. Every 15th frame (120) is rendered with `render_frame`,
-       then `render_empty` at the same pose and heights.
+     - Each flight goes through `Job::prepare_without_credit` with `--buildings`, and
+       `RenderOptions` of `--from 300 --to 360 --speedup 1` at 1920×1080 and 30 fps (not
+       `tests/buildings.rs:midtown_options`' 300–301), once with see-through off and once
+       with `set_see_through(true)`: two jobs. Every 15th frame (120) is rendered with
+       `render_frame`, then `render_empty` at the same pose and heights.
      - Box pixels are counted in the centre (the middle quarter of the width and of the
        height), the middle (the middle half of each) and the whole frame.
      - The probe's counts, off → on:
@@ -2665,19 +2704,35 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
        an edge sample. The orbit's centre on is at least 2.5 times its centre off.
   9. **Untouched buildings are the shipped buildings** (`tests/see_through.rs`, ignored,
      headless).
+     - No GPU and no `Job`: as the probe did, the test reads the run with `run::load`
+       (`scratch/midtown`, baseline, seed 42, 300–360 s), the flight with
+       `keyframes::read` and `Flight::new`, and the buildings with `buildings::read`.
+       Frame `n`'s pose is `flight.pose_at(clock::frame_time(300, n, 1, 30), …)`, and
+       `(fx, fy)` is `scene::Camera::fit(&run.strips, 1920, 1080)`'s centre.
      - At every 30th frame (60) of both flights, every building with `δ ≥ e` keeps
-       `h′ == h`. Its vertices in `BuildingsCut::mesh` equal those of
-       `buildings_mesh(&mesh_data(b))` bit for bit. With every height its own, the two
-       meshes are equal attribute for attribute.
-     - Over all 1800 frames of each flight, no building whose footprint centroid
-       projects into the frame changes its height by more than **10 m** between two
-       consecutive frames. The probe's largest such changes are 9.39 m (city) and 3.16 m
-       (orbit), and both are recorded.
+       `h′ == h`. Its vertices in `BuildingsCut::mesh` equal, bit for bit, the same
+       vertex range of `draw::buildings_mesh(&mesh_data(&buildings), fx, fy)`. A
+       building's range follows from the lengths of `building_mesh` for the buildings
+       before it, since `mesh_data` appends them in file order. With every height its
+       own, the two meshes are equal attribute for attribute.
+     - Over all 1800 frames of each flight, no building **in frame** changes its height
+       by more than **10 m** between two consecutive frames. The change from frame
+       `n − 1` to `n` counts when the building is in frame at frame `n`. The probe's largest such
+       changes are 9.39 m (city) and 3.16 m (orbit), and both are recorded.
+       - A building's centroid is the mean of the x and y of every vertex of every
+         polygon's exterior ring, as `Polygon` stores them.
+       - It is in frame at frame `n` when the point (centroid, z 0) lies more than
+         0.1 m in front of the eye along `Pose::axes`' forward axis, and
+         `camera::project` at that pose, 1920×1080, gives `0 ≤ px < 1920` and
+         `0 ≤ py < 1080`. This is the probe's `geom::pixel` and `region`.
+         `camera::project` alone has no depth test, so the test adds it.
      - The buildings lowered per frame are recorded. The probe gave a mean of 33.3
        (city) and 33.4 (orbit).
   10. **The flag's edges** (§2.15.6):
-      - `render --see-through …` is a clap usage error, **exit 2**. The flag is
-        `--no-see-through`, and the drafted opt-in flag does not exist;
+      - `render --see-through` with every argument a Midtown flight render needs
+        (`--project`, `--scenario`, `--seed`, `--buildings`, `--camera`, `--out`) is a
+        clap usage error, **exit 2**. The flag is `--no-see-through`, and the drafted
+        opt-in flag does not exist;
       - on urban_grid, `render --buildings tests/shapes.geojson --camera
         tests/flight.toml` gives Phase 1's `metadata.map_origin` error, exit 1, with and
         without `--no-see-through`;
@@ -2694,7 +2749,7 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
         gesture goes on unchanged.
   - **Recorded, with one bar:**
   12. **Render time.** Record the wall time of gate 7's see-through flights beside gate
-      2's flights with `--no-see-through`. The probe added 3.1–4.1 ms a frame, about 6–7 s
+      2's flights with `--no-see-through`. The probe added 3.1–4.1 ms a frame, about 5.5–7.4 s
       over 1800 frames.
   13. **`view --bench 20`** on Midtown at the default window, with `--buildings`
       (see-through on by default, rebuilding every frame, §2.15.6) and with `--buildings
@@ -2708,20 +2763,23 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
       `see-through-orbit-off.mp4` (`--no-see-through`), and its city flight
       `see-through-city-on1.mp4` against gate 2's flight with buildings and
       `--no-see-through`. Times are the video's, from 0:00.
-      - **Orbit, 0:26–0:33, 0:42–0:45 and 0:50–0:57, the middle of the frame.**
+      - **Orbit, from 0:26 to 0:32, 0:42 to 0:44 and 0:50 to 0:56, the middle of the
+        frame.**
         - Off, towers fill it and no box shows there. In the probe, every box in the
-          centre was hidden in those seconds.
+          centre was hidden at each of those whole seconds (`geom4-orbit.txt`); at 0:33,
+          0:45 and 0:57 a few already show.
         - On, the buildings between the camera and the middle are flat, light slabs a few
           metres tall. The crossing in the middle shows its roads and moving boxes.
         - Buildings away from the line to the middle stand at full height.
       - **Orbit, throughout.** As the camera circles, buildings sink as the line to the
         middle reaches them and rise once it has passed, over a second or more. None
-        jumps between full height and a slab from one frame to the next. At 0:59 the
-        camera is back where it was at 0:00, and so is every building.
+        jumps between full height and a slab from one frame to the next. The last frame
+        (t 359.967 s) is one frame short of the full turn that ends at 360 s, so the view
+        and every building there are as at 0:00, to within one frame's motion.
       - **City flight.** From 0:00 to 0:10 the camera is high and nearly straight down,
-        and only buildings near the middle of the frame change. In the probe, 2 changed
-        in the first frame, among them a tower of about 435 m standing within 10 m of the
-        look-at point, and 53 changed by 0:10. Around 0:30, the towers in the lower
+        and only buildings near the middle of the frame change. In the probe's first
+        frame, a tower of about 435 m standing within 10 m of the look-at point is
+        lowered (the record's Phase 3 draft). Around 0:30, the towers in the lower
         middle of the frame, between the camera and the park's edge, are slabs, and
         streets show there.
       - **In `view`** with `--buildings`, see-through on from launch:
@@ -2767,8 +2825,8 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
     - **a new `rules/see-through.md`** (`max_lines: 40`) covering the wedge, the heights
       and their constants, the drawing, the default and `--no-see-through`, and `X`. Its
       `sources` are
-      `src/see_through.rs`, `src/draw.rs`, `src/render.rs`, `src/view/state.rs`,
-      `src/view/mod.rs` and `src/main.rs`;
+      `src/see_through.rs`, `src/draw.rs`, `src/render.rs`, `src/lib.rs`,
+      `src/view/state.rs`, `src/view/mod.rs` and `src/main.rs`;
     - **three rules at their caps gain a pointer to it**, reworded to fit, with no
       `max_lines` raised: `rules/render.md` (60/60), whose CLI line gains
       `[--no-see-through]`; `rules/view.md` (60/60), with the CLI and `X`; and
