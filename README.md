@@ -11,6 +11,8 @@ between lanes, and disappear at their last row. Phase 5 adds a 3D camera: `view`
 and tilts, and `render --camera` flies a perspective camera through keyframes.
 vis-002 (`specs/city_spec.md`) Phase 1 puts the real buildings around an imported
 network: Overture footprints, fetched once into a cache and drawn as grey, sunlit blocks.
+Its Phase 2 draws the data's credit line in the corner of every frame of an imported
+network's video.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
@@ -32,6 +34,10 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   file's keyframes (below). `--camera` changes no other default.
 - **Buildings.** `--buildings <file.geojson>` draws the buildings of a cache fetched for
   this network (below). Without it nothing about the video changes.
+- **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
+  bottom-right corner of every frame, with or without `--buildings`, crediting its data
+  (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
+  switch to turn it off.
 
 ### The keyframe file
 
@@ -69,9 +75,14 @@ scripts/fetch-buildings.sh --project <dir> --out <dir>/buildings.geojson
 
 - **What it fetches.** Every building that meets the scenario's network extent plus
   `--margin` metres, whole, from the pinned Overture release, in lng/lat with its `id`,
-  `height` and `num_floors`. It prints one JSON line: the release, the box, the number of
-  buildings by height rule and the file's size. The same release gives the same bytes.
-  Overture keeps only recent releases on S3, so keep the cache.
+  `height`, `num_floors` and `sources` (the datasets it came from). The file records its
+  release in its `description`. It prints one JSON line: the release, the box, the number
+  of buildings by height rule, by dataset (`sources`) and with none (`no_sources`), and the
+  file's size. The same release gives the same bytes. Overture keeps only recent releases
+  on S3, so keep the cache.
+- **Older caches.** A cache fetched before vis-002 Phase 2 has no release or sources, so
+  `render --buildings` rejects it (`view` still reads it). Fetch it again: for the Midtown
+  fixture, `REFETCH=1 scripts/fixture.sh midtown`.
 - **Which networks.** Only a georeferenced one, with `metadata.map_origin`, as an import
   writes. A drawn network such as `urban_grid` has no buildings, and `--buildings` on it
   is an error.
@@ -184,6 +195,9 @@ scripts/fixture.sh midtown        # once: the project with its demand halved, th
 scripts/gates-city.sh             # gates 3, 4, 5, 7 (CLI) and 13, offline
 REFETCH=1 scripts/gates-city.sh   # adds gate 5's second fetch and missing release (network)
 cargo test --release --test buildings -- --include-ignored --test-threads=1 --nocapture   # gates 6–12, 14
+scripts/gates-credit.sh           # Phase 2 gates 4 (its checks), 5, 9 (CLI) and 14, offline
+REFETCH=1 scripts/gates-credit.sh # adds gate 4's second fetch (network)
+cargo test --release --test credit -- --include-ignored --test-threads=1 --nocapture      # Phase 2 gates 3, 6–8, 10, 11
 ```
 
 `FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps the fetched
@@ -203,9 +217,27 @@ ML Building Footprints and Google Open Buildings; see
 https://docs.overturemaps.org/attribution/.
 
 None of that data is in this repository: fetched buildings and imported networks stay
-outside it. Videos of an imported network do not carry this credit yet. A credit line in
-the video is a later phase of vis-002, and it must ship before any Midtown video is shown
-outside.
+outside it.
+
+**In the video.** Every frame of an imported network's render carries one line in its
+bottom-right corner, built from the data the video shows:
+- `© OpenStreetMap contributors (ODbL)`, always;
+- `Overture Maps Foundation, release <r>`, when the buildings or the roads came from
+  Overture: the buildings cache's release, else the one in the project's
+  `import_report.json`;
+- each other building source present in the cache, such as `Microsoft ML Buildings
+  (ODbL)` or `USGS Lidar`, with `Esri Community Maps contributors (CC BY 4.0)` and `Google
+  Open Buildings (CC BY 4.0)` named only when their buildings are there.
+
+For the Midtown fixture with its buildings, that is `© OpenStreetMap contributors (ODbL) ·
+Overture Maps Foundation, release 2026-09-23.1 · Microsoft ML Buildings (ODbL) · USGS
+Lidar`. An import from HERE, or any source type other than Overture or OSM, stops `render`
+with an error until its credit is settled (vis-002 OQ-11).
+
+**When you publish a video**, put the full credit in its description too: the paragraph
+at the top of this section, and the link https://www.openstreetmap.org/copyright. The
+line in the corner is not enough on its own for a video where the map is a major part
+(OpenStreetMap's attribution guidelines). A closing card waits for the harness contract.
 
 ## License
 
@@ -216,6 +248,11 @@ Licensed under either of
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
+
+**One exception: the font.** `assets/fonts/FiraSans-Medium.ttf` (Fira Sans Medium, which
+`render` embeds to draw the credit line) is under the SIL Open Font License 1.1, in
+`assets/fonts/OFL.txt`. So the crate's `license` is `(MIT OR Apache-2.0) AND OFL-1.1`.
+The OFL does not cover the videos rendered with it.
 
 ### Contribution
 

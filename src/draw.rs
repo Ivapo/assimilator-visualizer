@@ -2,7 +2,8 @@
 //! pool's materials and transforms, and the camera's fixed parts. Moved from
 //! `src/render.rs`, so `render`'s frames do not change. The perspective path (§2.11.2)
 //! adds a camera built from a pose, a shaded box mesh and a smaller rank lift. vis-002
-//! adds the buildings: one lit mesh, a sun and the orthographic eye's rule.
+//! adds the buildings: one lit mesh, a sun and the orthographic eye's rule, and, for
+//! `render` only, the credit line's UI tree (§2.14.5).
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
@@ -13,6 +14,7 @@ use bevy::render::view::Msaa;
 
 use crate::buildings::{Buildings, MeshData};
 use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
+use crate::credit;
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
 
@@ -356,4 +358,94 @@ pub fn spawn_buildings(
         ..default()
     });
     BuildingEntities { mesh, sun }
+}
+
+/// The credit line's font (vis-002 §2.14.6): Fira Sans Medium 4.203, under the SIL Open
+/// Font License 1.1 (`assets/fonts/OFL.txt`). Embedded, so `render` reads no font file.
+pub const CREDIT_FONT: &[u8] = include_bytes!("../assets/fonts/FiraSans-Medium.ttf");
+
+/// What [`spawn_credit`] spawned: the root, the fill text and its eight outline copies.
+#[derive(Debug, Clone, Copy)]
+pub struct CreditNodes {
+    pub root: Entity,
+    pub fill: Entity,
+    pub outline: [Entity; 8],
+}
+
+/// One copy of the line: never wrapped, so the fill's width is the whole line's.
+fn credit_text(line: &str, font: &Handle<Font>, size: u32, color: [u8; 3]) -> impl Bundle {
+    (
+        Text::new(line),
+        TextFont {
+            font: font.clone().into(),
+            font_size: FontSize::Px(size as f32),
+            ..default()
+        },
+        TextColor(srgb(color)),
+        TextLayout::no_wrap(),
+    )
+}
+
+/// Spawn the credit line's UI tree (vis-002 §2.14.5), drawn by `camera` into its image:
+/// a root `margin` px from the right and bottom edges, the fill text in its flow, and
+/// eight copies in the outline colour beside it, each `offset` px away in one of eight
+/// directions. The copies are the fill's siblings at `ZIndex(-1)`, so they draw under it
+/// (`ZIndex` orders siblings only). Called only with a line: without one nothing is
+/// spawned, so such a render is unchanged.
+pub fn spawn_credit(
+    world: &mut World,
+    line: &str,
+    camera: Entity,
+    font: Handle<Font>,
+    size: u32,
+    margin: u32,
+    offset: u32,
+) -> CreditNodes {
+    let root = world
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(margin as f32),
+                bottom: Val::Px(margin as f32),
+                ..default()
+            },
+            UiTargetCamera(camera),
+        ))
+        .id();
+    let fill = world
+        .spawn((credit_text(line, &font, size, credit::FILL), ChildOf(root)))
+        .id();
+    let o = offset as f32;
+    let mut outline = [Entity::PLACEHOLDER; 8];
+    let offsets = [-o, 0.0, o]
+        .into_iter()
+        .flat_map(|dy| [-o, 0.0, o].into_iter().map(move |dx| (dx, dy)))
+        .filter(|&d| d != (0.0, 0.0));
+    for (slot, (dx, dy)) in outline.iter_mut().zip(offsets) {
+        *slot = world
+            .spawn((
+                credit_text(line, &font, size, credit::OUTLINE),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(dx),
+                    top: Val::Px(dy),
+                    ..default()
+                },
+                ZIndex(-1),
+                ChildOf(root),
+            ))
+            .id();
+    }
+    CreditNodes {
+        root,
+        fill,
+        outline,
+    }
+}
+
+/// Set the font size of all nine of the line's texts, for the fit (§2.14.5).
+pub fn set_credit_size(world: &mut World, nodes: &CreditNodes, size: u32) {
+    for e in std::iter::once(nodes.fill).chain(nodes.outline) {
+        world.get_mut::<TextFont>(e).unwrap().font_size = FontSize::Px(size as f32);
+    }
 }

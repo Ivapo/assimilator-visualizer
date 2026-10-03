@@ -1,7 +1,9 @@
 //! Headless Bevy (vis-001 §2.3): no window, a camera rendering to an offscreen image, and
 //! a lossless readback of every frame. The camera is Phase 1's top-down orthographic one,
 //! or, for a keyframed render, a perspective one set from a pose each frame (§2.11.2).
-//! With buildings (vis-002), the scene adds their mesh and the sun.
+//! With buildings (vis-002), the scene adds their mesh and the sun. With a credit line
+//! (vis-002 §2.14), a UI tree draws it in the bottom-right corner of the image, fitted
+//! to the frame's width after the settle frames.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -9,7 +11,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use bevy::app::{SubApps, TerminalCtrlCHandlerPlugin};
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::RenderTarget;
@@ -21,12 +23,14 @@ use bevy::render::render_resource::{
 };
 use bevy::render::renderer::RenderDevice;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
+use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::ExitCondition;
 use bevy::winit::WinitPlugin;
 
 use crate::buildings::Buildings;
 use crate::camera::Pose;
-use crate::draw;
+use crate::credit;
+use crate::draw::{self, CreditNodes};
 use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
@@ -46,6 +50,17 @@ pub struct VehicleBox {
 /// How many updates a readback may take before it is an error.
 const MAX_UPDATES_PER_FRAME: usize = 200;
 
+/// The renders that let assets, pipelines and the UI layout settle.
+const SETTLE_RENDERS: usize = 3;
+
+/// The credit line as drawn: its nodes, its font size after the fit, and its outline
+/// offset (the first size's, §2.14.5).
+struct Credit {
+    nodes: CreditNodes,
+    size: u32,
+    offset: u32,
+}
+
 pub struct Renderer {
     apps: SubApps,
     target: Handle<Image>,
@@ -57,19 +72,23 @@ pub struct Renderer {
     perspective: Option<Entity>,
     /// Metres of lift per rank.
     lift: f64,
+    /// The credit line; `None` without one.
+    credit: Option<Credit>,
 }
 
 impl Renderer {
     /// Build the scene: road strips in link order, and `pool` hidden boxes that frames
     /// fill in `vehicle_id` order. With `buildings`, their mesh and the sun too, and the
-    /// orthographic eye rises above the tallest roof (`draw::ortho_eye`).
+    /// orthographic eye rises above the tallest roof (`draw::ortho_eye`). With `credit`,
+    /// the line too, fitted to the frame (vis-002 §2.14.5).
     pub fn new(
         strips: &[Strip],
         camera: SceneCamera,
         pool: usize,
         buildings: Option<&Buildings>,
+        credit: Option<&str>,
     ) -> Result<Self> {
-        Self::build(strips, camera, pool, None, buildings)
+        Self::build(strips, camera, pool, None, buildings, credit)
     }
 
     /// The same scene through a perspective camera at `pose` (§2.11.2): shaded boxes and
@@ -80,8 +99,9 @@ impl Renderer {
         pool: usize,
         pose: &Pose,
         buildings: Option<&Buildings>,
+        credit: Option<&str>,
     ) -> Result<Self> {
-        Self::build(strips, camera, pool, Some(pose), buildings)
+        Self::build(strips, camera, pool, Some(pose), buildings, credit)
     }
 
     fn build(
@@ -90,6 +110,7 @@ impl Renderer {
         pool: usize,
         pose: Option<&Pose>,
         buildings: Option<&Buildings>,
+        credit: Option<&str>,
     ) -> Result<Self> {
         let mut app = App::new();
         app.add_plugins(
@@ -145,35 +166,35 @@ impl Renderer {
             )
         };
 
-        let perspective = match pose {
+        let (image_camera, perspective) = match pose {
             None => {
                 let (eye, far) = draw::ortho_eye(buildings.map_or(0.0, |b| b.tallest));
-                world.spawn((
-                    draw::camera_fixed(),
-                    RenderTarget::Image(target.clone().into()),
-                    draw::projection(
-                        (camera.width as f64 * camera.k) as f32,
-                        (camera.height as f64 * camera.k) as f32,
-                        far as f32,
-                    ),
-                    draw::look_down(0.0, 0.0, eye as f32),
-                ));
-                None
+                let e = world
+                    .spawn((
+                        draw::camera_fixed(),
+                        RenderTarget::Image(target.clone().into()),
+                        draw::projection(
+                            (camera.width as f64 * camera.k) as f32,
+                            (camera.height as f64 * camera.k) as f32,
+                            far as f32,
+                        ),
+                        draw::look_down(0.0, 0.0, eye as f32),
+                    ))
+                    .id();
+                (e, None)
             }
             Some(pose) => {
                 let aspect = camera.width as f64 / camera.height as f64;
-                let (transform, projection) =
-                    draw::perspective(pose, camera.cx, camera.cy, aspect);
-                Some(
-                    world
-                        .spawn((
-                            draw::camera_fixed(),
-                            RenderTarget::Image(target.clone().into()),
-                            projection,
-                            transform,
-                        ))
-                        .id(),
-                )
+                let (transform, projection) = draw::perspective(pose, camera.cx, camera.cy, aspect);
+                let e = world
+                    .spawn((
+                        draw::camera_fixed(),
+                        RenderTarget::Image(target.clone().into()),
+                        projection,
+                        transform,
+                    ))
+                    .id();
+                (e, Some(e))
             }
         };
         world.spawn((
@@ -186,6 +207,28 @@ impl Renderer {
         if let Some(b) = buildings {
             draw::spawn_buildings(world, b, (camera.cx, camera.cy));
         }
+        // Nor without a credit line: a synthetic network's render is unchanged.
+        let credit = credit.map(|line| {
+            let size = credit::font_size(camera.width, camera.height);
+            let offset = credit::outline_offset(size);
+            let font = world
+                .resource_mut::<Assets<Font>>()
+                .add(Font::from_bytes(draw::CREDIT_FONT.to_vec()));
+            let nodes = draw::spawn_credit(
+                world,
+                line,
+                image_camera,
+                font,
+                size,
+                credit::margin(size),
+                offset,
+            );
+            Credit {
+                nodes,
+                size,
+                offset,
+            }
+        });
 
         let mut r = Renderer {
             apps,
@@ -199,12 +242,81 @@ impl Renderer {
                 None => scene::RANK_LIFT,
                 Some(_) => draw::RANK_LIFT_3D,
             },
+            credit,
         };
         // Let assets and pipelines settle before the first frame that counts.
-        for _ in 0..3 {
-            r.render(&[])?;
-        }
+        r.settle()?;
+        r.fit_credit()?;
         Ok(r)
+    }
+
+    fn settle(&mut self) -> Result<()> {
+        for _ in 0..SETTLE_RENDERS {
+            self.render(&[])?;
+        }
+        Ok(())
+    }
+
+    /// The fit (vis-002 §2.14.5): while the fill is wider than `W − 2·margin(S)` for the
+    /// first size `S`, shrink all nine texts and settle again. A final size under
+    /// `credit::MIN_SIZE` is an error (§2.14.7).
+    fn fit_credit(&mut self) -> Result<()> {
+        let Some(first) = self.credit.as_ref().map(|c| c.size) else {
+            return Ok(());
+        };
+        let (w, h) = (self.camera.width, self.camera.height);
+        let avail = w as f64 - 2.0 * credit::margin(first) as f64;
+        loop {
+            let c = self.credit.as_ref().unwrap();
+            let (size, nodes) = (c.size, c.nodes);
+            let width = self.fill_rect(nodes.fill)?.size().x as f64;
+            let fit = credit::fit_size(size, width, avail).map_err(|e| {
+                anyhow!(
+                    "the credit line would be {} px in a {w}×{h} frame, under {} px; render a larger frame",
+                    e.0,
+                    credit::MIN_SIZE
+                )
+            })?;
+            if fit == size {
+                return Ok(());
+            }
+            draw::set_credit_size(self.apps.main.world_mut(), &nodes, fit);
+            self.credit.as_mut().unwrap().size = fit;
+            self.settle()?;
+        }
+    }
+
+    /// The fill text's computed rectangle, in pixels.
+    fn fill_rect(&self, fill: Entity) -> Result<Rect> {
+        let world = self.apps.main.world();
+        let (Some(node), Some(at)) = (
+            world.get::<ComputedNode>(fill),
+            world.get::<UiGlobalTransform>(fill),
+        ) else {
+            bail!("internal: the credit line has no layout");
+        };
+        Ok(Rect::from_center_size(at.translation, node.size))
+    }
+
+    /// The credit line's font size after the fit; `None` without a line.
+    pub fn credit_size(&self) -> Option<u32> {
+        self.credit.as_ref().map(|c| c.size)
+    }
+
+    /// The credit box (vis-002 §2.14.5): the fill text's computed rectangle as laid out
+    /// now, grown by the outline offset on every side and rounded outward to whole pixels,
+    /// as `[x0, y0, x1, y1]` with `x1` and `y1` exclusive. `None` without a line.
+    pub fn credit_box(&self) -> Option<[u32; 4]> {
+        let c = self.credit.as_ref()?;
+        let r = self.fill_rect(c.nodes.fill).ok()?;
+        let o = c.offset as f32;
+        let (w, h) = (self.camera.width as f32, self.camera.height as f32);
+        Some([
+            (r.min.x - o).floor().clamp(0.0, w) as u32,
+            (r.min.y - o).floor().clamp(0.0, h) as u32,
+            (r.max.x + o).ceil().clamp(0.0, w) as u32,
+            (r.max.y + o).ceil().clamp(0.0, h) as u32,
+        ])
     }
 
     pub fn camera(&self) -> &SceneCamera {

@@ -123,14 +123,14 @@ print(f"gate5 report: {lines[0]}")
 assert r["release"] == "2026-09-23.1", r["release"]
 assert r["bbox"] == [-73.9938413, 40.7544211, -73.9643086, 40.7740495], r["bbox"]
 got = (r["buildings"], r["height"], r["num_floors"], r["default"], r["bytes"])
-assert got == (4336, 4277, 8, 51, 2140989), got
+assert got == (4336, 4277, 8, 51, 2284830), got
 print(f"gate5 fetch time: {r['seconds']} s (recorded)")
 PY
-CACHE_SHA=561a615d6fa77bbef482b99f9f771b8b12f5891a46e661015e034b833d2bce47
+CACHE_SHA=f241ccbd9a2fba2e3c80fa28ec7522ca2a33b84628c18954952ad6bc1d4a1dfd
 bytes=$(wc -c < "$CACHE" | tr -d ' ')
 sha=$(shasum -a 256 "$CACHE" | cut -d' ' -f1)
 echo "gate5 cache: $bytes bytes, sha256 $sha"
-[ "$bytes" = 2140989 ] || fail "gate5 cache bytes"
+[ "$bytes" = 2284830 ] || fail "gate5 cache bytes"
 [ "$sha" = "$CACHE_SHA" ] || fail "gate5 cache hash"
 if [ "${REFETCH:-0}" = 1 ]; then
     rm -rf "$OUT/refetch" "$OUT/missing" && mkdir -p "$OUT/refetch" "$OUT/missing"

@@ -659,6 +659,16 @@ fn gate11_top_down_coverage() {
     assert_eq!(draw::ortho_eye(tallest(&city)), (500.0, 1000.0));
     let a = plain.render_empty().unwrap();
     let b = city.render_empty().unwrap();
+    // vis-002 Phase 2 (§2.14.8): both frames carry the credit line; the union of their
+    // credit boxes is left out of both checks.
+    let boxes = [plain.credit_box().unwrap(), city.credit_box().unwrap()];
+    println!("gate11 credit boxes {boxes:?}");
+    let in_box = |k: usize| {
+        let (x, y) = ((k % w as usize) as u32, (k / w as usize) as u32);
+        boxes
+            .iter()
+            .any(|b| b[0] <= x && x < b[2] && b[1] <= y && y < b[3])
+    };
 
     let cam = *city.camera();
     let (wu, hu) = (w as usize, h as usize);
@@ -717,7 +727,12 @@ fn gate11_top_down_coverage() {
         }
     }
     let (mut differ, mut inside_n, mut v_outside, mut v_same) = (0usize, 0usize, 0usize, 0usize);
+    let mut excluded = 0usize;
     for k in 0..wu * hu {
+        if in_box(k) {
+            excluded += 1;
+            continue;
+        }
         let d = a[4 * k..4 * k + 4] != b[4 * k..4 * k + 4];
         differ += d as usize;
         inside_n += inside[k] as usize;
@@ -729,7 +744,7 @@ fn gate11_top_down_coverage() {
         }
     }
     println!(
-        "gate11: {differ} pixels differ, {inside_n} inside a footprint; violations: {v_outside} differing outside, {v_same} inside but equal"
+        "gate11: {excluded} pixels in the credit boxes excluded; {differ} pixels differ, {inside_n} inside a footprint; violations: {v_outside} differing outside, {v_same} inside but equal"
     );
     assert_eq!((v_outside, v_same), (0, 0));
 }
@@ -750,12 +765,13 @@ fn write_camera(name: &str, line: &str) -> PathBuf {
     write_case(name, &format!("keyframes = [\n  {line},\n]\n"))
 }
 
-/// The frames of one pose with and without the shapes, and the pose.
+/// The frames of one pose with and without the shapes, and the pose. Without the credit
+/// line (vis-002 §2.14.8): `tests/shapes.geojson` has no release.
 fn shape_frames(name: &str, line: &str) -> (Vec<u8>, Vec<u8>, Pose) {
     let cam = write_camera(name, line);
     let o = midtown_options(1920, 1080);
-    let mut plain = Job::prepare_with(&o, Some(&cam), None).unwrap();
-    let mut city = Job::prepare_with(&o, Some(&cam), Some(&shapes())).unwrap();
+    let mut plain = Job::prepare_without_credit(&o, Some(&cam), None).unwrap();
+    let mut city = Job::prepare_without_credit(&o, Some(&cam), Some(&shapes())).unwrap();
     let pose = city.pose_at(city.clock.from).unwrap();
     (
         plain.render_empty().unwrap(),

@@ -10,7 +10,7 @@ covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
   points, and which checks fail before the first frame.
 max_lines: 50
-generated: 2026-10-01
+generated: 2026-10-02
 ---
 
 # Inputs
@@ -32,8 +32,7 @@ generated: 2026-10-01
   - `vehicle_length` f64 is optional and sets the box length. Without it the length is
     4.5 m. The engine at the pin writes it (asm-020 Phase 3), and older files lack it.
     `acceleration` and `vehicle_class` (`Dictionary(Int32, Utf8)`) are not read.
-  - A missing column or a wrong type is a "schema mismatch" error. CSV FCD is not
-    supported.
+  - A missing column or a wrong type is a "schema mismatch" error; CSV FCD is not supported.
 
 ## Window and snapshots
 - The default window is the first to the last FCD `time` in the file.
@@ -60,5 +59,6 @@ generated: 2026-10-01
 `render`: ffmpeg on `PATH` → even, positive size; positive fps and speedup → `run::load`
 (`view`: positive size, no ffmpeg → `run::load`): project/scenario → `results.db`'s run →
 FCD file → schema → `to > from` → every link known and row placed → `--camera`'s file
-(`rules/camera.md`) → `--buildings`' file (`rules/buildings.md`). An error is one
-`error: …` line, exit 1, no output file or window.
+(`rules/camera.md`) → `--buildings`' file (`rules/buildings.md`) → `render`'s credit inputs,
+then its fit after the settle frames (`rules/credit.md`). An error is one `error: …` line,
+exit 1, no output file or window.
