@@ -652,8 +652,21 @@ Decided by the user, 2026-10-02, before drafting:
 4. **`render` only.** `view` does not change.
 5. **No switch** to turn it off in Phase 2. It is revisited at the harness contract (v1).
 
-The rest of this section is the draft's proposal. These subsections weigh the open choices,
-each with its cost and a recommendation:
+Decided by the user, 2026-10-02, on the draft (the answers to OQ-9 to OQ-13):
+6. **Every non-OSM building source present is named**, with §2.14.2's wording (OQ-9).
+7. **TomTom is not named until the data shows it** (OQ-10). Midtown's roads were checked
+   once, against `2026-09-23.1` (§2.14.4). The engine request in OQ-10 stays the user's to
+   carry.
+8. **A HERE import, or any source type other than `Overture` and `Osm`, is an error** until
+   the user gives HERE's wording (OQ-11).
+9. **The font is committed under the OFL**, and `Cargo.toml` says so: `license = "(MIT OR
+   Apache-2.0) AND OFL-1.1"`. The README and `CLAUDE.md` name the exception (OQ-12).
+10. **Publishing:** the README tells whoever publishes a video to put the full credit, OQ-7's
+    text with `openstreetmap.org/copyright`, in its description. A closing card waits for
+    the harness contract (OQ-13).
+
+The rest of this section is the plan. Where it weighed choices, it keeps them with their
+costs and says which was taken:
 - §2.14.3, where the buildings' sources come from;
 - §2.14.4, the roads;
 - §2.14.5, how the text is drawn;
@@ -701,15 +714,15 @@ Items are joined by ` · ` (a middle dot between two spaces). The line has no fu
   - Microsoft ML Buildings on 29, alone on 9 and beside OpenStreetMap on 20.
 
   **No CC BY source is among them.**
-- **The Microsoft and USGS rows go beyond decision 1**, which names CC BY sources. The draft
-  names any non-OSM source that is present, because Overture's page lists each one. For
-  Midtown that is the difference between the roads' line (40.23 em) and one half as long
-  again (60.37 em). OQ-9 asks.
+- **The Microsoft and USGS rows go beyond decision 1**, which names CC BY sources. Any
+  non-OSM source that is present is named, because Overture's page lists each one
+  (decision 6, OQ-9). For Midtown that is the difference between the roads' line (40.23
+  em) and one half as long again (60.37 em).
 - **An unknown dataset is named as it is, never dropped.** A source added in a later
   release then shows in the line, unpolished, instead of going uncredited.
-- **The wording is a proposal** (OQ-9), as the README's was before OQ-7. Its constraints
-  are not: item 1 names OpenStreetMap and the ODbL, as OSMF's guidelines ask (§2.14.10);
-  and every item comes from the inputs above.
+- **The wording is the user's** (decision 6, OQ-9), as the README's was in OQ-7. Item 1
+  names OpenStreetMap and the ODbL, as OSMF's guidelines ask (§2.14.10), and every item
+  comes from the inputs above.
 
 **Midtown** (the fixture's `import_report.json` is the user's, byte for byte, Phase 1's
 gate 3):
@@ -734,7 +747,7 @@ building came from. The options weighed:
 | Needs `2026-09-23.1` on S3 | one re-fetch of Midtown | one sources-only query for Midtown | no | as (b) |
 | Code | one column and one layer option in the query; two members read | a second output, its own format, and a check that it belongs to its cache (a hash) | none | as (b), and a flag the harness must pass |
 
-**Recommendation: (a).** One self-describing file, whose release is the fetch's by
+**The plan: (a).** One self-describing file, whose release is the fetch's by
 construction (decision 1), and two members a reader can check. (b) costs as much and can be
 parted from its cache. (c) breaks decision 1. (d) adds a flag to the harness contract.
 
@@ -817,7 +830,8 @@ enum of three types at the pin and on engine main):
 - **`Here`, or any other type:** an error, `error: <project>/import_report.json: source
   type "Here" has no credit (vis-002 OQ-11)`. HERE's roads are not OSM data, and their
   credit is HERE's to set. Failing closed keeps a new source type from being rendered
-  uncredited. It also stops `render` on a HERE project, which works today; OQ-11 asks.
+  uncredited. It also stops `render` on a HERE project, which works today. Decided by the
+  user (decision 8, OQ-11): the error stays until the user gives HERE's wording.
 
 **TomTom is not named.** Overture's transportation theme lists "Data from TomTom." beside
 OpenStreetMap. Nothing in a project says which of its roads came from TomTom:
@@ -829,8 +843,16 @@ OpenStreetMap. Nothing in a project says which of its roads came from TomTom:
   was cut and edited after the import (§2.3.1). A query of those segments against the
   transportation theme could say, but only while `2026-09-23.1` is on S3.
 
-So TomTom is not named in Phase 2 (decision 1: from the data). OQ-10 asks the user, with a
-request for the engine.
+So TomTom is not named until the data shows it (decisions 1 and 7, OQ-10).
+
+**Midtown's roads were checked once** (2026-10-02, §2.14.10). The query was one DuckDB read
+of the 222 segments against `theme=transportation/type=segment` of `2026-09-23.1`. **All 222
+name OpenStreetMap and nothing else; none names TomTom.** So Midtown's line is complete
+without TomTom (gate 7). The 19 links the report does not map cannot be traced to a
+segment, and nothing in the project records a source for them.
+
+The engine request in OQ-10 is the user's to carry. Until the engine records datasets, a
+project other than Midtown gets no TomTom check.
 
 The report is read only when the network has `map_origin`. It is the project's, not the
 scenario's: a project whose scenario points at another network file still takes its credit
@@ -864,7 +886,7 @@ Without a line, nothing is spawned, as §2.7 does for buildings.
 | Deterministic | through Bevy's UI pass; gates 10 and 14 check it | by construction | — |
 | On this machine | built, for `view` | built | **absent**: ffmpeg 9.0.2 has no `drawtext` (§2.14.10) |
 
-**Recommendation: Bevy UI text**, as §2.13 planned. It is less code, and it uses the text
+**The plan: Bevy UI text**, as §2.13 planned. It is less code, and it uses the text
 stack `view` already draws its readout with. The CPU raster is the fallback if gate 10 finds
 a pixel changed outside the box, or gate 14 finds two renders that differ.
 
@@ -923,7 +945,7 @@ Bevy's built-in font cannot draw the line. `default_font` embeds `FiraMono-subse
 | Cost | 0 | `assets/fonts/FiraSans-Medium.ttf` (457,248 bytes) and `assets/fonts/OFL.txt` (4,370 bytes); `include_bytes!` into the binary; 0 packages | +1 package at least |
 | The line | `(c) OpenStreetMap …` or no symbol, and a monospace line 25 % wider (50.40 em against 40.23) | as §2.14.2 | as §2.14.2 |
 
-**Recommendation: Fira Sans Medium 4.203**, from `google/fonts` (`ofl/firasans/`). It is the
+**The plan: Fira Sans Medium 4.203**, from `google/fonts` (`ofl/firasans/`). It is the
 proportional sibling of `view`'s Fira Mono, from the same foundry under the same licence.
 - `Font::from_bytes` (`bevy_text` 0.19.1) takes the embedded bytes, so `render` reads no
   font file at run time.
@@ -936,8 +958,9 @@ proportional sibling of `view`'s Fira Mono, from the same foundry under the same
 - **It is the first file in this repo under a licence other than MIT OR Apache-2.0.**
   Condition 5 bears on `Cargo.toml`'s `license`. `bevy_text` declares `MIT OR Apache-2.0`
   while it embeds its OFL subset. The more exact expression is `(MIT OR Apache-2.0) AND
-  OFL-1.1`, which changes `CLAUDE.md`'s rule. OQ-12 asks the user. The draft writes the
-  recommended answer.
+  OFL-1.1`. Decided by the user (decision 9, OQ-12): `Cargo.toml` takes it, and the README
+  and `CLAUDE.md` name the exception, which amends `CLAUDE.md`'s rule that every crate
+  sets `MIT OR Apache-2.0`.
 
 #### 2.14.7 The order of checks, and the API
 
@@ -1059,6 +1082,23 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
   - **Without its `"description"` line and its `, "sources": […]` members, it is
     byte-identical to Phase 1's cache** (2,140,989 bytes, `561a615d…`), with the same
     ids in the same order.
+- **The TomTom check** (OQ-10's (c), allowed by the user on 2026-10-02 as evidence only):
+  - Its input: the 222 segment UUIDs of the 236 mapped links, taken from
+    `overture_link_ids` (the second field of `L_<uuid>_<i>_<j>[_r]`) and written to
+    `scratch/vis002p2-tomtom/segments.csv`.
+  - The query, with §2.14.3's HTTP settings:
+
+    ```sql
+    SELECT s.id, list_sort(list_distinct([x.dataset FOR x IN s.sources])) AS datasets
+    FROM read_parquet('s3://overturemaps-us-west-2/release/2026-09-23.1/theme=transportation/type=segment/*.parquet') s
+    WHERE <gate 4's bbox on s.bbox> AND s.id IN (<the 222>)
+    ORDER BY s.id
+    ```
+
+    It wrote `scratch/vis002p2-tomtom/segments-datasets.csv`.
+  - **70.3 s** wall (user 3.5 s), first attempt, exit 0.
+  - **222 of 222 segments found, each with `[OpenStreetMap]` only.** No other dataset
+    appears, TomTom included.
 
 ## 3. Open questions
 
@@ -1232,7 +1272,7 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     credit (§2.13).
   - *(design call: the user; non-blocking.)*
 - **OQ-9** — The credit line's wording, and which non-CC-BY building sources it names
-  (§2.14.2).
+  (§2.14.2). **RESOLVED.**
   - *The proposal:* items joined by ` · `: `© OpenStreetMap contributors (ODbL)`, then
     `Overture Maps Foundation, release <r>`, then each building source as in §2.14.2's
     table. Midtown without buildings reads `© OpenStreetMap contributors (ODbL) · Overture
@@ -1250,9 +1290,12 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     lists with their licence. (c) is the shortest and leaves them uncredited in the video.
     Only (a) never decides in code which listed source to leave out.
   - *Recommendation:* (a), with the wording as written.
-  - *(needs-input: the user; blocks gate 7's exact strings and gate 11's width, not the
-    design.)*
-- **OQ-10** — TomTom on imported Overture roads (§2.14.4).
+  - ~~*(needs-input: the user; blocks gate 7's exact strings and gate 11's width, not the
+    design.)*~~
+  - *(answered 2026-10-02, user)* **(a): every non-OSM source present is named, with the
+    wording as written in §2.14.2.** Gates 7 and 11 keep their values. Recorded as
+    §2.14.1 decision 6 and §2.14.2.
+- **OQ-10** — TomTom on imported Overture roads (§2.14.4). **RESOLVED.**
   - *The facts:* Overture's transportation theme lists "Data from TomTom." beside
     OpenStreetMap. The engine reads each segment's datasets and keeps none of them, so no
     project says whether its roads include TomTom's.
@@ -1267,10 +1310,15 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     let the line name TomTom from the data, as decision 1 asks.
   - *Recommendation:* (a) with (c) before 2026-11-22. If Midtown has TomTom segments, the
     user decides between (b) and waiting for the engine.
-  - *(design call: the user; flags gate 7's claim that Midtown's line is complete, and
-    blocks nothing else.)*
+  - ~~*(design call: the user; flags gate 7's claim that Midtown's line is complete, and
+    blocks nothing else.)*~~
+  - *(answered 2026-10-02, user)* **(a) with (c).** TomTom is not named until the data
+    shows it. Midtown's check was run the same day: all 222 segments name OpenStreetMap
+    only, so Midtown's line is complete for gate 7 (§2.14.4, §2.14.10). The engine request
+    above stays as written, not sent; the user carries it. Recorded as §2.14.1 decision 7,
+    §2.14.4 and gate 7.
 - **OQ-11** — A HERE import, or any source type other than `Overture` and `Osm`
-  (§2.14.4).
+  (§2.14.4). **RESOLVED.**
   - *The draft:* an error, failing closed. HERE's roads are not OSM data, and their credit
     is HERE's to set.
   - *Its cost:* `render` on a HERE project, which works today, stops until a credit is
@@ -1278,8 +1326,10 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
   - *The alternative:* item 1 only, as decision 1 has it for every imported network. That
     names OpenStreetMap on roads that did not come from it, and names nothing for HERE.
   - *Recommendation:* the error, until the user gives HERE's wording.
-  - *(design call: the user; blocks nothing for Midtown.)*
-- **OQ-12** — A font under the OFL in an MIT OR Apache-2.0 repo (§2.14.6).
+  - ~~*(design call: the user; blocks nothing for Midtown.)*~~
+  - *(answered 2026-10-02, user)* **The error, until the user gives HERE's wording.**
+    Recorded as §2.14.1 decision 8 and §2.14.4.
+- **OQ-12** — A font under the OFL in an MIT OR Apache-2.0 repo (§2.14.6). **RESOLVED.**
   - *Why:* Bevy's built-in font has no `©` or `·`.
   - *The options:*
     - (a) commit Fira Sans Medium (457,248 bytes) with `OFL.txt` under `assets/fonts/`.
@@ -1294,8 +1344,11 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
   - *Recommendation:* (b). It is exact, and the crate is not published (`publish =
     false`), so the field has no other reader. (a) is the common practice, with the
     exception stated only in prose.
-  - *(design call: the user; blocks Phase 2's build. The draft's scope writes (b).)*
-- **OQ-13** — The full credit when a video is published (§2.14.10).
+  - ~~*(design call: the user; blocks Phase 2's build. The draft's scope writes (b).)*~~
+  - *(answered 2026-10-02, user)* **(b): `license = "(MIT OR Apache-2.0) AND OFL-1.1"`,
+    and the README and the repo's `CLAUDE.md` name the font exception.** Recorded as
+    §2.14.1 decision 9, §2.14.6, and Phase 2's scope and close-out.
+- **OQ-13** — The full credit when a video is published (§2.14.10). **RESOLVED.**
   - *The facts:* OSMF's safe harbour for video where the map is a major component asks for
     the corner credit **and** a credit in the end credits or the description, with the URL
     `openstreetmap.org/copyright`. Phase 2 draws the corner line only.
@@ -1305,7 +1358,11 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     - (b) a closing card in the video, a later phase.
   - *Recommendation:* (a) in Phase 2's close-out. (b) waits for the harness contract
     (decision 5).
-  - *(design call: the user; non-blocking.)*
+  - ~~*(design call: the user; non-blocking.)*~~
+  - *(answered 2026-10-02, user)* **(a).** Phase 2's close-out adds README guidance:
+    whoever publishes a video puts the full credit, OQ-7's text with
+    `openstreetmap.org/copyright`, in its description. A closing card waits for the
+    harness contract. Recorded as §2.14.1 decision 10 and Phase 2's close-out.
 
 ## 4. Implementation phases
 
@@ -1681,10 +1738,13 @@ its data's credit in the bottom-right corner of every frame, with or without `--
 
 Drafted 2026-10-02; the design is §2.14, and the user's decisions are §2.14.1. It builds on
 Phase 1 and changes none of its behaviour on a network without `metadata.map_origin`, nor
-anything in `view`. Its open choices are drafted as recommended, pending the user: the cache
-carries its sources and release (§2.14.3), TomTom is not named (OQ-10), a HERE report is an
-error (OQ-11), and the font is Fira Sans Medium, committed, with `license` naming
-OFL-1.1 too (OQ-12). The wording is OQ-9's proposal.
+anything in `view`. The plan, as decided:
+- the cache carries its sources and release (§2.14.3);
+- every non-OSM building source present is named, in §2.14.2's wording (OQ-9);
+- TomTom is not named until the data shows it (OQ-10);
+- a HERE report is an error (OQ-11);
+- the font is Fira Sans Medium, committed, with `license` naming OFL-1.1 too (OQ-12);
+- the README tells publishers what to put in a video's description (OQ-13).
 
 **Its one deadline:** gate 4's re-fetch needs `2026-09-23.1` on S3, until about 2026-11-22
 (§2.14.3). Drafting's probe file in `scratch/vis002p2-probe/fetch/` is the same file and
@@ -1717,8 +1777,8 @@ covers the gates that do not fetch.
     file, and `Job::prepare_without_credit` does not (§2.14.7). `Job::credit()` and
     `Job::credit_box()` are added. `src/main.rs`, `RenderOptions` and the progress lines do
     not change.
-  - **`Cargo.toml`:** `license = "(MIT OR Apache-2.0) AND OFL-1.1"` (OQ-12, recommended
-    (b)). No dependency or feature changes.
+  - **`Cargo.toml`:** `license = "(MIT OR Apache-2.0) AND OFL-1.1"` (OQ-12,
+    answered (b)). No dependency or feature changes.
   - **Not edited:** `src/buildings.rs`, every file under `src/view/`, `Cargo.lock`,
     `scripts/gates.sh`, `tests/gates.rs`, `tests/view.rs`, `tests/slider.rs`
     and `tests/camera.rs`.
@@ -1819,6 +1879,8 @@ covers the gates that do not fetch.
      - with `scratch/midtown/buildings.geojson` (gate 4's) it gives exactly `©
        OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1 ·
        Microsoft ML Buildings (ODbL) · USGS Lidar`.
+     - Both are complete for Midtown's roads. Its 222 mapped segments name OpenStreetMap
+       only, with no TomTom (§2.14.4, checked 2026-10-02). So no TomTom item is missing.
   8. **The numbers.**
      - `font_size` gives 13, 20 and 40 at 1280×720, 1920×1080 and 3840×2160, and 11 at
        1080×1920.
@@ -1880,8 +1942,8 @@ covers the gates that do not fetch.
   16. **The user watches** the Midtown renders: orthographic with `--buildings` at
       1920×1080 and at 1280×720, and gate 13's flight from Phase 1 with the line. The
       flicker of OQ-8 is expected. The user reads the line over dark ground, roads and
-      roofs, and says whether the size, margin, outline and wording should change
-      (iteration, §2.14.5, OQ-9).
+      roofs, and says whether the size, margin and outline should change (iteration,
+      §2.14.5). The wording is settled (OQ-9).
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
@@ -1904,7 +1966,7 @@ covers the gates that do not fetch.
 
 - **Not predicted, and so not gated:**
   - the look: `S`'s ratio, the margin, the outline's width and the two colours (§2.14.5),
-    and the wording (OQ-9), all for the user at gate 16;
+    all for the user at gate 16;
   - the count of pixels the line changes (gates 10–12), the binary's growth (gate 2), and
     wall times: the fetch (gate 4), the build (gate 2) and the renders (gate 15).
 - **Close-out (standing plan steps, the methodology's §3):**
@@ -1933,12 +1995,14 @@ covers the gates that do not fetch.
       - the credit section says that the line is drawn, from what, and that a cache fetched
         before Phase 2 must be fetched again (`REFETCH=1`) before `render --buildings`
         reads it;
-      - OQ-13's answer: what to put in a published video's description;
+      - for whoever publishes a video (OQ-13): put the full credit, OQ-7's text with
+        `openstreetmap.org/copyright`, in its description;
       - the fetch report's two keys;
-      - the font and its licence (OQ-12's answer);
+      - the font, its licence and the crate's `(MIT OR Apache-2.0) AND OFL-1.1` (OQ-12);
       - the new gate commands: `scripts/gates-credit.sh`, with `REFETCH=1`, and `cargo
         test --release --test credit -- --include-ignored --test-threads=1`;
-    - `CLAUDE.md`: the licence line names the font's exception, as OQ-12 is answered;
+    - `CLAUDE.md`: the licence line names the font's exception and the crate's
+      `(MIT OR Apache-2.0) AND OFL-1.1` (OQ-12);
     - status artifact: none needed, since this repo has none.
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and its
     cause.
