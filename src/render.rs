@@ -61,12 +61,23 @@ struct Credit {
     offset: u32,
 }
 
+/// How the boxes are drawn: a pool of entities on the orthographic path, one mesh on the
+/// perspective path (vis-001 §2.12.2).
+enum Boxes {
+    Pool {
+        pool: Vec<Entity>,
+        materials: Vec<Handle<StandardMaterial>>,
+    },
+    Mesh(draw::BoxesEntity),
+}
+
 pub struct Renderer {
     apps: SubApps,
     target: Handle<Image>,
     camera: SceneCamera,
-    pool: Vec<Entity>,
-    materials: Vec<Handle<StandardMaterial>>,
+    /// The most boxes a frame may hold.
+    pool: usize,
+    boxes: Boxes,
     slot: Arc<Mutex<Option<Vec<u8>>>>,
     /// The perspective camera's entity; `None` on the orthographic path.
     perspective: Option<Entity>,
@@ -92,7 +103,8 @@ impl Renderer {
     }
 
     /// The same scene through a perspective camera at `pose` (§2.11.2): shaded boxes and
-    /// `draw::RANK_LIFT_3D`. `camera` is the fit, the scene's bake origin and image size.
+    /// `draw::RANK_LIFT_3D`, drawn as one mesh in `vehicle_id` order (§2.12.2). `camera`
+    /// is the fit, the scene's bake origin and image size.
     pub fn new_perspective(
         strips: &[Strip],
         camera: SceneCamera,
@@ -159,10 +171,8 @@ impl Renderer {
             let mut meshes = world.resource_mut::<Assets<Mesh>>();
             (
                 meshes.add(draw::road_mesh(strips, camera.cx, camera.cy)),
-                match pose {
-                    None => meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-                    Some(_) => meshes.add(draw::shaded_box_mesh()),
-                },
+                pose.is_none()
+                    .then(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
             )
         };
 
@@ -202,7 +212,13 @@ impl Renderer {
             MeshMaterial3d(road_mat),
             Transform::IDENTITY,
         ));
-        let pool = draw::spawn_pool(world, &box_mesh, &speed_mats[0], pool);
+        let boxes = match box_mesh {
+            Some(box_mesh) => Boxes::Pool {
+                pool: draw::spawn_pool(world, &box_mesh, &speed_mats[0], pool),
+                materials: speed_mats,
+            },
+            None => Boxes::Mesh(draw::spawn_boxes(world)),
+        };
         // Nothing is spawned without buildings, so such a render is unchanged.
         if let Some(b) = buildings {
             draw::spawn_buildings(world, b, (camera.cx, camera.cy));
@@ -235,7 +251,7 @@ impl Renderer {
             target,
             camera,
             pool,
-            materials: speed_mats,
+            boxes,
             slot: Arc::new(Mutex::new(None)),
             perspective,
             lift: match pose {
@@ -338,23 +354,23 @@ impl Renderer {
     /// Render one frame with exactly these boxes (in draw order) and return its RGBA8
     /// (sRGB) pixels, rows top to bottom, `width · height · 4` bytes.
     pub fn render(&mut self, boxes: &[VehicleBox]) -> Result<Vec<u8>> {
-        if boxes.len() > self.pool.len() {
+        if boxes.len() > self.pool {
             bail!(
                 "internal: {} vehicles in a frame, pool of {}",
                 boxes.len(),
-                self.pool.len()
+                self.pool
             );
         }
         let cam = self.camera;
         let world = self.apps.main.world_mut();
-        draw::fill_pool(
-            world,
-            &self.pool,
-            &self.materials,
-            boxes,
-            (cam.cx, cam.cy),
-            self.lift,
-        );
+        match &self.boxes {
+            Boxes::Pool { pool, materials } => {
+                draw::fill_pool(world, pool, materials, boxes, (cam.cx, cam.cy), self.lift)
+            }
+            Boxes::Mesh(entity) => {
+                draw::set_boxes(world, entity, boxes, (cam.cx, cam.cy), self.lift)
+            }
+        }
         *self.slot.lock().unwrap() = None;
         let slot = self.slot.clone();
         world.spawn(Screenshot::image(self.target.clone())).observe(

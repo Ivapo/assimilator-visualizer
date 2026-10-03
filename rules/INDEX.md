@@ -4,7 +4,7 @@
 
 - **[buildings](buildings.md)** — generated 2026-10-02 · 6 sources · 60/60 lines
   Buildings around a georeferenced network: the fetch script and its report, the cache format and its checks, the projection, the height rule, the mesh, the light, the orthographic eye rule and `view`'s `B`.
-- **[camera](camera.md)** — generated 2026-10-01 · 3 sources · 60/60 lines
+- **[camera](camera.md)** — generated 2026-10-03 · 3 sources · 60/60 lines
   The 3D camera: the pose and its perspective projection, what the orthographic and perspective paths draw, the keyframe line and the keyframe file with its errors, and the flight `render --camera` takes through the keyframes.
 - **[credit](credit.md)** — generated 2026-10-02 · 5 sources · 40/40 lines
   The credit line of an imported network's render: the rule that builds it from the data, its inputs and checks, how it is drawn and fitted, the font and its licence, and `Job`'s credit accessors.
@@ -12,9 +12,9 @@
   What the renderer reads from a run and from where, how FCD rows become placed points, and which checks fail before the first frame.
 - **[motion](motion.md)** — generated 2026-09-29 · 3 sources · 59/60 lines
   How each vehicle's FCD rows become a position at any time: Hermite along links, junction spans on the engine's turn paths, lane slides, when a vehicle is drawn, and the motion report.
-- **[render](render.md)** — generated 2026-10-02 · 8 sources · 60/60 lines
+- **[render](render.md)** — generated 2026-10-03 · 8 sources · 60/60 lines
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
 - **[slider](slider.md)** — generated 2026-09-30 · 3 sources · 35/40 lines
   `view`'s time slider: the bar's geometry, x ↔ t, the ticks, how a press on the bar scrubs and what it takes from the camera and the clock, and how the window draws it.
-- **[view](view.md)** — generated 2026-10-01 · 5 sources · 60/60 lines
+- **[view](view.md)** — generated 2026-10-03 · 5 sources · 60/60 lines
   The `assimilator-video view` window over a finished run: its CLI and checks, the wall-clock view clock, the camera (orbit and tilt, pan, zoom, centre bound), picking and following, the readout, the keyframe line and the hidden `--bench`. The time slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.

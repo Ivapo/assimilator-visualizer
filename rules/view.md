@@ -12,7 +12,7 @@ covers: >
   and following, the readout, the keyframe line and the hidden `--bench`. The time
   slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.
 max_lines: 60
-generated: 2026-10-01
+generated: 2026-10-03
 ---
 
 # View
@@ -32,7 +32,7 @@ generated: 2026-10-01
   frame times, prints `{"frames", "mean_fps", "median_ms", "p99_ms", "worst_ms"}`, exits 0.
 
 ## Drawing (`src/draw.rs`, shared with `render`)
-- The road mesh and the box pool (`motion.max_drawn()` boxes, shaded, 0.001 m lift) are
+- The road mesh and the boxes' one mesh (`draw::set_boxes` each frame, 0.001 m lift) are
   baked relative to the launch fit's centre `(fx, fy)`. The camera is perspective at the
   state's pose (`height_m = H·k`), set every frame by `draw::perspective`.
 - The readout is a 14 px white UI text line at left 16, bottom 30, just above the slider.

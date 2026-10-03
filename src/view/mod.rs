@@ -41,8 +41,7 @@ const BENCH_WARMUP: f64 = 3.0;
 struct Viewer {
     run: Run,
     state: ViewState,
-    pool: Vec<Entity>,
-    materials: Vec<Handle<StandardMaterial>>,
+    boxes: draw::BoxesEntity,
     camera: Entity,
     /// The buildings' mesh and sun; `None` without `--buildings`.
     buildings: Option<draw::BuildingEntities>,
@@ -116,15 +115,10 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         ..default()
     }));
     let world = app.world_mut();
-    let (road_mat, speed_mats) =
-        draw::materials(&mut world.resource_mut::<Assets<StandardMaterial>>());
-    let (road_mesh, box_mesh) = {
-        let mut meshes = world.resource_mut::<Assets<Mesh>>();
-        (
-            meshes.add(draw::road_mesh(&run.strips, fit.cx, fit.cy)),
-            meshes.add(draw::shaded_box_mesh()),
-        )
-    };
+    let (road_mat, _) = draw::materials(&mut world.resource_mut::<Assets<StandardMaterial>>());
+    let road_mesh = world
+        .resource_mut::<Assets<Mesh>>()
+        .add(draw::road_mesh(&run.strips, fit.cx, fit.cy));
     let (transform, projection) = draw::perspective(
         &state.pose(),
         fit.cx,
@@ -139,7 +133,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         MeshMaterial3d(road_mat),
         Transform::IDENTITY,
     ));
-    let pool = draw::spawn_pool(world, &box_mesh, &speed_mats[0], run.motion.max_drawn());
+    let boxes = draw::spawn_boxes(world);
     let buildings = buildings
         .as_ref()
         .map(|b| draw::spawn_buildings(world, b, (fit.cx, fit.cy)));
@@ -166,8 +160,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     world.insert_resource(Viewer {
         run,
         state,
-        pool,
-        materials: speed_mats,
+        boxes,
         camera,
         buildings,
         readout,
@@ -278,14 +271,7 @@ fn frame(world: &mut World) {
         *cam.get_mut::<Transform>().unwrap() = transform;
         *cam.get_mut::<Projection>().unwrap() = projection;
         let boxes = run.boxes_at(s.t);
-        draw::fill_pool(
-            world,
-            &v.pool,
-            &v.materials,
-            &boxes,
-            (fx, fy),
-            draw::RANK_LIFT_3D,
-        );
+        draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D);
         if let Some(b) = v.buildings {
             let want = if s.buildings_shown {
                 Visibility::Inherited

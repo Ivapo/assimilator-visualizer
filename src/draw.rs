@@ -1,9 +1,12 @@
 //! What `render` and `view` draw the same way (vis-001 §2.9.6): the road mesh, the box
 //! pool's materials and transforms, and the camera's fixed parts. Moved from
 //! `src/render.rs`, so `render`'s frames do not change. The perspective path (§2.11.2)
-//! adds a camera built from a pose, a shaded box mesh and a smaller rank lift. vis-002
-//! adds the buildings: one lit mesh, a sun and the orthographic eye's rule, and, for
-//! `render` only, the credit line's UI tree (§2.14.5).
+//! adds a camera built from a pose, a shaded box mesh and a smaller rank lift, and since
+//! Phase 6 (§2.12) draws every box of a frame as one mesh in `vehicle_id` order; the pool
+//! is the orthographic path's. vis-002 adds the buildings: one lit mesh, a sun and the
+//! orthographic eye's rule, and, for `render` only, the credit line's UI tree (§2.14.5).
+
+use std::collections::HashSet;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
@@ -211,6 +214,147 @@ pub fn spawn_pool(
                 .id()
         })
         .collect()
+}
+
+/// Every box of `boxes` as one mesh, in slice (`vehicle_id`) order (vis-001 §2.12.2): the
+/// shaded cuboid's vertices through [`box_transform`] at rank = slice index, coloured by
+/// the speed colour (linear) × the face's shade. One draw keeps its triangles' order, so
+/// a depth tie goes to the later box, the higher id. A box whose placed point, heading and
+/// length equal a later box's bit for bit is left out; ranks are counted first, so no
+/// other box moves. `None` when no box is drawn.
+pub fn boxes_mesh(boxes: &[VehicleBox], (cx, cy): (f64, f64), lift: f64) -> Option<Mesh> {
+    // The last box is always drawn, so only an empty slice draws nothing.
+    if boxes.is_empty() {
+        return None;
+    }
+    let mut seen = HashSet::new();
+    let mut drawn = vec![false; boxes.len()];
+    for (i, b) in boxes.iter().enumerate().rev() {
+        let key = (
+            b.at.x.to_bits(),
+            b.at.y.to_bits(),
+            b.at.heading.to_bits(),
+            b.length.to_bits(),
+        );
+        drawn[i] = seen.insert(key);
+    }
+    let unit = shaded_box_mesh();
+    let vec3s = |attr| match unit.attribute(attr) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.clone(),
+        _ => unreachable!("the shaded box has positions and normals"),
+    };
+    let (unit_pos, unit_normal) = (
+        vec3s(Mesh::ATTRIBUTE_POSITION),
+        vec3s(Mesh::ATTRIBUTE_NORMAL),
+    );
+    let shades: Vec<f32> = match unit.attribute(Mesh::ATTRIBUTE_COLOR) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x4(v)) => v.iter().map(|c| c[0]).collect(),
+        _ => unreachable!("the shaded box has vertex colours"),
+    };
+    let unit_idx: Vec<u32> = match unit.indices() {
+        Some(Indices::U32(v)) => v.clone(),
+        Some(Indices::U16(v)) => v.iter().map(|&i| i as u32).collect(),
+        None => unreachable!("a Cuboid mesh is indexed"),
+    };
+    let n = drawn.iter().filter(|&&d| d).count();
+    let mut pos = Vec::with_capacity(n * unit_pos.len());
+    let mut normals = Vec::with_capacity(n * unit_pos.len());
+    let mut colours = Vec::with_capacity(n * unit_pos.len());
+    let mut idx = Vec::with_capacity(n * unit_idx.len());
+    for (i, b) in boxes.iter().enumerate().filter(|&(i, _)| drawn[i]) {
+        let t = box_transform(b, i, cx, cy, lift);
+        let c = srgb(scene::SPEED_BINS[scene::speed_bin(b.speed)].1).to_linear();
+        let base = pos.len() as u32;
+        for ((p, nrm), s) in unit_pos.iter().zip(&unit_normal).zip(&shades) {
+            pos.push(t.transform_point(Vec3::from(*p)).to_array());
+            normals.push((t.rotation * Vec3::from(*nrm)).to_array());
+            colours.push([c.red * s, c.green * s, c.blue * s, 1.0]);
+        }
+        idx.extend(unit_idx.iter().map(|&k| base + k));
+    }
+    Some(
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
+        .with_inserted_indices(Indices::U32(idx)),
+    )
+}
+
+/// The perspective path's boxes: one entity, and the handle of the mesh [`set_boxes`]
+/// replaces each frame.
+#[derive(Debug, Clone)]
+pub struct BoxesEntity {
+    pub entity: Entity,
+    pub mesh: Handle<Mesh>,
+}
+
+/// Spawn the boxes' entity, hidden, never culled, with one white unlit material: the
+/// vertex colours carry the speed colours. Its first mesh is a placeholder, never shown.
+pub fn spawn_boxes(world: &mut World) -> BoxesEntity {
+    let placeholder = VehicleBox {
+        vehicle_id: 0,
+        at: crate::place::Placed {
+            x: 0.0,
+            y: 0.0,
+            heading: 0.0,
+        },
+        length: 1.0,
+        speed: 0.0,
+        track: crate::motion::TrackPos {
+            piece: crate::motion::Piece::Link(0),
+            along: 0.0,
+            lateral: 0.0,
+            odo: 0.0,
+        },
+    };
+    let mesh = boxes_mesh(&[placeholder], (0.0, 0.0), 0.0).expect("one box is drawn");
+    let mesh = world.resource_mut::<Assets<Mesh>>().add(mesh);
+    let material = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            ..default()
+        });
+    let entity = world
+        .spawn((
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::IDENTITY,
+            Visibility::Hidden,
+            NoFrustumCulling,
+        ))
+        .id();
+    BoxesEntity { entity, mesh }
+}
+
+/// Draw `boxes` as [`boxes_mesh`]'s one mesh, `lift` metres per rank, in place of the last
+/// frame's; hide the entity when no box is drawn.
+pub fn set_boxes(
+    world: &mut World,
+    entity: &BoxesEntity,
+    boxes: &[VehicleBox],
+    (cx, cy): (f64, f64),
+    lift: f64,
+) {
+    let want = match boxes_mesh(boxes, (cx, cy), lift) {
+        Some(mesh) => {
+            world
+                .resource_mut::<Assets<Mesh>>()
+                .insert(entity.mesh.id(), mesh)
+                .expect("the boxes' mesh handle is held");
+            Visibility::Visible
+        }
+        None => Visibility::Hidden,
+    };
+    let mut v = world.get_mut::<Visibility>(entity.entity).unwrap();
+    if *v != want {
+        *v = want;
+    }
 }
 
 /// All strips as one flat mesh at height 0, in link order, relative to `(cx, cy)`.
