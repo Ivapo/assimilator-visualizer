@@ -4,7 +4,9 @@ title: city
 note: >
   Real buildings around a georeferenced network, in render and view. Overture footprints are
   fetched once by a script into a cached GeoJSON, then projected with the engine's formula,
-  extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture.
+  extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture. Phase 2 draws
+  the data's credit line (OpenStreetMap, Overture, building sources) on every frame of an
+  imported network's render.
 status: accepted
 last_updated: 2026-10-02
 
@@ -12,6 +14,11 @@ phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
     reviewed: 2026-10-01
     shipped: 2026-10-02
+    cut: null
+    by: null
+  - name: "Phase 2 — Credit: a line built from the data, on every frame of an imported network's render"
+    reviewed: 2026-10-02
+    shipped: null
     cut: null
     by: null
 
@@ -26,7 +33,10 @@ reference: >
   read-only; its import projection and metadata.map_origin are what this spec relies on.
   The user's Midtown project is /Users/ivapo/assimilator/projects/midtown-section at
   e2de274, read-only. Out of scope from Overture: building_part, the base theme (land use,
-  water), transportation (roads come from the network) and places.
+  water), transportation (roads come from the network) and places. Phase 2's credit
+  follows Overture's attribution page (https://docs.overturemaps.org/attribution/) and
+  OSMF's attribution guidelines (https://osmfoundation.org/wiki/Licence/Attribution_Guidelines),
+  both read 2026-10-02, and draws with Fira Sans Medium (OFL 1.1, google/fonts).
 ---
 
 # City
@@ -55,7 +65,9 @@ assimilator-video render --project <project> --scenario baseline --seed 42 \
 ```
 
 (The numbers are the Midtown fixture's, §2.9, measured while drafting, §2.12. The report
-is one line; it is wrapped here.)
+is one line; it is wrapped here.) *(2026-10-02)* From Phase 2, the report also has
+`sources` and `no_sources`, the file is 2,284,830 bytes, and the video carries the credit
+line (§2.14).
 
 Rejected candidates for the observable:
 - *`buildings.geojson`.* It is an input to a video, as vis-001 §1 says of the scene bundle.
@@ -127,6 +139,8 @@ Decided by the user, 2026-10-01, before drafting.
   - `B` toggles buildings in `view`; `render` draws them only with `--buildings`;
   - `render` without `--buildings` stays byte-identical: 8700 of 8700 against
     `scratch/ref-8eb9052.framemd5`, as `scripts/gates.sh` checks;
+    *(2026-10-02)* from Phase 2, that holds for urban_grid only: every render of a network
+    with `map_origin` carries the credit line (§2.14.1 decision 2);
   - see-through or fading buildings, land use and textures are later phases.
 - (g) **Pitch:** the 25° floor stays. vis-001 OQ-12 stays open. It belongs to a later phase
   here that brings sky, fog and a wider extent (§2.13).
@@ -443,7 +457,8 @@ fetched building is drawn" means it is in the scene, not in every frame.
   are not neutral. Gate 11 rests on this.
 - **Roads and boxes stay unlit** (vis-001 §2.11.2). The light does not touch their pixels.
 - **Without `--buildings`, nothing new is spawned:** no mesh and no light. That is what keeps
-  `render` byte-identical (§2.2 f).
+  `render` byte-identical (§2.2 f). *(2026-10-02)* From Phase 2, a network with `map_origin`
+  also gets the credit's UI tree, with or without `--buildings` (§2.14.5).
 
 The base grey, the ambient level, the sun's illuminance and the exact angles are iteration
 (vis-001 §2.6). These constraints are not:
@@ -457,6 +472,8 @@ The base grey, the ambient level, the sun's illuminance and the exact angles are
 ### 2.8 `render` and `view`
 
 Both gain `--buildings <file.geojson>`. Without it, nothing changes.
+*(2026-10-02)* From Phase 2, `render` of an imported network draws the credit line with or
+without it, and `render --buildings` needs a cache fetched in Phase 2's form (§2.14).
 
 `render`:
 - **With or without `--camera`.** Without it the camera is vis-001's orthographic top-down
@@ -555,6 +572,9 @@ credit line in the video is a small phase of its own (§2.13), which must ship b
 Midtown video is shown outside. The README's wording is the user's, set in OQ-7 (answered
 2026-10-01) and used exactly as written there.
 
+*(2026-10-02)* The line in the video is drafted as Phase 2 (§2.14). It brings the first
+file under another licence: a font under the OFL (§2.14.6, OQ-12).
+
 ### 2.11 Build cost
 
 - **No crate for fetching.** DuckDB is an external CLI, needed only by the fetch script.
@@ -598,6 +618,9 @@ constraint.
   `--buildings` stays byte-identical. One question is that phase's to settle. Midtown's
   roads are ODbL too (OQ-3), so a roads-only Midtown video needs the credit as well. The
   line may then have to key on an imported network, not on `--buildings`.
+  *(2026-10-02)* Drafted as Phase 2 (§2.14). It keys on `metadata.map_origin`, with or
+  without `--buildings` (§2.14.1, decision 2), so it is `render` on urban_grid that stays
+  byte-identical.
 - **A deterministic `--camera` render on Midtown** (OQ-8): a small phase in vis-001
   §2.11's draw path. The user scheduled it right after the credit (2026-10-02).
 - **Nicer buildings:**
@@ -610,6 +633,519 @@ constraint.
   (§2.2 g).
 - **Re-frozen traffic** after the engine fix (OQ-4). This is a pin move with a re-gate
   (vis-001 §2.2.2), not a phase.
+
+### 2.14 The credit line in the video (Phase 2)
+
+Drafted 2026-10-02, the first item of §2.13. It must ship before any Midtown video is shown
+outside (§2.2 l). The observable is the video itself: every frame of a render of an
+imported network carries the line.
+
+#### 2.14.1 The user's decisions (decision, recorded)
+
+Decided by the user, 2026-10-02, before drafting:
+1. **The text is built from the data.**
+   - The OpenStreetMap credit (ODbL) is always present.
+   - Overture Maps Foundation and its release are named when the data came from Overture.
+   - CC BY building sources (Esri Community Maps, Google Open Buildings, …) are named only
+     when buildings from them are present.
+   - The user agreed that a video shows the data of its fetch, so the release in the line
+     is the fetch's.
+2. **When:** any render of an imported network, which is one with `metadata.map_origin`,
+   with or without `--buildings`. A synthetic network (urban_grid) gets none, so vis-001's
+   renders stay byte-identical: 8700 of 8700 against `scratch/ref-8eb9052.framemd5`, as
+   `scripts/gates.sh` checks.
+3. **Placement:** one small line, bottom-right, on every frame. Light text with a dark
+   outline or shadow, readable on any background, sized relative to the output height.
+4. **`render` only.** `view` does not change.
+5. **No switch** to turn it off in Phase 2. It is revisited at the harness contract (v1).
+
+Decided by the user, 2026-10-02, on the draft (the answers to OQ-9 to OQ-13):
+6. **Every non-OSM building source present is named**, with §2.14.2's wording (OQ-9).
+7. **TomTom is not named until the data shows it** (OQ-10). Midtown's roads were checked
+   once, against `2026-09-23.1` (§2.14.4). The engine request in OQ-10 stays the user's to
+   carry.
+8. **A HERE import, or any source type other than `Overture` and `Osm`, is an error** until
+   the user gives HERE's wording (OQ-11).
+9. **The font is committed under the OFL**, and `Cargo.toml` says so: `license = "(MIT OR
+   Apache-2.0) AND OFL-1.1"`. The README and `CLAUDE.md` name the exception (OQ-12).
+10. **Publishing:** the README tells whoever publishes a video to put the full credit, OQ-7's
+    text with `openstreetmap.org/copyright`, in its description. A closing card waits for
+    the harness contract (OQ-13).
+
+The rest of this section is the plan. Where it weighed choices, it keeps them with their
+costs and says which was taken:
+- §2.14.3, where the buildings' sources come from;
+- §2.14.4, the roads;
+- §2.14.5, how the text is drawn;
+- §2.14.6, the font;
+- §2.14.8, how Phase 1's gates are re-run.
+
+#### 2.14.2 What the line says
+
+Three inputs, all read before the first frame:
+- the resolved network's `metadata.map_origin` (vis-001 §2.1);
+- `<project>/import_report.json`, if the file exists. It is the engine's
+  `crates/import/src/types.rs:ImportReport`, of which only `source` is read: its `type`
+  and, for `Overture`, its `release` (`crates/import/src/types.rs:ImportSource`);
+- the `--buildings` file, if given: its release and each building's datasets (§2.14.3).
+
+The rule, item by item:
+0. **No `map_origin`: no line**, and nothing new is spawned. urban_grid's frames do not
+   change (decision 2). Nothing else is read.
+1. **Always:** `© OpenStreetMap contributors (ODbL)`.
+2. **Overture**, when there are buildings or the report's `source.type` is `Overture`:
+   `Overture Maps Foundation, release <r>`. `r` is the buildings file's release when there
+   is one (decision 1: the fetch's), else the report's `source.release`. When the two
+   differ, only the buildings' is shown.
+3. **Each building source other than OpenStreetMap** that at least one building of the
+   file names, once. The table's rows come first, in its order. Datasets the table does not
+   know follow, verbatim, in byte order.
+
+Items are joined by ` · ` (a middle dot between two spaces). The line has no full stop.
+
+| `sources.dataset` | Licence, per Overture's page | In the line |
+|---|---|---|
+| `OpenStreetMap` | ODbL | item 1 (always) |
+| `Esri Community Maps` | CC BY 4.0 | `Esri Community Maps contributors (CC BY 4.0)` |
+| `Google Open Buildings` | CC BY 4.0 | `Google Open Buildings (CC BY 4.0)` |
+| `Microsoft ML Buildings` | ODbL, licensed by Microsoft | `Microsoft ML Buildings (ODbL)` |
+| `USGS Lidar` | none named; the page lists the "USGS 3D Elevation Program" | `USGS Lidar` |
+| any other | its own, on the page | the dataset name, verbatim |
+
+- The texts follow Overture's attribution page (docs v2.0.0, "Last updated on May 15,
+  2026", read 2026-10-02, §2.14.10). The dataset names are those of Overture's buildings
+  guide legend, and `USGS Lidar` is the name the probe found.
+- **Midtown's buildings name three datasets** (the probe, §2.14.10):
+  - OpenStreetMap on 4,327 of the 4,336;
+  - USGS Lidar on 316, each beside OpenStreetMap;
+  - Microsoft ML Buildings on 29, alone on 9 and beside OpenStreetMap on 20.
+
+  **No CC BY source is among them.**
+- **The Microsoft and USGS rows go beyond decision 1**, which names CC BY sources. Any
+  non-OSM source that is present is named, because Overture's page lists each one
+  (decision 6, OQ-9). For Midtown that is the difference between the roads' line (40.23
+  em) and one half as long again (60.37 em).
+- **An unknown dataset is named as it is, never dropped.** A source added in a later
+  release then shows in the line, unpolished, instead of going uncredited.
+- **The wording is the user's** (decision 6, OQ-9), as the README's was in OQ-7. Item 1
+  names OpenStreetMap and the ODbL, as OSMF's guidelines ask (§2.14.10), and every item
+  comes from the inputs above.
+
+**Midtown** (the fixture's `import_report.json` is the user's, byte for byte, Phase 1's
+gate 3):
+- without `--buildings`: `© OpenStreetMap contributors (ODbL) · Overture Maps Foundation,
+  release 2026-09-23.1`;
+- with `--buildings scratch/midtown/buildings.geojson`, fetched again in Phase 2's form:
+  `© OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1 ·
+  Microsoft ML Buildings (ODbL) · USGS Lidar`.
+
+#### 2.14.3 Where the buildings' sources and release come from
+
+Phase 1's cache keeps only `id`, `height` and `num_floors` (§2.2 c), and Phase 1's gate 5
+pins its bytes. Nothing in it says which release it came from, or which source each
+building came from. The options weighed:
+
+| | (a) The cache carries them | (b) A sidecar file | (c) A fixed list | (d) A second flag |
+|---|---|---|---|---|
+| What | each feature gains `sources`, its datasets; the collection gains the release | the fetch also writes `<out>.sources.json`, which `render` finds by name | name every source on Overture's page | `render --buildings-sources <file>` |
+| Decision 1 | kept | kept | **broken**: it names absent sources | kept |
+| Travels with the cache | yes, one file | only if both files are copied | — | only if both are passed |
+| Phase 1's gate 5 | bytes and SHA-256 change: recorded as a change in Phase 2, Phase 1 not rewritten | unchanged | unchanged | unchanged |
+| Needs `2026-09-23.1` on S3 | one re-fetch of Midtown | one sources-only query for Midtown | no | as (b) |
+| Code | one column and one layer option in the query; two members read | a second output, its own format, and a check that it belongs to its cache (a hash) | none | as (b), and a flag the harness must pass |
+
+**The plan: (a).** One self-describing file, whose release is the fetch's by
+construction (decision 1), and two members a reader can check. (b) costs as much and can be
+parted from its cache. (c) breaks decision 1. (d) adds a flag to the harness contract.
+
+**Its cost is a deadline.** The fixture's cache must be fetched again, in the new form, from
+`2026-09-23.1`.
+- Overture keeps a release "for a maximum of 60 days (two monthly releases)". Its next
+  releases are 2026-10-21 and 2026-11-18 (release calendar, read 2026-10-02). So
+  `2026-09-23.1` leaves S3 around **2026-11-22**, and after that this file cannot be made.
+- Drafting's probe wrote that file into gitignored `scratch/` (§2.14.10), which buys
+  time. If Phase 2 is built after the release is gone and the probe's file is lost too, a
+  newer release is pinned and every count is predicted again (§2.2 m), recorded and never
+  rewritten.
+
+**The fetch's query** (§2.3.2) changes in two places, and gains two settings:
+
+```sql
+SET http_timeout = 120;
+SET http_retries = 8;
+COPY (
+  SELECT id, height, num_floors,
+         list_sort(list_distinct([s.dataset FOR s IN sources])) AS sources,
+         geometry
+  FROM read_parquet('s3://overturemaps-us-west-2/release/<release>/theme=buildings/type=building/*.parquet')
+  WHERE bbox.xmin <= <E> AND bbox.xmax >= <W> AND bbox.ymin <= <N> AND bbox.ymax >= <S>
+  ORDER BY id
+) TO '<tmp>/buildings.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON',
+      LAYER_CREATION_OPTIONS 'DESCRIPTION=Overture Maps buildings, release <release>');
+```
+
+- **`sources`** is the building's datasets over every entry of Overture's `sources` list:
+  the footprint's and any property's. They are distinct and sorted. A building with no
+  `sources` gets `null`, and one whose entries name no dataset gets `[]` (tried on made-up
+  rows, §2.14.10).
+- **The release** goes in the collection's `"description"`: `"Overture Maps buildings,
+  release 2026-09-23.1"`, written after `"name"`. GDAL's `FOREIGN_MEMBERS_COLLECTION`
+  option, which could write a `release` member of its own, is ignored by DuckDB 1.5.1's
+  GDAL (tried, §2.14.10).
+- **The two settings** change no byte. Drafting's first probe failed on DuckDB's defaults
+  (30 s, 3 retries; §2.14.10).
+- **Nothing of Phase 1's changes:** the same rows in the same order, with the same
+  properties and coordinates. Gate 5 checks this against Phase 1's file, byte for byte once
+  the two new members are taken out.
+- **The report** (§2.3.4) gains two keys:
+  - `"sources"`: an object, dataset → the buildings that name it, keys sorted;
+  - `"no_sources"`: the buildings with `null` or `[]`.
+
+  A building counts once under each of its datasets, so the counts add up to more than the
+  buildings when one names two. Midtown's, from the probe:
+  - `{"Microsoft ML Buildings": 29, "OpenStreetMap": 4327, "USGS Lidar": 316}`, which is
+    4,672;
+  - `no_sources` 0;
+  - 4,000 buildings with one dataset and 336 with two, which is 4,336.
+
+**Reading it, in `render` only.** `src/buildings.rs:read` does not change. It ignores other
+members and properties (§2.4.1), so `view` and every Phase 1 check read either form of the
+file exactly as before (decision 4). The credit reads the file a second time, in
+`src/credit.rs` (new; no Bevy types), after Phase 1's checks have passed. It reads two
+things:
+- `description` must be the string `Overture Maps buildings, release <r>`, with `r`
+  non-empty and without spaces. Otherwise: `error: --buildings <file>: no release: fetched
+  before vis-002 Phase 2; fetch it again with scripts/fetch-buildings.sh`.
+- Each feature's `properties.sources` is absent, `null`, or an array of strings. Anything
+  else is an error naming the feature, by its `id` as in §2.4.3.
+
+A second parse of Midtown's 2 MB costs milliseconds, and it keeps the provenance out of the
+reader that `view` shares. `tests/shapes.geojson` was never fetched and has no release, so
+`render --buildings tests/shapes.geojson` errors from Phase 2 on. Phase 1's gate 12 uses
+that file. §2.14.8 says how gate 12 runs.
+
+#### 2.14.4 The roads, and what the report can say
+
+`source.type` in `import_report.json` (`crates/import/src/types.rs:ImportSource`, a tagged
+enum of three types at the pin and on engine main):
+- **`Overture`:** item 2, with `source.release`. A missing or non-string `release` is an
+  error.
+- **`Osm`:** nothing beyond item 1.
+- **No report, or `"source": null`:** the roads' origin is unknown. Item 1 still appears
+  (decision 1), and nothing else is added for the roads. A network drawn by hand on a map has
+  only `map_origin` (§2.3.1).
+- **`Here`, or any other type:** an error, `error: <project>/import_report.json: source
+  type "Here" has no credit (vis-002 OQ-11)`. HERE's roads are not OSM data, and their
+  credit is HERE's to set. Failing closed keeps a new source type from being rendered
+  uncredited. It also stops `render` on a HERE project, which works today. Decided by the
+  user (decision 8, OQ-11): the error stays until the user gives HERE's wording.
+
+**TomTom is not named.** Overture's transportation theme lists "Data from TomTom." beside
+OpenStreetMap. Nothing in a project says which of its roads came from TomTom:
+- the engine reads each segment's `sources`
+  (`crates/import/src/overture/types.rs:OvertureSource`), but writes none of it into the
+  network or the report;
+- Midtown's report maps 236 of the network's 255 links to 222 Overture segments
+  (`overture_link_ids`). The other 19 links have ids the report does not hold; the network
+  was cut and edited after the import (§2.3.1). A query of those segments against the
+  transportation theme could say, but only while `2026-09-23.1` is on S3.
+
+So TomTom is not named until the data shows it (decisions 1 and 7, OQ-10).
+
+**Midtown's roads were checked once** (2026-10-02, §2.14.10). The query was one DuckDB read
+of the 222 segments against `theme=transportation/type=segment` of `2026-09-23.1`. **All 222
+name OpenStreetMap and nothing else; none names TomTom.** So Midtown's line is complete
+without TomTom (gate 7). The 19 links the report does not map cannot be traced to a
+segment, and nothing in the project records a source for them.
+
+The engine request in OQ-10 is the user's to carry. Until the engine records datasets, a
+project other than Midtown gets no TomTom check.
+
+The report is read only when the network has `map_origin`. It is the project's, not the
+scenario's: a project whose scenario points at another network file still takes its credit
+from the one report it has.
+
+#### 2.14.5 Drawing: Bevy text in the headless render
+
+**How.** `render`'s app already has Bevy's `TextPlugin`, `UiPlugin` and `UiRenderPlugin`:
+`DefaultPlugins` adds them because `bevy_text`, `bevy_ui` and `bevy_ui_render` are on for
+`view` (`Cargo.toml`). It has never spawned a node. With a line, `src/render.rs:Renderer`
+spawns one UI tree:
+- **a root `Node`**, absolutely positioned at `right: m`, `bottom: m`, with
+  `UiTargetCamera(<the image camera>)`. That component must be there: with no window,
+  Bevy has no default UI camera ("the highest order camera targeting the primary window",
+  `bevy_ui` 0.19.1);
+- **in it, the line as a `Text`** in the light fill colour, in the root's flow. It sets the
+  root's size;
+- **beside it, eight copies of the line** in the dark outline colour: children of the root
+  and siblings of the fill, never the fill's children. Each is absolutely positioned at an
+  offset `(dx, dy)`, with `dx, dy ∈ {−o, 0, o}` and not both 0. Each has `ZIndex(-1)`, so
+  it draws below the fill. `ZIndex` orders siblings only, so a child of the fill would draw
+  above it (`bevy_ui` 0.19.1, `src/stack.rs:update_uistack_recursive`). Bevy 0.19 has a
+  `TextShadow` (one offset) but no outline. A one-sided shadow leaves the top and left
+  edges of light glyphs unbordered over a light roof;
+- **all nine have `TextLayout` with `LineBreak::NoWrap`.** Bevy wraps at word boundaries by
+  default, and a wrapped fill would report a width that skips the fit.
+
+`draw::spawn_credit(world, line, camera: Entity, font: Handle<Font>, size, margin,
+offset) -> CreditNodes` spawns this tree. `CreditNodes` holds the root, the fill and the
+eight copies. `draw::set_credit_size(world, &CreditNodes, size)` sets the font size of all
+nine nodes for the fit.
+
+Without a line, nothing is spawned, as §2.7 does for buildings.
+
+**The ways weighed:**
+
+| | Bevy UI text (the draft) | A CPU raster on the readback | ffmpeg's `drawtext` |
+|---|---|---|---|
+| How | nine `Text` nodes in `render`'s app | `swash` rasterises the line once, and it is blended into each frame's RGBA before ffmpeg | a filter in the encoder's command |
+| Packages | 0 | 0: `swash` 0.2.10 is locked through `bevy_text`; `Cargo.toml` gains a direct dependency on it | — |
+| Code | about 60 lines; Bevy shapes and lays out the text | about 120 lines: shaping, glyph raster, the outline by dilation, blending | — |
+| Deterministic | through Bevy's UI pass; gates 10 and 14 check it | by construction | — |
+| On this machine | built, for `view` | built | **absent**: ffmpeg 9.0.2 has no `drawtext` (§2.14.10) |
+
+**The plan: Bevy UI text**, as §2.13 planned. It is less code, and it uses the text
+stack `view` already draws its readout with. The CPU raster is the fallback if gate 10 finds
+a pixel changed outside the box, or gate 14 finds two renders that differ. Taking it is a
+scope change, not part of Phase 2 as reviewed: it adds `swash` to `Cargo.toml`, which gate
+2 forbids. So it clears Phase 2's `reviewed` (the methodology's §7), and the phase goes
+back to review.
+
+**The numbers**, in output pixels (an image target's scale factor is 1):
+- **font size** `S = round(min(H, 9W/16) / 54)`: 13 px at 1280×720, 20 at 1920×1080, 40 at
+  3840×2160. The `9W/16` term keeps a portrait frame's line inside its width;
+- **margin** `m = S`, from the right and bottom edges to the fill text's box;
+- **outline offset** `o = max(1, round(S/12))`: 1, 2 and 3 px at those sizes;
+- **fill** sRGB (240, 240, 240) and **outline** sRGB (0, 0, 0), both opaque. Their WCAG
+  contrast ratio is 18.4:1.
+
+`S`, `m`, `o`, the ratio 1/54 and the two colours are iteration (vis-001 §2.6), settled at
+the user's check (gate 16). These constraints are not:
+- one line in the bottom-right corner, on every frame;
+- a light fill with an opaque dark outline;
+- a size in proportion to the output, smaller only to fit (below);
+- no pixel outside the credit box changes.
+
+**The fit.** The line never wraps and is never clipped. It shrinks to fit instead.
+- After the settle frames, the fill text's computed width `w` is read. If `w > W − 2m`,
+  the font size becomes `S' = floor(S · (W − 2m) / w)`. Here `S` is the current size and
+  `w` its width.
+- `set_credit_size` then sets `S'` on all nine nodes, and `Renderer` runs the three settle
+  renders again (`render(&[])`, as `build` does). Then `w` is read again, until it fits.
+- `m` and `o` keep their values for the first `S`. `credit::fit_size(size, width_px,
+  avail_px)` takes `avail_px = W − 2·margin(S)` and computes one pass.
+- A final size under 10 px is an error (§2.14.7): a credit too small to read is no credit.
+  That includes an `S` under 10 before any shrink, which a frame under about 513 px tall
+  gives at 16:9 (640×360 gives 7).
+
+Estimated from Fira Sans Medium's advance widths, without kerning (§2.14.10), the share of
+`W − 2m` is the same at every 16:9 size:
+
+| Line | Width | 1280×720 | Share | Font size |
+|---|---|---|---|---|
+| Midtown without buildings | 40.23 em | 523 px of 1,254 | 42 % | not shrunk |
+| Midtown with buildings | 60.37 em | 785 px of 1,254 | 63 % | not shrunk |
+| Naming Esri, Google, Microsoft and USGS too | 98.06 em | — | 102–104 % | 12, 19 and 38 px |
+| Gate 11's made-up *six sources* line | 105.39 em | — | 109–112 % | 11, 17 and 35 px |
+| Gate 9's made-up *long* line | 241.28 em | — | about 250–257 % | 5, 7 and 15 px: an error at 720p and 1080p. At 1080p, 7 is 2.6 % above 8, inside the kerning allowance, so 7 or 8 |
+
+The font sizes are at 1280×720, 1920×1080 and 3840×2160.
+
+**The credit box** is the fill text's computed rectangle grown by `o` on every side,
+rounded outward to whole pixels. `Job::credit_box()` returns it for the gates as
+`Option<[u32; 4]>`, `[x0, y0, x1, y1]`, with `x1` and `y1` exclusive: the box's pixels are
+`x0 ≤ x < x1`, `y0 ≤ y < y1`. Its height is the fill's line box, `1.2·S` (Bevy's default
+`LineHeight`; Fira Sans's ascent and descent are 935 and −265), plus `2o`. At 1920×1080
+that is 24 + 4 = 28 px, so `y0` is 1034.
+
+**Its height.** The tallest glyphs of both Midtown lines are `(` and `)`, and the lowest
+are `p` and `g`: 1.070 em from top to bottom. With the outline that is 1.070·S + 2o: 15.9 px at
+1280×720 and 48.8 px at 3840×2160. Capitals are 0.691·S: 9.0 px and 27.6 px.
+
+#### 2.14.6 The font: Fira Sans Medium, OFL 1.1
+
+Bevy's built-in font cannot draw the line. `default_font` embeds `FiraMono-subset.ttf`
+(Fira Mono Medium 3.206, OFL 1.1, in `bevy_text` 0.19.1), and it maps only ASCII
+0x20–0x7E: 95 code points, with no `©` and no `·` (measured, §2.14.10). The options:
+
+| | Bevy's `FiraMono-subset` | Fira Sans Medium, committed | A font crate |
+|---|---|---|---|
+| Glyphs | ASCII only | 1,686 code points; `©`, `·`, `é`, `ñ` | depends |
+| Licence | OFL 1.1, inside `bevy_text` | OFL 1.1, `OFL.txt` beside it | the crate's |
+| Cost | 0 | `assets/fonts/FiraSans-Medium.ttf` (457,248 bytes) and `assets/fonts/OFL.txt` (4,370 bytes); `include_bytes!` into the binary; 0 packages | +1 package at least |
+| The line | `(c) OpenStreetMap …` or no symbol, and a monospace line 25 % wider (50.40 em against 40.23) | as §2.14.2 | as §2.14.2 |
+
+**The plan: Fira Sans Medium 4.203**, from `google/fonts` (`ofl/firasans/`). It is the
+proportional sibling of `view`'s Fira Mono, from the same foundry under the same licence.
+- **The pin is the SHA-256**, since no `google/fonts` commit was recorded:
+  - `FiraSans-Medium.ttf`: 457,248 bytes,
+    `cbc1842cbed8c1d1146ba7c9db97d8f28c9bedfd25f41c5b0e1259ca48622328`;
+  - `OFL.txt`: 4,370 bytes,
+    `8f24842e9174beda18a556c2ae7d54f5dc444340c19a3a9ef77e23bca366adbd`.
+- **Where to get them:** drafting's copies are kept in gitignored
+  `scratch/vis002p2-font/`. Failing that, download from
+  `https://raw.githubusercontent.com/google/fonts/main/ofl/firasans/`, and the hashes must
+  match. If they do not, the font has moved on. §2.14.5's widths are then measured again
+  before building, and the change is recorded.
+- Copying them into `assets/fonts/` is a build step, not a gate. The exit gate's
+  "only gate 4 uses the network" does not cover a download made there.
+- `Font::from_bytes` (`bevy_text` 0.19.1) takes the embedded bytes, so `render` reads no
+  font file at run time.
+- The OFL's condition 2: the font "may be bundled, redistributed and/or sold with any
+  software, provided that each copy contains the above copyright notice and this
+  license". `OFL.txt` carries both, and so does the font's own `name` table.
+- Its condition 5: the font "must be distributed entirely under this license", and that
+  requirement "does not apply to any document created using the Font Software", which is
+  the video.
+- **It is the first file in this repo under a licence other than MIT OR Apache-2.0.**
+  Condition 5 bears on `Cargo.toml`'s `license`. `bevy_text` declares `MIT OR Apache-2.0`
+  while it embeds its OFL subset. The more exact expression is `(MIT OR Apache-2.0) AND
+  OFL-1.1`. Decided by the user (decision 9, OQ-12): `Cargo.toml` takes it, and the README
+  and `CLAUDE.md` name the exception, which amends `CLAUDE.md`'s rule that every crate
+  sets `MIT OR Apache-2.0`.
+
+#### 2.14.7 The order of checks, and the API
+
+`render`'s checks (vis-001 §2.4) gain three:
+- **Two after `--buildings`' file** (§2.4.3), before the scene is built:
+  1. `<project>/import_report.json`, only when the network has `map_origin`. The errors:
+     the file cannot be read (an absent file is not an error), or is not JSON; `source` is
+     neither `null` nor an object with a string `type`; `Overture` has no string `release`;
+     the type is neither `Overture` nor `Osm`. Each is `error: <project>/import_report.json:
+     …`. A report with no `source` key reads as `"source": null`, as serde reads the
+     engine's `Option`. The engine always writes the key, so only a hand-made report lacks
+     it;
+  2. the buildings file's two members (§2.14.3).
+- **One after the scene's settle frames**, before the encoder starts: the fit (§2.14.5),
+  `error: the credit line would be <S'> px in a <W>×<H> frame, under 10 px; render a
+  larger frame`. `S'` is the final size: the shrunk size, or `S` itself when `S` is
+  already under 10.
+
+Each is one line with exit 1, no progress line and no output file (vis-001 §2.4).
+
+**The API.**
+- `RenderOptions` does not change.
+- `Job::prepare_with(o, camera, buildings)` builds the line as the CLI does (decision 5).
+- `Job::prepare_without_credit(o, camera, buildings)` is the same job with no line. It is
+  for the gates; no flag reaches it.
+- `Job::credit() -> Option<&str>` returns the line, if any. `Job::credit_size() ->
+  Option<u32>` returns its font size after the fit. `Job::credit_box()` returns its box in
+  pixels (§2.14.5).
+- `src/render.rs:Renderer`'s two constructors take the line as an `Option`.
+- `src/buildings.rs` and every file under `src/view/` are not edited.
+
+#### 2.14.8 Phase 1's gates that read Midtown frames
+
+The line is in the corner of every Midtown frame from Phase 2 on, so some of Phase 1's
+gates see it. Phase 1's text is not edited. Phase 2's exit gate re-runs them as follows:
+- **Gate 11 (top-down coverage)** runs with the line drawn, as the CLI draws it, and
+  **excludes the credit box**. Pixels inside either frame's box (the union of the two) are
+  left out of both of its checks. The predictions stay 0 and 0. Its test in
+  `tests/buildings.rs` is edited to do so, and to report the excluded count.
+- **Gate 12 (shapes in perspective)** runs through `Job::prepare_without_credit`, because
+  `tests/shapes.geojson` has no release (§2.14.3). Its frames are then Phase 1's, and so are
+  its predictions.
+- **Gate 13 (deterministic)**: the orthographic pair is Phase 2's own gate 14, with the
+  line. The flight pair stays OQ-8's recorded miss and is not a gate here.
+- **Gate 5 (the cache)** changes, recorded in Phase 2's gate 4. `scripts/gates-city.sh`
+  takes the new bytes and SHA-256.
+- **Gates 8–10** read the new cache. They give Phase 1's numbers, since its content is
+  Phase 1's (Phase 2's gate 5).
+
+Phase 2's gate 10 ties these together. Outside the box, a frame with the line equals the
+same frame without it, byte for byte. So what gates 11 and 12 measure is what the video
+shows.
+
+Phase 2's own frame comparisons are orthographic where they can be. The `--camera` render
+is not deterministic on Midtown (OQ-8), whose cause is stacked boxes. So a perspective frame
+is compared only at `render_empty()`, with no boxes, as Phase 1's gate 12 was.
+
+#### 2.14.9 Build cost
+
+- **0 packages.** `Cargo.lock` does not change, and `Cargo.toml` changes only in its
+  `license` (OQ-12). No Bevy feature is added:
+  `bevy_text`, `bevy_ui`, `bevy_ui_render` and `default_font` are already on. A clean
+  release build compiles the same **363** crates as Phase 1.
+- **Files:** the font (457,248 bytes) and `OFL.txt` (4,370 bytes). The binary grows by
+  about the font.
+- **No network** in `render`, and no font file read at run time.
+
+#### 2.14.10 Measured while drafting (2026-10-02)
+
+Every number in §2.14 that is not cited to source was measured on 2026-10-02, read-only
+against the engine at the pin, the Midtown project at `e2de274` and the web, with output
+only under `scratch/` and the session's scratchpad. The record, with the method, is
+`specs/reviews/vis-002.md`, "Phase 2 draft". In short:
+- **Overture's attribution page** (docs v2.0.0, last updated 2026-05-15):
+  - buildings, transportation and base are ODbL, each with "© OpenStreetMap contributors.
+    Available under the Open Database License.";
+  - buildings also list Esri Community Maps contributors (CC BY 4.0), Global ML Building
+    Footprints (ODbL, by Microsoft), Google Open Buildings (CC BY 4.0), the USGS 3D
+    Elevation Program, a Qian Shi et al. dataset (CC BY 4.0) and BTN 2024 ign.es (CC BY
+    4.0);
+  - transportation lists "Data from TomTom.", with no licence text.
+- **OSMF's attribution guidelines:**
+  - attribution must be to "OpenStreetMap" and make clear that the data is under the ODbL;
+  - "© OpenStreetMap contributors" is acceptable;
+  - the text must be legible "taking into consideration the font, size, colour, contrast,
+    positioning and amount of time that it is visible";
+  - for video where the map is a major component, the credit "should typically appear in
+    a corner of the map, in addition to attribution in the end credits or description",
+    and those must include the URL `openstreetmap.org/copyright` (OQ-13).
+- **Overture's release calendar:** releases are kept "for a maximum of 60 days (two
+  monthly releases)"; the next are 2026-10-21 and 2026-11-18. S3 lists `2026-08-19.0`,
+  `2026-09-23.0` and `2026-09-23.1`.
+- **The engine:** `ImportSource` is `Osm`, `Here` or `Overture` (tagged by `type`) at the
+  pin and on main. Segment `sources` are read and not kept. Midtown's report:
+  `{"type": "Overture", …, "release": "2026-09-23.1"}`, with 236 of the 255 links in
+  `overture_link_ids`.
+- **Fonts:**
+  - Bevy's subset maps 95 code points;
+  - Fira Sans Medium 4.203 maps 1,686, with a cap height of 691/1000;
+  - the widths and heights of §2.14.5 come from its `hmtx` and `glyf` tables, read by a
+    script.
+- **Bevy 0.19.1:**
+  - `DefaultPlugins` adds `TextPlugin`, `UiPlugin` and `UiRenderPlugin` under the three
+    features;
+  - `TextShadow` is one offset, and there is no text outline;
+  - `UiTargetCamera` overrides the default UI camera, which is only ever a window's.
+- **DuckDB 1.5.1's GDAL**, on made-up rows into `scratch/`:
+  - a `VARCHAR[]` column becomes a JSON string array: `null` for NULL, `[ ]` for empty;
+  - `DESCRIPTION=` writes a top-level `"description"`, commas included;
+  - `FOREIGN_MEMBERS_COLLECTION` is ignored.
+- **The probe.** The brief allowed one against `2026-09-23.1`.
+  - The first attempt timed out on one parquet file after 643 s and wrote nothing.
+  - The user allowed one retry, run as §2.14.3's query exactly, into
+    `scratch/vis002p2-probe/fetch/buildings.geojson`. It took **1,253 s** wall (45 s
+    user), against Phase 1's 122–185 s for the same box: the link was slow that day.
+  - It wrote **4,336** buildings, the release in `"description"`, and the same `crs`.
+  - Height rules: 4,277 by `height`, 8 by `num_floors` and 51 at the default.
+  - Datasets: OpenStreetMap 4,327, USGS Lidar 316 and Microsoft ML Buildings 29, and 0
+    with none.
+  - By building: 3,991 OpenStreetMap only, 316 OpenStreetMap and USGS Lidar, 20
+    OpenStreetMap and Microsoft, and 9 Microsoft only.
+  - The file is **2,284,830 bytes**, SHA-256
+    `f241ccbd9a2fba2e3c80fa28ec7522ca2a33b84628c18954952ad6bc1d4a1dfd`.
+  - **Without its `"description"` line and its `, "sources": […]` members, it is
+    byte-identical to Phase 1's cache** (2,140,989 bytes, `561a615d…`), with the same
+    ids in the same order.
+- **The TomTom check** (OQ-10's (c), allowed by the user on 2026-10-02 as evidence only):
+  - Its input: the 222 segment UUIDs of the 236 mapped links, taken from
+    `overture_link_ids` (the second field of `L_<uuid>_<i>_<j>[_r]`) and written to
+    `scratch/vis002p2-tomtom/segments.csv`.
+  - The query, with §2.14.3's HTTP settings:
+
+    ```sql
+    SELECT s.id, list_sort(list_distinct([x.dataset FOR x IN s.sources])) AS datasets
+    FROM read_parquet('s3://overturemaps-us-west-2/release/2026-09-23.1/theme=transportation/type=segment/*.parquet') s
+    WHERE <Phase 1's gate 4 bbox on s.bbox> AND s.id IN (<the 222>)
+    ORDER BY s.id
+    ```
+
+    It wrote `scratch/vis002p2-tomtom/segments-datasets.csv`.
+  - **70.3 s** wall (user 3.5 s), first attempt, exit 0.
+  - **222 of 222 segments found, each with `[OpenStreetMap]` only.** No other dataset
+    appears, TomTom included.
 
 ## 3. Open questions
 
@@ -782,6 +1318,98 @@ constraint.
   - *(2026-10-02, user)* Stays open. Its fix phase is scheduled right after the in-video
     credit (§2.13).
   - *(design call: the user; non-blocking.)*
+- **OQ-9** — The credit line's wording, and which non-CC-BY building sources it names
+  (§2.14.2). **RESOLVED.**
+  - *The proposal:* items joined by ` · `: `© OpenStreetMap contributors (ODbL)`, then
+    `Overture Maps Foundation, release <r>`, then each building source as in §2.14.2's
+    table. Midtown without buildings reads `© OpenStreetMap contributors (ODbL) · Overture
+    Maps Foundation, release 2026-09-23.1`.
+  - *What Midtown's buildings carry* (the probe): OpenStreetMap, USGS Lidar (316
+    buildings) and Microsoft ML Buildings (29). They include no CC BY source.
+  - *Beyond decision 1:* the table also names Microsoft's (ODbL, not CC BY) and USGS's (no
+    licence named on Overture's page) when present, and any dataset it does not know,
+    verbatim. The options, with Midtown's line with buildings and its width:
+    - (a) every non-OSM source present, which is the draft: `… · Microsoft ML Buildings
+      (ODbL) · USGS Lidar`, 60.37 em, 63 % of a 16:9 frame's allowed width;
+    - (b) the CC BY and ODbL sources only: `… · Microsoft ML Buildings (ODbL)`, 54.64 em;
+    - (c) decision 1 as written, CC BY only: the roads' line, 40.23 em.
+  - *The trade-off:* (a) and (b) credit Microsoft's ODbL footprints, which Overture's page
+    lists with their licence. (c) is the shortest and leaves them uncredited in the video.
+    Only (a) never decides in code which listed source to leave out.
+  - *Recommendation:* (a), with the wording as written.
+  - ~~*(needs-input: the user; blocks gate 7's exact strings and gate 11's width, not the
+    design.)*~~
+  - *(answered 2026-10-02, user)* **(a): every non-OSM source present is named, with the
+    wording as written in §2.14.2.** Gates 7 and 11 keep their values. Recorded as
+    §2.14.1 decision 6 and §2.14.2.
+- **OQ-10** — TomTom on imported Overture roads (§2.14.4). **RESOLVED.**
+  - *The facts:* Overture's transportation theme lists "Data from TomTom." beside
+    OpenStreetMap. The engine reads each segment's datasets and keeps none of them, so no
+    project says whether its roads include TomTom's.
+  - *The options:*
+    - (a) never name TomTom until the data says so, which is the draft;
+    - (b) name it on every Overture-imported network: always safe, but sometimes untrue;
+    - (c) check Midtown once: one DuckDB query of its 222 segments against
+      `theme=transportation/type=segment` of `2026-09-23.1`, before about 2026-11-22. It
+      needs the user's leave, as drafting's probe did.
+  - *An engine request*, written here and not sent: `import_report.json` could record the
+    datasets of the segments it kept, as `source.datasets` with link counts. That would
+    let the line name TomTom from the data, as decision 1 asks.
+  - *Recommendation:* (a) with (c) before 2026-11-22. If Midtown has TomTom segments, the
+    user decides between (b) and waiting for the engine.
+  - ~~*(design call: the user; flags gate 7's claim that Midtown's line is complete, and
+    blocks nothing else.)*~~
+  - *(answered 2026-10-02, user)* **(a) with (c).** TomTom is not named until the data
+    shows it. Midtown's check was run the same day: all 222 segments name OpenStreetMap
+    only, so Midtown's line is complete for gate 7 (§2.14.4, §2.14.10). The engine request
+    above stays as written, not sent; the user carries it. Recorded as §2.14.1 decision 7,
+    §2.14.4 and gate 7.
+- **OQ-11** — A HERE import, or any source type other than `Overture` and `Osm`
+  (§2.14.4). **RESOLVED.**
+  - *The draft:* an error, failing closed. HERE's roads are not OSM data, and their credit
+    is HERE's to set.
+  - *Its cost:* `render` on a HERE project, which works today, stops until a credit is
+    written for it. No such project is known here; Midtown is Overture.
+  - *The alternative:* item 1 only, as decision 1 has it for every imported network. That
+    names OpenStreetMap on roads that did not come from it, and names nothing for HERE.
+  - *Recommendation:* the error, until the user gives HERE's wording.
+  - ~~*(design call: the user; blocks nothing for Midtown.)*~~
+  - *(answered 2026-10-02, user)* **The error, until the user gives HERE's wording.**
+    Recorded as §2.14.1 decision 8 and §2.14.4.
+- **OQ-12** — A font under the OFL in an MIT OR Apache-2.0 repo (§2.14.6). **RESOLVED.**
+  - *Why:* Bevy's built-in font has no `©` or `·`.
+  - *The options:*
+    - (a) commit Fira Sans Medium (457,248 bytes) with `OFL.txt` under `assets/fonts/`.
+      `Cargo.toml` keeps `license = "MIT OR Apache-2.0"`, as `bevy_text` does for its own
+      OFL subset, and the README and `CLAUDE.md` name the exception;
+    - (b) as (a), with `license = "(MIT OR Apache-2.0) AND OFL-1.1"`. This states what
+      the package holds, and the OFL's condition 5 asks the font to be "distributed
+      entirely under this license". It changes `CLAUDE.md`'s rule that every crate sets
+      `MIT OR Apache-2.0`;
+    - (c) Bevy's subset and ASCII text: `(c)` in place of `©`, ` - ` in place of ` · `, and a
+      monospace line 25 % wider.
+  - *Recommendation:* (b). It is exact, and the crate is not published (`publish =
+    false`), so the field has no other reader. (a) is the common practice, with the
+    exception stated only in prose.
+  - ~~*(design call: the user; blocks Phase 2's build. The draft's scope writes (b).)*~~
+  - *(answered 2026-10-02, user)* **(b): `license = "(MIT OR Apache-2.0) AND OFL-1.1"`,
+    and the README and the repo's `CLAUDE.md` name the font exception.** Recorded as
+    §2.14.1 decision 9, §2.14.6, and Phase 2's scope and close-out.
+- **OQ-13** — The full credit when a video is published (§2.14.10). **RESOLVED.**
+  - *The facts:* OSMF's safe harbour for video where the map is a major component asks for
+    the corner credit **and** a credit in the end credits or the description, with the URL
+    `openstreetmap.org/copyright`. Phase 2 draws the corner line only.
+  - *The options:*
+    - (a) the README tells whoever publishes a video to put the full credit, OQ-7's text
+      with that URL, in its description;
+    - (b) a closing card in the video, a later phase.
+  - *Recommendation:* (a) in Phase 2's close-out. (b) waits for the harness contract
+    (decision 5).
+  - ~~*(design call: the user; non-blocking.)*~~
+  - *(answered 2026-10-02, user)* **(a).** Phase 2's close-out adds README guidance:
+    whoever publishes a video puts the full credit, OQ-7's text with
+    `openstreetmap.org/copyright`, in its description. A closing card waits for the
+    harness contract. Recorded as §2.14.1 decision 10 and Phase 2's close-out.
 
 ## 4. Implementation phases
 
@@ -1146,6 +1774,314 @@ phase (§2.2 l, §2.13).
       (ODbL) is committed; fetched buildings and imported networks stay out of the repo;
     - status artifact: none needed, since this repo has none (`.spec-lint.yaml`'s
       `status_artifacts` is empty).
+  - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and its
+    cause.
+  - Write this phase's `shipped` date.
+
+### Phase 2 — Credit: a line built from the data, on every frame of an imported network's render
+*Produces the observable: yes. `render` of an imported network writes the run's video with
+its data's credit in the bottom-right corner of every frame, with or without `--buildings`.
+`render` of urban_grid is byte-identical to Phase 1's (gate 1).*
+
+Drafted 2026-10-02; the design is §2.14, and the user's decisions are §2.14.1. It builds on
+Phase 1 and changes none of its behaviour on a network without `metadata.map_origin`, nor
+anything in `view`. The plan, as decided:
+- the cache carries its sources and release (§2.14.3);
+- every non-OSM building source present is named, in §2.14.2's wording (OQ-9);
+- TomTom is not named until the data shows it (OQ-10);
+- a HERE report is an error (OQ-11);
+- the font is Fira Sans Medium, committed, with `license` naming OFL-1.1 too (OQ-12);
+- the README tells publishers what to put in a video's description (OQ-13).
+
+**Its one deadline:** gate 4's re-fetch needs `2026-09-23.1` on S3, until about 2026-11-22
+(§2.14.3). Drafting's probe file in `scratch/vis002p2-probe/fetch/` is the same file and
+covers the gates that do not fetch. If the release is gone and the probe file is still
+there:
+- it is copied to `scratch/midtown/buildings.geojson` in place of gate 4's fetch;
+- gate 4's fetch checks are a recorded miss, with that reason. Those are the
+  `fetch.log` report line and the second fetch;
+- gate 4's file checks (bytes, SHA-256, the dataset counts) and gates 5–14 run on the copy.
+
+- **Scope:**
+  - **The fetch** (`scripts/fetch-buildings.sh`, §2.14.3): the `sources` column, the
+    `DESCRIPTION` layer option, the two HTTP settings, and the report's `sources` and
+    `no_sources`. `scripts/fixture.sh` does not change: the gate run re-fetches with
+    `REFETCH=1`.
+  - **The line (`src/credit.rs`, new; no Bevy types).**
+    - `credit::line(network, project_dir, buildings: Option<&Path>) -> Result<Option<String>>`:
+      §2.14.2's rule, reading `import_report.json` and the buildings file's two members
+      with every check of §2.14.7 in order. `None` without `map_origin`, with nothing read.
+    - The dataset table as a constant, in its order.
+    - `font_size(width, height)`, `margin(size)` and `outline_offset(size)` (§2.14.5); `FILL`
+      and `OUTLINE` as sRGB constants.
+    - `fit_size(size, width_px, avail_px) -> Result<u32>`: one pass of §2.14.5's shrink,
+      with its 10 px floor. `avail_px` is `W − 2·margin(S)` for the first `S`.
+  - **Drawing (`src/draw.rs`, `src/render.rs`).**
+    - `draw::spawn_credit(world, line, camera: Entity, font: Handle<Font>, size, margin,
+      offset) -> CreditNodes` and `draw::set_credit_size(world, &CreditNodes, size)`:
+      §2.14.5's tree. It has `UiTargetCamera`, the outline's eight copies as the fill's
+      siblings at `ZIndex(-1)`, and `LineBreak::NoWrap` on all nine.
+    - The font: `assets/fonts/FiraSans-Medium.ttf` and `assets/fonts/OFL.txt` (new; OQ-12),
+      embedded with `include_bytes!` and added through `Font::from_bytes`.
+    - `src/render.rs:Renderer` takes `credit: Option<&str>` in `new` and `new_perspective`.
+      It keeps the image camera's entity on both paths and spawns the tree only with a
+      line. After the settle frames it reads the fill's computed width and shrinks the
+      line until it fits, running the three settle renders again after each shrink
+      (§2.14.5), or fails (§2.14.7). Then it reads the credit box and keeps the size.
+  - **`render` (`src/lib.rs`).** `Job::prepare_with` builds the line after the buildings
+    file, and `Job::prepare_without_credit` does not (§2.14.7). `Job::credit()`,
+    `Job::credit_size()` and `Job::credit_box()` are added. `src/main.rs`, `RenderOptions` and the progress lines do
+    not change.
+  - **`Cargo.toml`:** `license = "(MIT OR Apache-2.0) AND OFL-1.1"` (OQ-12,
+    answered (b)). No dependency or feature changes.
+  - **Not edited:** `src/buildings.rs`, every file under `src/view/`, `Cargo.lock`,
+    `scripts/gates.sh`, `tests/gates.rs`, `tests/view.rs`, `tests/slider.rs`
+    and `tests/camera.rs`.
+  - **Tests.**
+    - `tests/credit.rs` (new), `#[ignore]`d as `tests/buildings.rs` does:
+      - gates 6 and 8, headless and not ignored;
+      - gate 3's `Buildings` equality and gate 7, headless, ignored (they need the
+        Midtown fixture);
+      - gates 10 and 11, ignored (the GPU and the fixture). Gate 6's inputs are made up in the
+      test: a network from `serde_yaml::from_str` as in Phase 1, and the reports and
+      buildings files written into a temporary directory. None of it is map data (§2.10).
+    - Two made-up buildings files, written from `tests/shapes.geojson` at test time and
+      not committed. Each has the description `Overture Maps buildings, release test`:
+      - *six sources*: Esri, Google, Microsoft, USGS and gate 6's `Alpha Survey` and `Zeta
+        Lab`, on the six shapes (105.39 em; gate 11's shrink). `tests/credit.rs` writes it
+        to a temporary directory;
+      - *long*: ten made-up dataset names on one shape, `Made-up dataset name number 00
+        for tests` to `… number 09 for tests` (40 characters each; 241.28 em; gate 9's
+        error). `scripts/gates-credit.sh` writes it under `scratch/out/credit/`.
+    - `tests/buildings.rs`: gate 11's test excludes the credit box, and gate 12's helper
+      `shape_frames` builds its two jobs with `Job::prepare_without_credit` (§2.14.8). No
+      other test there changes.
+    - `scripts/gates-city.sh`: gate 5's report, bytes and SHA-256 take Phase 2's values
+      (gate 4). Nothing else in it changes. The gate run runs it once, after gate 4 and
+      without `REFETCH`, since gate 4 makes the second fetch. Expected: everything passes
+      but Phase 1's two recorded misses, gate 3's FCD rows (280,872 against 280,875) and
+      gate 13's flight pair (OQ-8).
+    - `scripts/gates-credit.sh` (new) runs gate 4's checks after its first two steps,
+      with its second fetch only with `REFETCH=1`. It also runs gate 5's strip-and-compare,
+      gate 9's CLI cases and gate 14. Gate 4's first two steps, the copy and the
+      re-fetch, are run by hand, once, in that order, and recorded. Gate 9's report cases run on a copy of
+      `scratch/midtown` under `scratch/out/credit/` whose `import_report.json` is replaced.
+      The fixture itself is never edited.
+- **Exit gate.** On the development machine (Apple M3, macOS), on two fixtures:
+  - vis-001's urban_grid (engine `df8aec0`, baseline, seed 42), for what must not change;
+  - Midtown (`scratch/midtown`, Phase 1's fixture), its cache fetched again by gate 4.
+
+  Only gate 4 uses the network. The predictions are drafting's measurements (§2.14.10) and
+  Phase 1's recorded results. Nothing of this repo was built.
+  - **What must not change:**
+  1. **`render` of urban_grid.**
+     - `scripts/gates.sh` passes, and its reference comparison gives **8700 of 8700**
+       against `scratch/ref-8eb9052.framemd5` (decision 2).
+     - The `--camera` path, too. Before the first code change, `scripts/gates.sh` runs at
+       the base commit, and its `--camera tests/flight.toml` frames are kept as
+       `scratch/ref-camera-<base>.framemd5`. After the change that render's `framemd5`
+       equals it, **8700 of 8700**.
+     - With `--include-ignored --test-threads=1`, `tests/gates.rs` (5), `tests/view.rs`
+       (10), `tests/slider.rs` (8) and `tests/camera.rs` (19) pass, none of them edited.
+  2. **Build cost** (§2.14.9).
+     - `Cargo.lock` is unchanged: **0** packages. `git diff <base> -- Cargo.toml` shows
+       only the `license` line.
+     - A clean release build, counted from its `Compiling` lines in a throwaway
+       `CARGO_TARGET_DIR` under `scratch/` (Phase 1's gate 2 method), compiles **363**
+       crates.
+     - `cargo tree -e normal` lists no HTTP client, as in Phase 1's gate 2.
+     - The release binary's growth is recorded (about the font's 457,248 bytes).
+  3. **`view`.**
+     - `git diff <base> -- src/view/ src/buildings.rs` is empty.
+     - `buildings::read` gives equal `Buildings` for Phase 1's cache and Phase 2's: the
+       same ids in order, polygons, heights, rules and counts, compared exactly
+       (`tests/credit.rs`, `PartialEq`). So
+       `view --buildings` draws the same buildings from either file.
+  - **The fetch and the cache (network, once):**
+  4. **The re-fetch.**
+     - Before it, Phase 1's cache is copied to `scratch/buildings-vis002p1.geojson`.
+       Its SHA-256 is still `561a615d…` (Phase 1's gate 5).
+     - Then `REFETCH=1 scripts/fixture.sh midtown`. Its report line in `fetch.log` gives
+       release `2026-09-23.1`, Phase 1's gate 4 bbox, and **4,336** buildings: **4,277** by
+       `height`, **8** by `num_floors`, **51** at the default, all as in Phase 1. Its
+       `sources` are `{"Microsoft ML Buildings": 29, "OpenStreetMap": 4327, "USGS Lidar":
+       316}`, and `no_sources` is **0**.
+     - Over the file, 4,000 buildings name one dataset and 336 name two, which is 4,336.
+     - The file is **2,284,830 bytes**, SHA-256
+       `f241ccbd9a2fba2e3c80fa28ec7522ca2a33b84628c18954952ad6bc1d4a1dfd`, the probe's
+       file byte for byte.
+     - **This changes Phase 1's gate 5 prediction** (2,140,989 bytes, `561a615d…`). The
+       change is recorded here, and Phase 1's text is not rewritten.
+     - With `REFETCH=1`, a second fetch to another `--out` gives the same SHA-256.
+     - The fetch time is recorded. Drafting's probe took 1,253 s, on a slow link.
+  5. **Phase 1's content, unchanged.**
+     - Take out of the new file its `"description"` line and, from each feature, the
+       `, "sources": …` member. What is left is **byte-identical** to
+       `buildings-vis002p1.geojson` (checked on the probe's file, §2.14.10).
+     - `tests/buildings.rs`'s gates 8, 9 and 10, unedited, pass on the new cache with
+       Phase 1's numbers: 4,277/8/51; 42,776 quads, 34,178 roof triangles, 0 and 0; 2.239 %.
+  - **The line — headless, offline:**
+  6. **The rule** (§2.14.2) on made-up inputs. Each case gives exactly this line, or one
+     error naming its file and cause:
+
+     | Network | `import_report.json` | Buildings file | Line or error |
+     |---|---|---|---|
+     | no `map_origin` | present, not JSON | — | none; nothing read |
+     | `map_origin` | absent | — | `© OpenStreetMap contributors (ODbL)` |
+     | `map_origin` | `Osm` | — | the same |
+     | `map_origin` | `"source": null` | — | the same |
+     | `map_origin` | `Overture`, `R1` | — | `… (ODbL) · Overture Maps Foundation, release R1` |
+     | `map_origin` | `Overture`, `R1` | release `R2`, all `["OpenStreetMap"]` | `… · Overture Maps Foundation, release R2` |
+     | `map_origin` | absent | release `R2`, all `null` or `[]` | the same |
+     | `map_origin` | `Overture`, `R1` | `R2`; one building `["Esri Community Maps", "OpenStreetMap"]` | `… release R2 · Esri Community Maps contributors (CC BY 4.0)` |
+     | `map_origin` | `Overture`, `R1` | `R2`; `Zeta Lab`, `USGS Lidar`, `Microsoft ML Buildings`, `Alpha Survey`, `Google Open Buildings`, `Esri Community Maps` on six buildings | `… release R2 · Esri Community Maps contributors (CC BY 4.0) · Google Open Buildings (CC BY 4.0) · Microsoft ML Buildings (ODbL) · USGS Lidar · Alpha Survey · Zeta Lab` |
+     | `map_origin` | not JSON; `source` a string; `Overture` without `release`; `Here`; `Foo` | — | an `import_report.json` error, one per case |
+     | `map_origin` | `Overture`, `R1` | no `description`; `description` `"buildings"`; `sources` `"OpenStreetMap"` (a string); `sources` `[1]` | a `--buildings` error, one per case; the last two name the feature |
+
+  7. **Midtown's lines**, from the fixture's own files:
+     - `credit::line` without buildings gives exactly `© OpenStreetMap contributors (ODbL)
+       · Overture Maps Foundation, release 2026-09-23.1`;
+     - with `scratch/midtown/buildings.geojson` (gate 4's) it gives exactly `©
+       OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1 ·
+       Microsoft ML Buildings (ODbL) · USGS Lidar`.
+     - Both are complete for Midtown's roads. Its 222 mapped segments name OpenStreetMap
+       only, with no TomTom (§2.14.4, checked 2026-10-02). So no TomTom item is missing.
+  8. **The numbers.**
+     - `font_size` gives 13, 20 and 40 at 1280×720, 1920×1080 and 3840×2160, and 11 at
+       1080×1920.
+     - `outline_offset` gives 1, 2 and 3 at sizes 13, 20 and 40, and `margin` the size.
+     - The WCAG contrast ratio of `FILL` against `OUTLINE` is 18.4:1, at least 7:1.
+     - `fit_size`:
+       - (13, 785, 1254) gives 13: it fits;
+       - (20, 1961, 1880) gives 19;
+       - (20, 4826, 1880) is an error, at 7 px;
+       - (40, 9651, 3760) gives 15;
+       - (7, 300, 626), at 640×360, is an error at 7 px: `S` is under 10 before any shrink.
+  9. **Errors through `render`.** Each exits 1 with one stderr line (`error: <project>/
+     import_report.json: …` or `error: --buildings …` or `error: the credit line would be
+     …`), with no progress line and no file at `--out`:
+     - on the Midtown copy, its report replaced in turn by: not JSON; `source.type`
+       `Here`; `Overture` without `release`;
+     - Midtown with `--buildings scratch/buildings-vis002p1.geojson` (no release);
+     - Midtown with the made-up *long* file at 1920×1080: the fit's error, its `S'` under
+       10 and recorded. Prediction: **7**, or 8 with kerning (§2.14.5's table);
+     - urban_grid with `--buildings tests/shapes.geojson` still gives Phase 1's
+       `metadata.map_origin` error, before any credit check.
+  - **Through the GPU, offline:**
+  10. **Present, and confined to its box.** Midtown at 1920×1080, the orthographic job,
+      without and with `--buildings`: each built with `Job::prepare_with` and with
+      `Job::prepare_without_credit`, and compared at `render_empty()` and at three
+      `render_at` times (the window's first, middle and last frame times).
+      - Every pixel that differs between the two lies inside `Job::credit_box()`. Outside
+        it, the frames are byte-identical. Prediction: **0** pixels outside.
+      - Inside, more than 0 pixels differ (the count is recorded).
+      - `Job::credit()` is gate 7's line for that job, without or with buildings. `main.rs`
+        renders through the same `Job::prepare_with`, so this is the CLI's line.
+      - The box's right edge `x1` is `W − m + o` and its bottom edge `y1` is `H − m + o`,
+        both exclusive: 1902 and 1062 here. Its top `y0` is **1034 ± 1** (§2.14.5). The box
+        is the same at all four times.
+      - Once more through a one-keyframe `--camera` file, `keyframes = [ { t = 300.000, x =
+        0.00, y = 0.00, height_m = 900.00, yaw_deg = 0.00, pitch_deg = 60.00 } ]`, with
+        `--buildings`, at `render_empty()` only, with no boxes to stack (OQ-8): 0 pixels
+        outside the box.
+  11. **Legible at 1280×720 and 3840×2160** (orthographic Midtown with `--buildings`,
+      `render_empty()`):
+      - `Job::credit_size()` is 13 and 40;
+      - the rows of the box holding a pixel that differs from the frame without the line
+        span **16 ± 2 px** and **49 ± 2 px**. That is the glyphs' 1.070 em plus the outline
+        (§2.14.5), so capitals are 9.0 and 27.6 px tall;
+      - the box is 60.37 em wide, ± 3 % (the estimate has no kerning), plus 2o: 785 + 2 px
+        and 2,415 + 6 px, within `W − 2m`;
+      - inside the box, the lightest pixel has every channel ≥ 220 and the darkest every
+        channel ≤ 20: the fill and the outline are both reached;
+      - **the shrink:** with the made-up *six sources* file at 1920×1080, the line is
+        laid out at **17 or 18 px** (`Job::credit_size()`). The fill's width is at most
+        `W − 2m`, the fit's bound. Against the same job without the line at
+        `render_empty()`, **0** pixels change outside the box, as in gate 10.
+  12. **Phase 1's gate 11, again** (§2.14.8). At 3840×2160 with the line drawn, the union
+      of both frames' credit boxes is excluded from both checks. Prediction: **0** and **0**,
+      as in Phase 1. The excluded pixel count is recorded.
+  13. **Phase 1's gate 12, again**, through `Job::prepare_without_credit`: roof > south
+      wall > west wall, each neutral and not ground, the roof below 255; the courtyard and
+      the notch as in Phase 1.
+  14. **Deterministic.** `render --project scratch/midtown --scenario baseline --seed 42
+      --from 300 --to 360 --speedup 1`, orthographic, twice with `--buildings
+      scratch/midtown/buildings.geojson` and twice without. `ffprobe` gives
+      `1920,1080,30/1,1800` for each, and each pair's `framemd5` is equal, **1800 of
+      1800**.
+  15. **Recorded, not gated:** the default Midtown render with `--buildings` (9,000 frames)
+      is timed once by hand, beside Phase 1's 172.7 s.
+  - **The user's check:**
+  16. **The user watches** the Midtown renders: orthographic with `--buildings` at
+      1920×1080 and at 1280×720, and gate 13's flight from Phase 1 with the line. The
+      flicker of OQ-8 is expected. The user reads the line over dark ground, roads and
+      roofs, and says whether the size, margin and outline should change (iteration,
+      §2.14.5). The wording is settled (OQ-9).
+- **Predictions at a glance:**
+
+  | What | Prediction | Gate |
+  |---|---|---|
+  | `render` of urban_grid: default and `--camera` | 8700 of 8700 frames equal to each reference | 1 |
+  | Packages added; `Cargo.toml` lines changed; release crates | 0; `license` only; 363 | 2 |
+  | `view`'s and the reader's files; `Buildings` from both caches | unchanged; equal | 3 |
+  | Re-fetched cache: buildings by height / num_floors / default | 4,336: 4,277 / 8 / 51 (Phase 1's) | 4 |
+  | Its sources; buildings by dataset count | OpenStreetMap 4,327, USGS Lidar 316, Microsoft 29, none 0; 4,000 with one and 336 with two | 4 |
+  | Its bytes; SHA-256 | 2,284,830; `f241ccbd…` (the probe's file) | 4 |
+  | The new file without its two new members | byte-identical to Phase 1's | 5 |
+  | The rule's made-up cases (11 rows, 18 cases) | each line or error as tabled | 6 |
+  | Midtown's line without / with buildings | `© OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1` / the same `· Microsoft ML Buildings (ODbL) · USGS Lidar` | 7 |
+  | Font size at 720p, 1080p, 2160p, portrait 1080×1920; contrast; `fit_size` | 13, 20, 40, 11 px; 18.4:1; 13, 19, error (7), 15, error (7) | 8 |
+  | Pixels changed outside the credit box | 0 | 10, 11 |
+  | Box edges at 1920×1080, `x1` and `y1` exclusive | right 1902, bottom 1062, top 1034 ± 1 | 10 |
+  | The *long* line at 1920×1080 | an error, `S'` 7 (or 8) | 9 |
+  | Ink span at 720p / 2160p; box width; the six-source line at 1080p | 16 ± 2 / 49 ± 2 px; 60.37 em ± 3 % + 2o; 17 or 18 px | 11 |
+  | Phase 1's gate 11, credit box excluded | 0 and 0 | 12 |
+  | Orthographic Midtown, twice, with and without buildings | 1800 of 1800 | 14 |
+
+- **Not predicted, and so not gated:**
+  - the look: `S`'s ratio, the margin, the outline's width and the two colours (§2.14.5),
+    all for the user at gate 16;
+  - the count of pixels the line changes (gates 10–12), the binary's growth (gate 2), and
+    wall times: the fetch (gate 4), the build (gate 2) and the renders (gate 15).
+- **Close-out (standing plan steps, the methodology's §3):**
+  - **Commit plan:** one branch (`vis-002-phase-2`), one push. The commits:
+    - the fetch's two members, the report's two keys, the re-fetch, and gate 5's new values
+      in `scripts/gates-city.sh` (gates 4 and 5);
+    - `src/credit.rs` and `tests/credit.rs`'s line tests (gates 6–8; gate 7, ignored,
+      needs the Midtown fixture);
+    - the font, the drawing, the `Job` API, the test edits and `scripts/gates-credit.sh`
+      (gates 1–3 and 9–14);
+    - the gate run and its record;
+    - the close-out.
+  - **Reconciliation:**
+    - a new `rules/credit.md` (`max_lines: 40`): the rule and the table, its inputs and
+      checks, the drawing numbers, the font and its licence, and `Job`'s three credit
+      accessors. Its `sources` are `src/credit.rs`, `src/draw.rs`, `src/render.rs`,
+      `src/lib.rs` and `scripts/fetch-buildings.sh`;
+    - `rules/buildings.md` (58/60): the fetch's `sources` and `description`, and the
+      report's two keys, reworded to fit its cap;
+    - `rules/render.md` (60/60) and `rules/inputs.md` (50/50) are at their caps. Each gains
+      a pointer to `rules/credit.md`, reworded to fit, and no `max_lines` is raised:
+      `render.md` for the line in the scene; `inputs.md` for the two checks after
+      `--buildings`' and the fit after the settle frames. `render.md`'s Pipeline line,
+      which lists `Job`'s gate API, also names `prepare_without_credit`, `credit()`,
+      `credit_size()` and `credit_box()`, or points to `rules/credit.md` for them;
+    - `rules/view.md` and `rules/camera.md`: none needed, since neither `view` nor the
+      camera changes;
+    - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
+    - the README:
+      - the credit section says that the line is drawn, from what, and that a cache fetched
+        before Phase 2 must be fetched again (`REFETCH=1`) before `render --buildings`
+        reads it;
+      - for whoever publishes a video (OQ-13): put the full credit, OQ-7's text with
+        `openstreetmap.org/copyright`, in its description;
+      - the fetch report's two keys;
+      - the font, its licence and the crate's `(MIT OR Apache-2.0) AND OFL-1.1` (OQ-12);
+      - the new gate commands: `scripts/gates-credit.sh`, with `REFETCH=1`, and `cargo
+        test --release --test credit -- --include-ignored --test-threads=1`;
+    - `CLAUDE.md`: the licence line names the font's exception and the crate's
+      `(MIT OR Apache-2.0) AND OFL-1.1` (OQ-12);
+    - status artifact: none needed, since this repo has none.
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and its
     cause.
   - Write this phase's `shipped` date.
