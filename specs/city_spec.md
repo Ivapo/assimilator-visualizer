@@ -1289,7 +1289,7 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     theme also has CC BY 4.0 sources. Recorded as §2.2 l, §2.10 and Phase 1's close-out.
     No gate or prediction changes.
 - **OQ-8** — The `--camera` render is not deterministic on Midtown (found in Phase 1's gate
-  run, 2026-10-01; gate 13's flight comparison is a recorded miss).
+  run, 2026-10-01; gate 13's flight comparison is a recorded miss). **RESOLVED.**
   - *The evidence:* `render --camera tests/city-flight.toml --from 300 --to 360 --speedup
     1` on the Midtown fixture, run again and again, gives 1663 or 1695 of 1800 equal
     frames. The ranges that differ are 363–499 or 395–499, with or without `--buildings`.
@@ -1326,7 +1326,14 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     `vehicle_id` order, and leaves out a box identical to a higher id's, so a stack shows
     as its highest id. Its gates include this spec's flight pair, with and without
     buildings. Stays open until vis-001 Phase 6 ships.
-  - *(design call: the user; non-blocking.)*
+  - ~~*(design call: the user; non-blocking.)*~~
+  - *(resolved 2026-10-03, user)* **Fixed by vis-001 Phase 6**
+    (`specs/visualizer_spec.md` §2.12), which shipped 2026-10-03 when the user passed its
+    gate 12. The perspective boxes are drawn as one mesh in `vehicle_id` order, and a
+    box identical to a later box is not drawn, so a stack shows as its highest id. The
+    flight pair is now 1800 of 1800, with and without buildings, and `gates-city.sh`'s
+    gate 13 gives 1800 against the sandboxed run too (vis-001 Phase 6 gates 9 and 10).
+    Phase 1's recorded gate 13 miss stands as recorded.
 - **OQ-9** — The credit line's wording, and which non-CC-BY building sources it names
   (§2.14.2). **RESOLVED.**
   - *The proposal:* items joined by ` · `: `© OpenStreetMap contributors (ODbL)`, then

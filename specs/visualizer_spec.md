@@ -36,7 +36,7 @@ phases:
     by: null
   - name: "Phase 6 — Deterministic --camera: the perspective boxes as one mesh, in vehicle_id order"
     reviewed: 2026-10-03
-    shipped: null
+    shipped: 2026-10-03
     cut: null
     by: null
 
@@ -1518,13 +1518,14 @@ vertices. Render time is recorded, not predicted.
   gate 13):* the user left this open. The orchestrator's recommendation: a later phase; a
   2-minute render is enough for now.
 
-- **OQ-14** — Should boxes that overlap but are not identical be drawn so the higher id
+- ~~**OQ-14** — Should boxes that overlap but are not identical be drawn so the higher id
   wins their shared faces too (§2.12.3)? Phase 6 leaves out only boxes identical bit for
   bit. Midtown's window also has 3,955 overlapping pair-frames that are not identical,
   most 1–999 mm apart along a lane, at equal lengths. Their tops show the higher id, but
   each sample of a shared side face goes to whichever depth rounds nearer. The pattern is
   the same on every run, so it does not break determinism, but it can shimmer as the
-  camera moves. The options:
+  camera moves.~~ **RESOLVED 2026-10-03 (user, at Phase 6 gate 12): (a), leave it.** The
+  options:
   - (a) leave it. The cause is the engine's frozen vehicles (vis-002 OQ-4), and an engine
     fix removes most of these pairs;
   - (b) treat boxes within a tolerance, say 0.05 m and 0.1°, as one stack and draw only
@@ -1535,8 +1536,19 @@ vertices. Render time is recorded, not predicted.
     group changes size.
 
   *Recommendation:* (a), and decide from Phase 6 gate 12, where the user watches the
-  Midtown flight. *(design call: the user; deferred by evidence to Phase 6 gate 12;
-  blocks nothing in Phase 6.)*
+  Midtown flight. ~~*(design call: the user; deferred by evidence to Phase 6 gate 12;
+  blocks nothing in Phase 6.)*~~
+
+  *How it was answered:* the user watched the Midtown flight with buildings and saw no
+  shimmer anywhere in it. The pairs could not be singled out at all: no vehicle id is on
+  screen, and tall buildings hide much of the traffic. The scratch analysis in the Phase 6
+  gate record (`specs/reviews/vis-001.md`) agrees:
+  - the two main pairs, vehicles 20/46 and 24/155, are stopped, so each pair shares one
+    speed colour, and a shared face shades the same whichever box wins it;
+  - near pairs in different colours show only briefly.
+
+  Near-identical overlaps stay as they are drawn. If they ever matter, an engine fix for
+  vis-002 OQ-4 removes most of them.
 
 ## 4. Implementation phases
 
