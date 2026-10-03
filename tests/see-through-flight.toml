@@ -1,0 +1,6 @@
+keyframes = [
+  { t = 300.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 0.00, pitch_deg = 35.00 },
+  { t = 320.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 120.00, pitch_deg = 35.00 },
+  { t = 340.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 240.00, pitch_deg = 35.00 },
+  { t = 360.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 0.00, pitch_deg = 35.00 },
+]
