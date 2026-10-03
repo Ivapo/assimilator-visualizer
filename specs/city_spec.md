@@ -17,7 +17,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 2 — Credit: a line built from the data, on every frame of an imported network's render"
-    reviewed: null
+    reviewed: 2026-10-02
     shipped: null
     cut: null
     by: null
@@ -65,7 +65,9 @@ assimilator-video render --project <project> --scenario baseline --seed 42 \
 ```
 
 (The numbers are the Midtown fixture's, §2.9, measured while drafting, §2.12. The report
-is one line; it is wrapped here.)
+is one line; it is wrapped here.) *(2026-10-02)* From Phase 2, the report also has
+`sources` and `no_sources`, the file is 2,284,830 bytes, and the video carries the credit
+line (§2.14).
 
 Rejected candidates for the observable:
 - *`buildings.geojson`.* It is an input to a video, as vis-001 §1 says of the scene bundle.
@@ -137,6 +139,8 @@ Decided by the user, 2026-10-01, before drafting.
   - `B` toggles buildings in `view`; `render` draws them only with `--buildings`;
   - `render` without `--buildings` stays byte-identical: 8700 of 8700 against
     `scratch/ref-8eb9052.framemd5`, as `scripts/gates.sh` checks;
+    *(2026-10-02)* from Phase 2, that holds for urban_grid only: every render of a network
+    with `map_origin` carries the credit line (§2.14.1 decision 2);
   - see-through or fading buildings, land use and textures are later phases.
 - (g) **Pitch:** the 25° floor stays. vis-001 OQ-12 stays open. It belongs to a later phase
   here that brings sky, fog and a wider extent (§2.13).
@@ -453,7 +457,8 @@ fetched building is drawn" means it is in the scene, not in every frame.
   are not neutral. Gate 11 rests on this.
 - **Roads and boxes stay unlit** (vis-001 §2.11.2). The light does not touch their pixels.
 - **Without `--buildings`, nothing new is spawned:** no mesh and no light. That is what keeps
-  `render` byte-identical (§2.2 f).
+  `render` byte-identical (§2.2 f). *(2026-10-02)* From Phase 2, a network with `map_origin`
+  also gets the credit's UI tree, with or without `--buildings` (§2.14.5).
 
 The base grey, the ambient level, the sun's illuminance and the exact angles are iteration
 (vis-001 §2.6). These constraints are not:
@@ -467,6 +472,8 @@ The base grey, the ambient level, the sun's illuminance and the exact angles are
 ### 2.8 `render` and `view`
 
 Both gain `--buildings <file.geojson>`. Without it, nothing changes.
+*(2026-10-02)* From Phase 2, `render` of an imported network draws the credit line with or
+without it, and `render --buildings` needs a cache fetched in Phase 2's form (§2.14).
 
 `render`:
 - **With or without `--camera`.** Without it the camera is vis-001's orthographic top-down
@@ -868,11 +875,22 @@ spawns one UI tree:
   `UiTargetCamera(<the image camera>)`. That component must be there: with no window,
   Bevy has no default UI camera ("the highest order camera targeting the primary window",
   `bevy_ui` 0.19.1);
-- **in it, the line as a `Text`** in the light fill colour. It sets the root's size;
-- **under it, eight copies of the line** in the dark outline colour, absolutely positioned
-  at offsets `(dx, dy)` with `dx, dy ∈ {−o, 0, o}`, not both 0, and drawn below the fill
-  (`ZIndex`). Bevy 0.19 has a `TextShadow` (one offset) but no outline. A one-sided shadow
-  leaves the top and left edges of light glyphs unbordered over a light roof.
+- **in it, the line as a `Text`** in the light fill colour, in the root's flow. It sets the
+  root's size;
+- **beside it, eight copies of the line** in the dark outline colour: children of the root
+  and siblings of the fill, never the fill's children. Each is absolutely positioned at an
+  offset `(dx, dy)`, with `dx, dy ∈ {−o, 0, o}` and not both 0. Each has `ZIndex(-1)`, so
+  it draws below the fill. `ZIndex` orders siblings only, so a child of the fill would draw
+  above it (`bevy_ui` 0.19.1, `src/stack.rs:update_uistack_recursive`). Bevy 0.19 has a
+  `TextShadow` (one offset) but no outline. A one-sided shadow leaves the top and left
+  edges of light glyphs unbordered over a light roof;
+- **all nine have `TextLayout` with `LineBreak::NoWrap`.** Bevy wraps at word boundaries by
+  default, and a wrapped fill would report a width that skips the fit.
+
+`draw::spawn_credit(world, line, camera: Entity, font: Handle<Font>, size, margin,
+offset) -> CreditNodes` spawns this tree. `CreditNodes` holds the root, the fill and the
+eight copies. `draw::set_credit_size(world, &CreditNodes, size)` sets the font size of all
+nine nodes for the fit.
 
 Without a line, nothing is spawned, as §2.7 does for buildings.
 
@@ -888,7 +906,10 @@ Without a line, nothing is spawned, as §2.7 does for buildings.
 
 **The plan: Bevy UI text**, as §2.13 planned. It is less code, and it uses the text
 stack `view` already draws its readout with. The CPU raster is the fallback if gate 10 finds
-a pixel changed outside the box, or gate 14 finds two renders that differ.
+a pixel changed outside the box, or gate 14 finds two renders that differ. Taking it is a
+scope change, not part of Phase 2 as reviewed: it adds `swash` to `Cargo.toml`, which gate
+2 forbids. So it clears Phase 2's `reviewed` (the methodology's §7), and the phase goes
+back to review.
 
 **The numbers**, in output pixels (an image target's scale factor is 1):
 - **font size** `S = round(min(H, 9W/16) / 54)`: 13 px at 1280×720, 20 at 1920×1080, 40 at
@@ -907,10 +928,15 @@ the user's check (gate 16). These constraints are not:
 
 **The fit.** The line never wraps and is never clipped. It shrinks to fit instead.
 - After the settle frames, the fill text's computed width `w` is read. If `w > W − 2m`,
-  the font size becomes `S' = floor(S · (W − 2m) / w)`, and the line is laid out and read
-  again, until it fits.
-- `m` and `o` keep their values for `S`.
-- A size under 10 px is an error (§2.14.7): a credit too small to read is no credit.
+  the font size becomes `S' = floor(S · (W − 2m) / w)`. Here `S` is the current size and
+  `w` its width.
+- `set_credit_size` then sets `S'` on all nine nodes, and `Renderer` runs the three settle
+  renders again (`render(&[])`, as `build` does). Then `w` is read again, until it fits.
+- `m` and `o` keep their values for the first `S`. `credit::fit_size(size, width_px,
+  avail_px)` takes `avail_px = W − 2·margin(S)` and computes one pass.
+- A final size under 10 px is an error (§2.14.7): a credit too small to read is no credit.
+  That includes an `S` under 10 before any shrink, which a frame under about 513 px tall
+  gives at 16:9 (640×360 gives 7).
 
 Estimated from Fira Sans Medium's advance widths, without kerning (§2.14.10), the share of
 `W − 2m` is the same at every 16:9 size:
@@ -921,12 +947,16 @@ Estimated from Fira Sans Medium's advance widths, without kerning (§2.14.10), t
 | Midtown with buildings | 60.37 em | 785 px of 1,254 | 63 % | not shrunk |
 | Naming Esri, Google, Microsoft and USGS too | 98.06 em | — | 102–104 % | 12, 19 and 38 px |
 | Gate 11's made-up *six sources* line | 105.39 em | — | 109–112 % | 11, 17 and 35 px |
-| Gate 9's made-up *long* line | 241.28 em | — | about 250–257 % | 5, 7 and 15 px: an error at 720p and 1080p |
+| Gate 9's made-up *long* line | 241.28 em | — | about 250–257 % | 5, 7 and 15 px: an error at 720p and 1080p. At 1080p, 7 is 2.6 % above 8, inside the kerning allowance, so 7 or 8 |
 
 The font sizes are at 1280×720, 1920×1080 and 3840×2160.
 
 **The credit box** is the fill text's computed rectangle grown by `o` on every side,
-rounded outward to whole pixels. `Job::credit_box()` returns it for the gates.
+rounded outward to whole pixels. `Job::credit_box()` returns it for the gates as
+`Option<[u32; 4]>`, `[x0, y0, x1, y1]`, with `x1` and `y1` exclusive: the box's pixels are
+`x0 ≤ x < x1`, `y0 ≤ y < y1`. Its height is the fill's line box, `1.2·S` (Bevy's default
+`LineHeight`; Fira Sans's ascent and descent are 935 and −265), plus `2o`. At 1920×1080
+that is 24 + 4 = 28 px, so `y0` is 1034.
 
 **Its height.** The tallest glyphs of both Midtown lines are `(` and `)`, and the lowest
 are `p` and `g`: 1.070 em from top to bottom. With the outline that is 1.070·S + 2o: 15.9 px at
@@ -947,6 +977,18 @@ Bevy's built-in font cannot draw the line. `default_font` embeds `FiraMono-subse
 
 **The plan: Fira Sans Medium 4.203**, from `google/fonts` (`ofl/firasans/`). It is the
 proportional sibling of `view`'s Fira Mono, from the same foundry under the same licence.
+- **The pin is the SHA-256**, since no `google/fonts` commit was recorded:
+  - `FiraSans-Medium.ttf`: 457,248 bytes,
+    `cbc1842cbed8c1d1146ba7c9db97d8f28c9bedfd25f41c5b0e1259ca48622328`;
+  - `OFL.txt`: 4,370 bytes,
+    `8f24842e9174beda18a556c2ae7d54f5dc444340c19a3a9ef77e23bca366adbd`.
+- **Where to get them:** drafting's copies are kept in gitignored
+  `scratch/vis002p2-font/`. Failing that, download from
+  `https://raw.githubusercontent.com/google/fonts/main/ofl/firasans/`, and the hashes must
+  match. If they do not, the font has moved on. §2.14.5's widths are then measured again
+  before building, and the change is recorded.
+- Copying them into `assets/fonts/` is a build step, not a gate. The exit gate's
+  "only gate 4 uses the network" does not cover a download made there.
 - `Font::from_bytes` (`bevy_text` 0.19.1) takes the embedded bytes, so `render` reads no
   font file at run time.
 - The OFL's condition 2: the font "may be bundled, redistributed and/or sold with any
@@ -970,11 +1012,14 @@ proportional sibling of `view`'s Fira Mono, from the same foundry under the same
      the file cannot be read (an absent file is not an error), or is not JSON; `source` is
      neither `null` nor an object with a string `type`; `Overture` has no string `release`;
      the type is neither `Overture` nor `Osm`. Each is `error: <project>/import_report.json:
-     …`;
+     …`. A report with no `source` key reads as `"source": null`, as serde reads the
+     engine's `Option`. The engine always writes the key, so only a hand-made report lacks
+     it;
   2. the buildings file's two members (§2.14.3).
 - **One after the scene's settle frames**, before the encoder starts: the fit (§2.14.5),
-  `error: the credit line fits a <W>-px frame only below 10 px (<S'> px); use a wider
-  --width`.
+  `error: the credit line would be <S'> px in a <W>×<H> frame, under 10 px; render a
+  larger frame`. `S'` is the final size: the shrunk size, or `S` itself when `S` is
+  already under 10.
 
 Each is one line with exit 1, no progress line and no output file (vis-001 §2.4).
 
@@ -983,7 +1028,9 @@ Each is one line with exit 1, no progress line and no output file (vis-001 §2.4
 - `Job::prepare_with(o, camera, buildings)` builds the line as the CLI does (decision 5).
 - `Job::prepare_without_credit(o, camera, buildings)` is the same job with no line. It is
   for the gates; no flag reaches it.
-- `Job::credit()` returns the line, if any, and `Job::credit_box()` its box in pixels.
+- `Job::credit() -> Option<&str>` returns the line, if any. `Job::credit_size() ->
+  Option<u32>` returns its font size after the fit. `Job::credit_box()` returns its box in
+  pixels (§2.14.5).
 - `src/render.rs:Renderer`'s two constructors take the line as an `Option`.
 - `src/buildings.rs` and every file under `src/view/` are not edited.
 
@@ -1091,7 +1138,7 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     ```sql
     SELECT s.id, list_sort(list_distinct([x.dataset FOR x IN s.sources])) AS datasets
     FROM read_parquet('s3://overturemaps-us-west-2/release/2026-09-23.1/theme=transportation/type=segment/*.parquet') s
-    WHERE <gate 4's bbox on s.bbox> AND s.id IN (<the 222>)
+    WHERE <Phase 1's gate 4 bbox on s.bbox> AND s.id IN (<the 222>)
     ORDER BY s.id
     ```
 
@@ -1748,7 +1795,12 @@ anything in `view`. The plan, as decided:
 
 **Its one deadline:** gate 4's re-fetch needs `2026-09-23.1` on S3, until about 2026-11-22
 (§2.14.3). Drafting's probe file in `scratch/vis002p2-probe/fetch/` is the same file and
-covers the gates that do not fetch.
+covers the gates that do not fetch. If the release is gone and the probe file is still
+there:
+- it is copied to `scratch/midtown/buildings.geojson` in place of gate 4's fetch;
+- gate 4's fetch checks are a recorded miss, with that reason. Those are the
+  `fetch.log` report line and the second fetch;
+- gate 4's file checks (bytes, SHA-256, the dataset counts) and gates 5–14 run on the copy.
 
 - **Scope:**
   - **The fetch** (`scripts/fetch-buildings.sh`, §2.14.3): the `sources` column, the
@@ -1762,20 +1814,23 @@ covers the gates that do not fetch.
     - The dataset table as a constant, in its order.
     - `font_size(width, height)`, `margin(size)` and `outline_offset(size)` (§2.14.5); `FILL`
       and `OUTLINE` as sRGB constants.
-    - `fit_size(size, width_px, frame_width) -> Result<u32>`: §2.14.5's shrink, with its
-      10 px floor.
+    - `fit_size(size, width_px, avail_px) -> Result<u32>`: one pass of §2.14.5's shrink,
+      with its 10 px floor. `avail_px` is `W − 2·margin(S)` for the first `S`.
   - **Drawing (`src/draw.rs`, `src/render.rs`).**
-    - `draw::spawn_credit(world, line, camera, font) -> Entity`: §2.14.5's tree, with
-      `UiTargetCamera` and the outline's eight copies under the fill.
+    - `draw::spawn_credit(world, line, camera: Entity, font: Handle<Font>, size, margin,
+      offset) -> CreditNodes` and `draw::set_credit_size(world, &CreditNodes, size)`:
+      §2.14.5's tree. It has `UiTargetCamera`, the outline's eight copies as the fill's
+      siblings at `ZIndex(-1)`, and `LineBreak::NoWrap` on all nine.
     - The font: `assets/fonts/FiraSans-Medium.ttf` and `assets/fonts/OFL.txt` (new; OQ-12),
       embedded with `include_bytes!` and added through `Font::from_bytes`.
     - `src/render.rs:Renderer` takes `credit: Option<&str>` in `new` and `new_perspective`.
       It keeps the image camera's entity on both paths and spawns the tree only with a
       line. After the settle frames it reads the fill's computed width and shrinks the
-      line until it fits (§2.14.5), or fails (§2.14.7). Then it reads the credit box.
+      line until it fits, running the three settle renders again after each shrink
+      (§2.14.5), or fails (§2.14.7). Then it reads the credit box and keeps the size.
   - **`render` (`src/lib.rs`).** `Job::prepare_with` builds the line after the buildings
-    file, and `Job::prepare_without_credit` does not (§2.14.7). `Job::credit()` and
-    `Job::credit_box()` are added. `src/main.rs`, `RenderOptions` and the progress lines do
+    file, and `Job::prepare_without_credit` does not (§2.14.7). `Job::credit()`,
+    `Job::credit_size()` and `Job::credit_box()` are added. `src/main.rs`, `RenderOptions` and the progress lines do
     not change.
   - **`Cargo.toml`:** `license = "(MIT OR Apache-2.0) AND OFL-1.1"` (OQ-12,
     answered (b)). No dependency or feature changes.
@@ -1783,8 +1838,11 @@ covers the gates that do not fetch.
     `scripts/gates.sh`, `tests/gates.rs`, `tests/view.rs`, `tests/slider.rs`
     and `tests/camera.rs`.
   - **Tests.**
-    - `tests/credit.rs` (new): gates 6–8 headless, gates 10 and 11 `#[ignore]`d (GPU and
-      the Midtown fixture), like `tests/buildings.rs`. Gate 6's inputs are made up in the
+    - `tests/credit.rs` (new), `#[ignore]`d as `tests/buildings.rs` does:
+      - gates 6 and 8, headless and not ignored;
+      - gate 3's `Buildings` equality and gate 7, headless, ignored (they need the
+        Midtown fixture);
+      - gates 10 and 11, ignored (the GPU and the fixture). Gate 6's inputs are made up in the
       test: a network from `serde_yaml::from_str` as in Phase 1, and the reports and
       buildings files written into a temporary directory. None of it is map data (§2.10).
     - Two made-up buildings files, written from `tests/shapes.geojson` at test time and
@@ -1792,15 +1850,21 @@ covers the gates that do not fetch.
       - *six sources*: Esri, Google, Microsoft, USGS and gate 6's `Alpha Survey` and `Zeta
         Lab`, on the six shapes (105.39 em; gate 11's shrink). `tests/credit.rs` writes it
         to a temporary directory;
-      - *long*: ten made-up dataset names of 40 characters on one shape (241.28 em; gate
-        9's error). `scripts/gates-credit.sh` writes it under `scratch/out/credit/`.
+      - *long*: ten made-up dataset names on one shape, `Made-up dataset name number 00
+        for tests` to `… number 09 for tests` (40 characters each; 241.28 em; gate 9's
+        error). `scripts/gates-credit.sh` writes it under `scratch/out/credit/`.
     - `tests/buildings.rs`: gate 11's test excludes the credit box, and gate 12's helper
       `shape_frames` builds its two jobs with `Job::prepare_without_credit` (§2.14.8). No
       other test there changes.
     - `scripts/gates-city.sh`: gate 5's report, bytes and SHA-256 take Phase 2's values
-      (gate 4). Nothing else in it changes.
-    - `scripts/gates-credit.sh` (new) runs gate 4's checks (its second fetch only with
-      `REFETCH=1`), gate 9's CLI cases and gate 14. Gate 9's report cases run on a copy of
+      (gate 4). Nothing else in it changes. The gate run runs it once, after gate 4 and
+      without `REFETCH`, since gate 4 makes the second fetch. Expected: everything passes
+      but Phase 1's two recorded misses, gate 3's FCD rows (280,872 against 280,875) and
+      gate 13's flight pair (OQ-8).
+    - `scripts/gates-credit.sh` (new) runs gate 4's checks after its first two steps,
+      with its second fetch only with `REFETCH=1`. It also runs gate 5's strip-and-compare,
+      gate 9's CLI cases and gate 14. Gate 4's first two steps, the copy and the
+      re-fetch, are run by hand, once, in that order, and recorded. Gate 9's report cases run on a copy of
       `scratch/midtown` under `scratch/out/credit/` whose `import_report.json` is replaced.
       The fixture itself is never edited.
 - **Exit gate.** On the development machine (Apple M3, macOS), on two fixtures:
@@ -1830,11 +1894,12 @@ covers the gates that do not fetch.
   3. **`view`.**
      - `git diff <base> -- src/view/ src/buildings.rs` is empty.
      - `buildings::read` gives equal `Buildings` for Phase 1's cache and Phase 2's: the
-       same ids in order, polygons, heights, rules and counts, compared exactly. So
+       same ids in order, polygons, heights, rules and counts, compared exactly
+       (`tests/credit.rs`, `PartialEq`). So
        `view --buildings` draws the same buildings from either file.
   - **The fetch and the cache (network, once):**
   4. **The re-fetch.**
-     - Before it, Phase 1's cache is copied to `scratch/midtown/buildings-vis002p1.geojson`.
+     - Before it, Phase 1's cache is copied to `scratch/buildings-vis002p1.geojson`.
        Its SHA-256 is still `561a615d…` (Phase 1's gate 5).
      - Then `REFETCH=1 scripts/fixture.sh midtown`. Its report line in `fetch.log` gives
        release `2026-09-23.1`, Phase 1's gate 4 bbox, and **4,336** buildings: **4,277** by
@@ -1887,17 +1952,19 @@ covers the gates that do not fetch.
      - `outline_offset` gives 1, 2 and 3 at sizes 13, 20 and 40, and `margin` the size.
      - The WCAG contrast ratio of `FILL` against `OUTLINE` is 18.4:1, at least 7:1.
      - `fit_size`:
-       - (13, 785, 1280) gives 13: it fits;
-       - (20, 1961, 1920) gives 19;
-       - (20, 4826, 1920) is an error, at 7 px;
-       - (40, 9651, 3840) gives 15.
+       - (13, 785, 1254) gives 13: it fits;
+       - (20, 1961, 1880) gives 19;
+       - (20, 4826, 1880) is an error, at 7 px;
+       - (40, 9651, 3760) gives 15;
+       - (7, 300, 626), at 640×360, is an error at 7 px: `S` is under 10 before any shrink.
   9. **Errors through `render`.** Each exits 1 with one stderr line (`error: <project>/
-     import_report.json: …` or `error: --buildings …` or `error: the credit line is …`),
-     with no progress line and no file at `--out`:
+     import_report.json: …` or `error: --buildings …` or `error: the credit line would be
+     …`), with no progress line and no file at `--out`:
      - on the Midtown copy, its report replaced in turn by: not JSON; `source.type`
        `Here`; `Overture` without `release`;
-     - Midtown with `--buildings scratch/midtown/buildings-vis002p1.geojson` (no release);
-     - Midtown with the made-up *long* file at 1920×1080: the line fits only at 7 px;
+     - Midtown with `--buildings scratch/buildings-vis002p1.geojson` (no release);
+     - Midtown with the made-up *long* file at 1920×1080: the fit's error, its `S'` under
+       10 and recorded. Prediction: **7**, or 8 with kerning (§2.14.5's table);
      - urban_grid with `--buildings tests/shapes.geojson` still gives Phase 1's
        `metadata.map_origin` error, before any credit check.
   - **Through the GPU, offline:**
@@ -1908,14 +1975,18 @@ covers the gates that do not fetch.
       - Every pixel that differs between the two lies inside `Job::credit_box()`. Outside
         it, the frames are byte-identical. Prediction: **0** pixels outside.
       - Inside, more than 0 pixels differ (the count is recorded).
-      - The box's right edge is `W − m + o` and its bottom edge `H − m + o` (1902 and 1062
-        here), and the box is the same at all four times.
-      - Once more through a one-keyframe `--camera` file (look-at (0, 0), `height_m` 900,
-        pitch 60), at `render_empty()` only, with no boxes to stack (OQ-8): 0 pixels
+      - `Job::credit()` is gate 7's line for that job, without or with buildings. `main.rs`
+        renders through the same `Job::prepare_with`, so this is the CLI's line.
+      - The box's right edge `x1` is `W − m + o` and its bottom edge `y1` is `H − m + o`,
+        both exclusive: 1902 and 1062 here. Its top `y0` is **1034 ± 1** (§2.14.5). The box
+        is the same at all four times.
+      - Once more through a one-keyframe `--camera` file, `keyframes = [ { t = 300.000, x =
+        0.00, y = 0.00, height_m = 900.00, yaw_deg = 0.00, pitch_deg = 60.00 } ]`, with
+        `--buildings`, at `render_empty()` only, with no boxes to stack (OQ-8): 0 pixels
         outside the box.
   11. **Legible at 1280×720 and 3840×2160** (orthographic Midtown with `--buildings`,
       `render_empty()`):
-      - the font size is 13 and 40 px;
+      - `Job::credit_size()` is 13 and 40;
       - the rows of the box holding a pixel that differs from the frame without the line
         span **16 ± 2 px** and **49 ± 2 px**. That is the glyphs' 1.070 em plus the outline
         (§2.14.5), so capitals are 9.0 and 27.6 px tall;
@@ -1924,7 +1995,9 @@ covers the gates that do not fetch.
       - inside the box, the lightest pixel has every channel ≥ 220 and the darkest every
         channel ≤ 20: the fill and the outline are both reached;
       - **the shrink:** with the made-up *six sources* file at 1920×1080, the line is
-        laid out at **17 or 18 px**, and its box fits within `W − 2m`.
+        laid out at **17 or 18 px** (`Job::credit_size()`). The fill's width is at most
+        `W − 2m`, the fit's bound. Against the same job without the line at
+        `render_empty()`, **0** pixels change outside the box, as in gate 10.
   12. **Phase 1's gate 11, again** (§2.14.8). At 3840×2160 with the line drawn, the union
       of both frames' credit boxes is excluded from both checks. Prediction: **0** and **0**,
       as in Phase 1. The excluded pixel count is recorded.
@@ -1955,11 +2028,12 @@ covers the gates that do not fetch.
   | Its sources; buildings by dataset count | OpenStreetMap 4,327, USGS Lidar 316, Microsoft 29, none 0; 4,000 with one and 336 with two | 4 |
   | Its bytes; SHA-256 | 2,284,830; `f241ccbd…` (the probe's file) | 4 |
   | The new file without its two new members | byte-identical to Phase 1's | 5 |
-  | The rule's 11 made-up cases | each line or error as tabled | 6 |
+  | The rule's made-up cases (11 rows, 18 cases) | each line or error as tabled | 6 |
   | Midtown's line without / with buildings | `© OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1` / the same `· Microsoft ML Buildings (ODbL) · USGS Lidar` | 7 |
-  | Font size at 720p, 1080p, 2160p, portrait 1080×1920; contrast; `fit_size` | 13, 20, 40, 11 px; 18.4:1; 13, 19, error (7), 15 | 8 |
-  | Pixels changed outside the credit box | 0 | 10 |
-  | Box edges at 1920×1080 | right 1902, bottom 1062 | 10 |
+  | Font size at 720p, 1080p, 2160p, portrait 1080×1920; contrast; `fit_size` | 13, 20, 40, 11 px; 18.4:1; 13, 19, error (7), 15, error (7) | 8 |
+  | Pixels changed outside the credit box | 0 | 10, 11 |
+  | Box edges at 1920×1080, `x1` and `y1` exclusive | right 1902, bottom 1062, top 1034 ± 1 | 10 |
+  | The *long* line at 1920×1080 | an error, `S'` 7 (or 8) | 9 |
   | Ink span at 720p / 2160p; box width; the six-source line at 1080p | 16 ± 2 / 49 ± 2 px; 60.37 em ± 3 % + 2o; 17 or 18 px | 11 |
   | Phase 1's gate 11, credit box excluded | 0 and 0 | 12 |
   | Orthographic Midtown, twice, with and without buildings | 1800 of 1800 | 14 |
@@ -1973,21 +2047,25 @@ covers the gates that do not fetch.
   - **Commit plan:** one branch (`vis-002-phase-2`), one push. The commits:
     - the fetch's two members, the report's two keys, the re-fetch, and gate 5's new values
       in `scripts/gates-city.sh` (gates 4 and 5);
-    - `src/credit.rs` and `tests/credit.rs`'s headless half (gates 6–8);
+    - `src/credit.rs` and `tests/credit.rs`'s line tests (gates 6–8; gate 7, ignored,
+      needs the Midtown fixture);
     - the font, the drawing, the `Job` API, the test edits and `scripts/gates-credit.sh`
       (gates 1–3 and 9–14);
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
     - a new `rules/credit.md` (`max_lines: 40`): the rule and the table, its inputs and
-      checks, the drawing numbers, the font and its licence. Its `sources` are
-      `src/credit.rs`, `src/draw.rs`, `src/render.rs` and `scripts/fetch-buildings.sh`;
+      checks, the drawing numbers, the font and its licence, and `Job`'s three credit
+      accessors. Its `sources` are `src/credit.rs`, `src/draw.rs`, `src/render.rs`,
+      `src/lib.rs` and `scripts/fetch-buildings.sh`;
     - `rules/buildings.md` (58/60): the fetch's `sources` and `description`, and the
       report's two keys, reworded to fit its cap;
     - `rules/render.md` (60/60) and `rules/inputs.md` (50/50) are at their caps. Each gains
       a pointer to `rules/credit.md`, reworded to fit, and no `max_lines` is raised:
       `render.md` for the line in the scene; `inputs.md` for the two checks after
-      `--buildings`' and the fit after the settle frames;
+      `--buildings`' and the fit after the settle frames. `render.md`'s Pipeline line,
+      which lists `Job`'s gate API, also names `prepare_without_credit`, `credit()`,
+      `credit_size()` and `credit_box()`, or points to `rules/credit.md` for them;
     - `rules/view.md` and `rules/camera.md`: none needed, since neither `view` nor the
       camera changes;
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
