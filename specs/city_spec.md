@@ -7,7 +7,8 @@ note: >
   extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture. Phase 2 draws
   the data's credit line (OpenStreetMap, Overture, building sources) on every frame of an
   imported network's render. Phase 3 cuts the buildings between the camera and the point it
-  looks at down to stubs, on request, in a keyframed render and in view.
+  looks at down to stubs, by default, in a keyframed render and in view;
+  `--no-see-through` turns it off.
 status: accepted
 last_updated: 2026-10-03
 
@@ -1177,7 +1178,8 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
 
 Drafted 2026-10-03. At vis-001 Phase 6's gate 12 the user found that tall buildings hide
 much of the traffic in Midtown's flight. This phase cuts the buildings that stand between
-the camera and the point it looks at down to stubs, when asked to. It works in the
+the camera and the point it looks at down to stubs, by default wherever buildings are
+drawn in perspective (decision 3, as changed 2026-10-03). It works in the
 perspective draw path that vis-001 Phase 6 made deterministic (`specs/visualizer_spec.md`
 §2.12), and changes only the buildings' mesh, never the boxes' draw. The numbers below
 come from a probe run while drafting (§2.15.9).
@@ -1191,6 +1193,17 @@ Decided by the user, 2026-10-03, before drafting:
    block's footprint stays. It is opaque: no transparency.
 3. **Opt-in:** `render` gets a flag (or a setting in the flight file; the draft proposes
    one), and `view` gets a key. Without it, every render stays byte-identical.
+
+   *(Changed by the user, 2026-10-03, on the draft, before review; this also answers
+   OQ-14.)* **See-through is on by default** wherever buildings are drawn in
+   perspective: `render --buildings --camera`, and `view --buildings`.
+   - `--no-see-through` turns it off, in `render` and in `view`. `X` in `view` still
+     toggles it.
+   - With `--no-see-through`, every frame stays byte-identical to today's.
+   - The orthographic render is unchanged either way.
+
+   So from Phase 3 on, a flight rendered with `--buildings` is cut unless the flag says
+   otherwise. §2.15.6 and Phase 3's gates follow this.
 4. **Phase 4, recorded now:** a building with `building_part`s is drawn from its parts,
    each standing from its own `min_height`. Raised bases are honoured. Flat roofs and the
    neutral grey stay. No roof shapes, and no Overture colours.
@@ -1316,7 +1329,8 @@ its walls (§2.7).
   through an orthographic camera, a building hides exactly the road under its footprint:
   2.239 % of Midtown's centreline length (Phase 1 gate 10). A stub would still cover
   that, and a roof's lit colour does not depend on its height, so the cut would change
-  nothing a viewer could see. `--see-through` without `--camera` is an error (§2.15.6).
+  nothing a viewer could see. It draws no cut, with or without `--no-see-through`
+  (§2.15.6).
 
 #### 2.15.5 How the cut is drawn: the building mesh's heights, rewritten on the CPU
 
@@ -1353,41 +1367,46 @@ it.
 
 #### 2.15.6 The flag, the key and their errors
 
-**The draft's proposal (OQ-14):**
-- **`render --see-through`.** It needs `--buildings` and `--camera`. Each frame's
-  heights follow that frame's pose.
-- **`view --see-through`** starts `view` with see-through on. It needs `--buildings`.
+*(Rewritten 2026-10-03, before review, for decision 3 as changed and OQ-14's answer. The
+draft's first proposal, an opt-in `--see-through` with two errors, is in OQ-14.)*
+
+**On by default, where it can act:**
+- **`render`** cuts when it has both `--buildings` and `--camera`. Each frame's heights
+  follow that frame's pose. Without either, nothing is cut.
+- **`view`** starts with see-through on when it has `--buildings`.
+- **`--no-see-through`**, on `render` and on `view`, turns it off. With it, the scene is
+  built and drawn exactly as today: no `BuildingsCut`, no mesh replaced, and so every
+  frame byte-identical to `2b25d5e`'s (gate 2).
 - **`X`** in `view` (by position, `KeyCode::KeyX`; unbound today) flips see-through at any
-  moment, like `B`, and changes nothing else.
+  moment, like `B`, and changes nothing else. `view --no-see-through` starts it off, and
+  `X` can still turn it on.
   - With the buildings hidden (`B`), nothing changes on screen until `B` shows them, cut
     or not as `X` says.
   - Without `--buildings`, `X` flips a flag that nothing reads.
   - The keyframe line does not carry it, since `render` takes it as a flag.
-- **`--bench` with `--see-through`** rebuilds the mesh on every frame, changed or not. The
-  bench's camera stands still at the launch fit, where nothing would be rebuilt, so this
-  measures the worst case.
+- **`--bench` with buildings and see-through on**, now the default, rebuilds the mesh on
+  every frame, changed or not. The bench's camera stands still at the launch fit, where
+  nothing would be rebuilt, so this measures the worst case. `--no-see-through` gives
+  Phase 1's bench.
 
-**The errors.** Each is one line with exit 1, no progress line, no output file and no
-window (vis-001 §2.4). They are checked first, before any file is read, in this order:
-- `error: --see-through needs --buildings <file.geojson>`;
-- `error: --see-through needs --camera <file.toml>` (`render` only).
+**`--no-see-through` where there is nothing to cut is accepted, with no effect.** That
+covers `render` without `--buildings` or without `--camera`, and `view` without
+`--buildings`. The draft proposes no error there:
+- the flag asks for today's frames, and those renders already give them;
+- a harness can then pass `--no-see-through` on every call to keep today's output,
+  whatever else it passes;
+- an error would make the flag depend on two others for no gain.
 
-Then every other check runs in its own order. A flight on urban_grid with `--buildings`
-and `--see-through` still stops at `--buildings`' "needs a georeferenced network"
-(§2.4.3).
+**No new error.** The two errors drafted for `--see-through` go with it. Every check runs
+in its own order as today. A flight on urban_grid with `--buildings` still stops at
+`--buildings`' "needs a georeferenced network" (§2.4.3), with or without the flag.
+`--see-through` is not a flag, so clap rejects it as a usage error (exit 2).
 
-**The alternative, a setting in the flight file** (`see_through = true`, a top-level key
-beside `keyframes`):
-- its benefit is that a flight carries its own look;
-- its costs:
-  - the keyframe file is the camera's file, and today any other top-level key is an
-    error (`rules/camera.md`);
-  - a file with the key would still need `--buildings`, and would fail or be ignored on
-    a network without buildings;
-  - `view` has no file, so it needs the key and a flag anyway, and `K` cannot print the
-    setting.
+**Existing scripts that render with `--buildings --camera`** now render cut:
+`scripts/gates-ties.sh` gate 9 and `scripts/gates-city.sh` gate 13. Both compare their
+runs only with each other, so they still hold, and neither is edited (Phase 3 gate 3).
 
-The draft recommends the flag (OQ-14).
+**The flight-file setting** was the alternative (OQ-14). It is not taken.
 
 #### 2.15.7 What it does not do
 
@@ -1412,8 +1431,9 @@ The draft recommends the flag (OQ-14).
 
 0 packages, no Bevy feature, no `Cargo.toml` change. One new module, `src/see_through.rs`,
 with no Bevy types. At run time, with see-through on, the building mesh's `f64` positions
-(Midtown: 213,880 vertices) are kept beside the Bevy mesh, about 5 MB. Without it,
-nothing new is kept or spawned.
+(Midtown: 213,880 vertices) are kept beside the Bevy mesh, about 5 MB. With
+`--no-see-through`, and in every render without buildings or without `--camera`, nothing
+new is kept or spawned.
 
 #### 2.15.9 Measured while drafting (2026-10-03)
 
@@ -1732,7 +1752,7 @@ draft".
     `openstreetmap.org/copyright`, in its description. A closing card waits for the
     harness contract. Recorded as §2.14.1 decision 10 and Phase 2's close-out.
 - **OQ-14** — How see-through is asked for: a flag, or a setting in the flight file
-  (§2.15.6). Decision 3 left it to the draft.
+  (§2.15.6). Decision 3 left it to the draft. **RESOLVED.**
   - *The draft:*
     - `render --see-through` needs `--buildings` and `--camera`;
     - `view --see-through` starts with it on and needs `--buildings`;
@@ -1747,8 +1767,17 @@ draft".
     - `view` would still need a key and a flag, and `K` cannot print the setting.
   - *Recommendation:* the flag, with the names as drafted: `--see-through` on both
     commands and `X` in `view`.
-  - *(design call: the user; blocks Phase 3's CLI and gate 10's cases, not the rule, the
-    drawing or any other gate.)*
+  - ~~*(design call: the user; blocks Phase 3's CLI and gate 10's cases, not the rule, the
+    drawing or any other gate.)*~~
+  - *(answered 2026-10-03, user, before review)* **A flag, and see-through on by
+    default:** `--no-see-through` on `render` and `view` turns it off, and `X` in `view`
+    toggles it. On wherever buildings are drawn in perspective (`render --buildings
+    --camera`, `view --buildings`). With the flag every frame is byte-identical to
+    today's, and the orthographic render is unchanged either way. The opt-in
+    `--see-through` and its two errors are dropped. The draft proposes that
+    `--no-see-through` with nothing to cut is accepted with no effect. Recorded as
+    §2.15.1 decision 3's dated note, §2.15.6 and Phase 3's scope and gates 2, 3, 7, 10,
+    13 and 14.
 - **OQ-15** — Should more than the wedge be cut (§2.15.7)?
   - *The facts:*
     - The wedge clears the look-at point's surroundings: centre boxes hidden fall from
@@ -2451,15 +2480,17 @@ there:
   - Write this phase's `shipped` date.
 
 ### Phase 3 — See-through: buildings in the way cut to stubs, in a keyframed render and in view
-*Produces the observable: yes. `render --buildings <file> --camera <file.toml>
---see-through` writes the run's video with every building between the camera and the
-point it looks at cut to a 3 m stub, so the street there and its traffic show. Without
-`--see-through`, every render is byte-identical to today's (gates 1 and 2).*
+*Produces the observable: yes. `render --buildings <file> --camera <file.toml>` writes
+the run's video with every building between the camera and the point it looks at cut to
+a 3 m stub, so the street there and its traffic show. With `--no-see-through`, and in
+every render without buildings or without `--camera`, the video is byte-identical to
+today's (gates 1 and 2).*
 
 Drafted 2026-10-03; the design is §2.15, and the user's decisions are §2.15.1. Phase 3
-builds on Phase 2 and on vis-001 Phase 6, the perspective boxes as one mesh. Without the
-flag it changes neither's output, and with it it changes no box. The CLI below is the
-draft's answer to OQ-14.
+builds on Phase 2 and on vis-001 Phase 6, the perspective boxes as one mesh. With
+`--no-see-through` it changes neither's output, and with see-through on it changes no
+box. The CLI below is
+OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
 
 - **Scope:**
   - **The rule (`src/see_through.rs`, new; no Bevy types).**
@@ -2491,16 +2522,20 @@ draft's answer to OQ-14.
       computes `see_through::heights` and replaces the mesh when any height differs from
       the last drawn. Off, nothing is built, kept or replaced.
       `Renderer::building_heights() -> Option<&[f64]>` returns the last drawn heights.
-    - `Job::set_see_through(&mut self, on: bool) -> Result<()>` gives §2.15.6's errors
-      when there are no buildings or no flight. `Job::heights_at(t) -> Option<Vec<f64>>`
-      is `see_through::heights` at `pose_at(t)`.
-    - `render --see-through` (a clap flag) makes §2.15.6's two checks first, then
-      `Job::prepare_with` as today, then `set_see_through(true)`. `RenderOptions` and
-      every `Job::prepare*` signature are unchanged.
+    - `Job::set_see_through(&mut self, on: bool)` has no effect on a job without
+      buildings or without a flight, as the flag has none (§2.15.6).
+      `Job::heights_at(t) -> Option<Vec<f64>>` is `see_through::heights` at `pose_at(t)`.
+      `Job::prepare*` builds a job with see-through off, so every test that builds a job
+      today draws as today.
+    - `render --no-see-through` is a clap flag. `src/main.rs` calls
+      `Job::prepare_with` as today, then `set_see_through(true)` unless the flag is
+      given. `RenderOptions` and every `Job::prepare*` signature are unchanged.
   - **`view` (`src/view/state.rs`, `src/view/mod.rs`, `src/main.rs`).**
-    - `view --see-through` makes §2.15.6's first check. `ViewOptions` gains `see_through`.
+    - `view --no-see-through` is a clap flag. `ViewOptions` gains `see_through`, true
+      unless the flag is given.
     - `src/view/state.rs:Pressed` gains `x`. `src/view/state.rs:ViewState` gains
-      `see_through`, false at `new` and set from the flag at launch. `x` flips it at any
+      `see_through`. It is false at `new`, so every test's state is unchanged, and
+      `src/view/mod.rs:run` sets it from `ViewOptions` at launch. `x` flips it at any
       moment, as `b` flips `buildings_shown`, and changes nothing else.
     - The window reads `KeyCode::KeyX`. With buildings, after the camera is set each
       frame, the wanted heights are `see_through::heights` at the state's pose when
@@ -2522,8 +2557,8 @@ draft's answer to OQ-14.
         { t = 360.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 0.00, pitch_deg = 35.00 },
       ]
       ```
-    - `scripts/gates-see-through.sh` (new, offline, on the Midtown fixture): gates 2, 7
-      and 10, and the renders for gate 14.
+    - `scripts/gates-see-through.sh` (new, offline): gates 2, 7 and 10's CLI cases, and
+      the renders for gate 14. It uses the Midtown fixture and, for gate 10, urban_grid.
     - **Not edited:**
       - the test files `tests/gates.rs`, `view.rs`, `slider.rs`, `camera.rs`,
         `buildings.rs`, `credit.rs` and `ties.rs`;
@@ -2555,18 +2590,29 @@ draft's answer to OQ-14.
   1. **urban_grid.** `scripts/gates.sh` passes. Its default render gives **8700 of 8700**
      against `ref-8eb9052`, and its `--camera` render **8700 of 8700** against
      `ref-camera-ef741d8`, compared by hand. `--test gates` passes 5 of 5.
-  2. **Midtown without `--see-through`.** `scripts/gates-see-through.sh` renders
-     `--from 300 --to 360 --speedup 1` four times:
-     - orthographic, with and without `--buildings`;
-     - `--camera tests/city-flight.toml`, with and without `--buildings`.
+  2. **Midtown with `--no-see-through`, and where nothing is cut.**
+     `scripts/gates-see-through.sh` renders `--from 300 --to 360 --speedup 1` seven
+     times:
+     - **with `--no-see-through`**: orthographic with and without `--buildings`, and
+       `--camera tests/city-flight.toml` with and without `--buildings`;
+     - **without the flag, where see-through cannot act**: orthographic with and without
+       `--buildings`, and `--camera tests/city-flight.toml` without `--buildings`.
 
-     Each `framemd5` against its `ref-ties-…-2b25d5e` copy gives **1800 of 1800**. These
-     are CLI renders, so the credit line is in them.
-  3. **The shared draw path's tests.** Re-run with `--include-ignored --test-threads=1`:
-     - `--test view` 10 of 10, `--test slider` 8 of 8 and `--test camera` 19 of 19;
-     - `--test buildings`, `--test credit` and `--test ties`.
-
-     Every printed number equals the baseline's, and no file is edited.
+     Each `framemd5` against its `ref-ties-…-2b25d5e` copy gives **1800 of 1800**: seven
+     times. These are CLI renders, so the credit line is in them. The four renders with
+     the flag also cover gate 10's "accepted, with no effect".
+  3. **The shared draw path's tests and scripts.**
+     - Re-run with `--include-ignored --test-threads=1`: `--test view` 10 of 10,
+       `--test slider` 8 of 8 and `--test camera` 19 of 19, and `--test buildings`,
+       `--test credit` and `--test ties`. Every printed number equals the baseline's, and
+       no file is edited. These build their jobs through `Job::prepare*`, which leave
+       see-through off.
+     - `scripts/gates-ties.sh` and `scripts/gates-city.sh` pass, unedited. Their Midtown
+       flights with `--buildings` now render cut by default (§2.15.6), and they compare
+       those runs only with each other: gates-ties' gate 9 pair is **1800 of 1800**,
+       and gates-city's gate 13 gives **1800** for run 2 and for run 3 (sandboxed)
+       against run 1. gates-city's only `FAIL` stays gate 3's FCD comparison, OQ-4's
+       recorded miss.
   4. **Build cost** (§2.15.8). `git diff 2b25d5e -- Cargo.toml Cargo.lock` is empty:
      **0 packages**, no feature.
   - **The rule — headless, offline:**
@@ -2601,11 +2647,11 @@ draft's answer to OQ-14.
        image rectangle (its eight corners projected, ±2 px): **0** outside.
 
      A cut that does nothing fails the second and third, so the test fails without the cut.
-  7. **Midtown, deterministic.** `scripts/gates-see-through.sh` renders `--buildings
-     --see-through` twice with `--camera tests/city-flight.toml`, and twice with
-     `--camera tests/see-through-flight.toml`. Each is `1920,1080,30/1,1800`
-     (`ffprobe`), and each pair is **1800 of 1800**. It also renders the orbit once
-     without `--see-through`, for gate 14.
+  7. **Midtown, deterministic.** `scripts/gates-see-through.sh` renders `--buildings`
+     with see-through on (the default) twice with `--camera tests/city-flight.toml`, and
+     twice with `--camera tests/see-through-flight.toml`. Each is `1920,1080,30/1,1800`
+     (`ffprobe`), and each pair is **1800 of 1800**. It also renders the orbit once with
+     `--no-see-through`, for gate 14.
   8. **Midtown, the traffic shows** (`tests/see_through.rs`, ignored).
      - Each flight goes through `Job::prepare_without_credit` with `--buildings`, with
        see-through off and on. Every 15th frame (120) is rendered with `render_frame`,
@@ -2629,16 +2675,16 @@ draft's answer to OQ-14.
        (orbit), and both are recorded.
      - The buildings lowered per frame are recorded. The probe gave a mean of 33.3
        (city) and 33.4 (orbit).
-  10. **Errors** (`scripts/gates-see-through.sh`; OQ-14). Each exits 1 with one stderr
-      line, with no progress line, no file at `--out` and no window:
-      - on Midtown, `render --see-through --camera tests/city-flight.toml` without
-        `--buildings` gives the `--buildings` line;
-      - `render --see-through --buildings …` without `--camera` gives the `--camera` line;
-      - with neither, the `--buildings` line comes first;
-      - `view --see-through` without `--buildings` gives the `--buildings` line. It runs
-        under `perl -e 'alarm 60; exec @ARGV'`, so a window that opens fails the case;
-      - on urban_grid, `--see-through --buildings tests/shapes.geojson --camera
-        tests/flight.toml` still gives Phase 1's `metadata.map_origin` error.
+  10. **The flag's edges** (§2.15.6):
+      - `render --see-through …` is a clap usage error, **exit 2**. The flag is
+        `--no-see-through`, and the drafted opt-in flag does not exist;
+      - on urban_grid, `render --buildings tests/shapes.geojson --camera
+        tests/flight.toml` gives Phase 1's `metadata.map_origin` error, exit 1, with and
+        without `--no-see-through`;
+      - `view --no-see-through --bench 1` on urban_grid, with no buildings, exits 0 and
+        prints its JSON line. The flag is accepted with no effect;
+      - `render --no-see-through` without `--buildings` or without `--camera` is accepted
+        and changes nothing, by gate 2's renders.
   11. **`X`, headless** (`tests/see_through.rs`), as Phase 1's gate 14 tests `B`:
       - on the plain state of vis-001 Phase 3, `x` flips `see_through` from false to
         true, and a second `x` flips it back;
@@ -2648,18 +2694,20 @@ draft's answer to OQ-14.
         gesture goes on unchanged.
   - **Recorded, with one bar:**
   12. **Render time.** Record the wall time of gate 7's see-through flights beside gate
-      2's flights. The probe added 3.1–4.1 ms a frame, about 6–7 s over 1800 frames.
-  13. **`view --bench 20`** on Midtown at the default window, with `--buildings
-      --see-through` (rebuilding every frame, §2.15.6) and with `--buildings` alone.
-      Record its JSON and the load average.
-      - **A `mean_fps` below 30 with `--see-through` stops the build.** §2.15.5's
+      2's flights with `--no-see-through`. The probe added 3.1–4.1 ms a frame, about 6–7 s
+      over 1800 frames.
+  13. **`view --bench 20`** on Midtown at the default window, with `--buildings`
+      (see-through on by default, rebuilding every frame, §2.15.6) and with `--buildings
+      --no-see-through`. Record its JSON and the load average.
+      - **A `mean_fps` below 30 with see-through on stops the build.** §2.15.5's
         fallback is then a scope change, and the phase goes back to review.
       - Prediction: at least 30, and likely 60 (vsync). Midtown with buildings gave 60.00
         fps at Phase 1, and the rebuild adds 3.1–4.1 ms to a 16.7 ms frame.
   - **The user's check:**
   14. **The user watches** gate 7's orbit, `see-through-orbit-on1.mp4` against
-      `see-through-orbit-off.mp4`, and its city flight `see-through-city-on1.mp4` against
-      gate 2's flight with buildings. Times are the video's, from 0:00.
+      `see-through-orbit-off.mp4` (`--no-see-through`), and its city flight
+      `see-through-city-on1.mp4` against gate 2's flight with buildings and
+      `--no-see-through`. Times are the video's, from 0:00.
       - **Orbit, 0:26–0:33, 0:42–0:45 and 0:50–0:57, the middle of the frame.**
         - Off, towers fill it and no box shows there. In the probe, every box in the
           centre was hidden in those seconds.
@@ -2676,11 +2724,14 @@ draft's answer to OQ-14.
         look-at point, and 53 changed by 0:10. Around 0:30, the towers in the lower
         middle of the frame, between the camera and the park's edge, are slabs, and
         streets show there.
-      - **In `view`** with `--buildings`:
-        - tilt to 30–40° over a busy street and press `X`: the blocks between the camera
-          and the centre drop to slabs;
+      - **In `view`** with `--buildings`, see-through on from launch:
+        - tilt to 30–40° over a busy street: the blocks between the camera and the
+          centre are slabs;
         - orbit with a right-drag: they sink and rise smoothly;
-        - `X` again restores them, and `B` still hides every building.
+        - `X` restores them to full height, `X` again cuts them, and `B` still hides
+          every building;
+        - `view --no-see-through` opens with every building at full height, and `X` cuts
+          them.
 
       Then say whether `WIDTH`, the ease band or the stub should change (iteration,
       §2.15.2–§2.15.3), and answer OQ-15.
@@ -2689,15 +2740,17 @@ draft's answer to OQ-14.
   | What | Prediction | Gate |
   |---|---|---|
   | urban_grid: default and `--camera` | 8700 of 8700 against `ref-8eb9052` and `ref-camera-ef741d8` | 1 |
-  | Midtown without the flag: ortho and flight, each with and without buildings | 1800 of 1800 against each `ref-ties-…-2b25d5e` | 2 |
+  | Midtown with `--no-see-through`: ortho and flight, each with and without buildings; without the flag: both orthos and the flight without buildings | 1800 of 1800 against each `ref-ties-…-2b25d5e`, seven renders | 2 |
+  | gates-ties' flight pair; gates-city's gate 13, now cut by default | 1800 of 1800; 1800 and 1800 | 3 |
   | Packages; `Cargo.toml` | 0; unchanged | 4 |
   | Heights straight down at 0, 5 and ≥ 10 m from `L`; gate 6's blocks | 3; 16.5; own; [3, 20] | 5 |
   | Synthetic box pixels off / on / no buildings; on against the stubbed file; changes outside the block | 0 / 1,564 / 1,564; 0; 0 | 6 |
-  | Midtown see-through renders, twice each | 1800 of 1800 | 7 |
+  | Midtown renders with see-through on (the default), twice each | 1800 of 1800 | 7 |
   | Box pixels, orbit centre / middle / frame, off → on | 59,506 → 159,502 / 91,305 → 258,570 / 168,189 → 387,849, each ± 1 % | 8 |
   | Box pixels, city flight, off → on | 3,928 → 4,719 / 42,502 → 45,322 / 90,710 → 99,748, each ± 1 % | 8 |
   | Untouched buildings; largest change in frame between two frames | bit-identical vertices; ≤ 10 m (probe: 9.39 and 3.16 m) | 9 |
-  | `view --bench` with see-through | ≥ 30 fps (likely 60) | 13 |
+  | `--see-through`; urban_grid with buildings, with and without `--no-see-through`; `view --no-see-through --bench 1` without buildings | exit 2; the `map_origin` error, exit 1; exit 0 | 10 |
+  | `view --bench` with see-through on (the default) | ≥ 30 fps (likely 60) | 13 |
 - **Not predicted, and so not gated:**
   - the look: `WIDTH`, the ease band and the stub, for the user at gate 14;
   - render and build times (gate 12), and `view`'s frame rate above 30 (gate 13);
@@ -2706,22 +2759,25 @@ draft's answer to OQ-14.
   - **Commit plan:** one branch (`vis-002-phase-3`), one push. The commits:
     - `src/see_through.rs` and its headless tests (gates 5 and 9's rule half);
     - the drawing, `render`, `view`, the CLI, `tests/see-through-flight.toml`, the GPU
-      tests and `scripts/gates-see-through.sh` (gates 1–4, 6–8 and 10–13);
+      tests and `scripts/gates-see-through.sh` (gates 1–4, 6–8 and 10–13). The default
+      changes here, so gate 2 and gate 3's scripts run after this commit;
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
     - **a new `rules/see-through.md`** (`max_lines: 40`) covering the wedge, the heights
-      and their constants, the drawing, the flag, `X` and the errors. Its `sources` are
+      and their constants, the drawing, the default and `--no-see-through`, and `X`. Its
+      `sources` are
       `src/see_through.rs`, `src/draw.rs`, `src/render.rs`, `src/view/state.rs`,
       `src/view/mod.rs` and `src/main.rs`;
     - **three rules at their caps gain a pointer to it**, reworded to fit, with no
       `max_lines` raised: `rules/render.md` (60/60), whose CLI line gains
-      `[--see-through]`; `rules/view.md` (60/60), with the CLI and `X`; and
+      `[--no-see-through]`; `rules/view.md` (60/60), with the CLI and `X`; and
       `rules/buildings.md` (60/60);
     - `rules/camera.md` and `rules/credit.md`: none needed, since neither the camera nor
       the line changes;
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
-    - **the README** gains `--see-through` and `X`, and the new gate commands:
+    - **the README** says that a flight with `--buildings` is cut by default, and gains
+      `--no-see-through`, `X` and the new gate commands:
       `scripts/gates-see-through.sh` and `cargo test --release --test see_through --
       --include-ignored --test-threads=1`;
     - `CLAUDE.md`: none needed, since no stanza changes;
