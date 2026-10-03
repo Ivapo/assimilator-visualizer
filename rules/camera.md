@@ -9,7 +9,7 @@ covers: >
   perspective paths draw, the keyframe line and the keyframe file with its errors,
   and the flight `render --camera` takes through the keyframes.
 max_lines: 60
-generated: 2026-10-01
+generated: 2026-10-03
 ---
 
 # Camera
@@ -17,9 +17,8 @@ generated: 2026-10-01
 **What is true right now.** Corrected freely against the sources above.
 
 ## Pose and projection (`src/camera.rs`, no Bevy types)
-- `Pose { cx, cy, height_m, yaw_deg, pitch_deg }`: the look-at point on the ground; the
-  world height visible there; yaw clockwise from north (0 = north up); pitch 90 straight
-  down, in `[PITCH_MIN, PITCH_MAX]` = [25, 90].
+- `Pose { cx, cy, height_m, yaw_deg, pitch_deg }`: the look-at point on the ground; the world
+  height seen there; yaw clockwise from north (0 = north up); pitch 90 straight down, in [25, 90].
 - Perspective, vertical `FOV_DEG` = 45°. Distance `d = height_m / (2·tan 22.5°)`
   (1.2071067811865475·`h`); axis `a = (s(y)c(p), c(y)c(p), −s(p))`, up
   `u = (s(y)s(p), c(y)s(p), c(p))`, right `r = (c(y), −s(y), 0)`; eye `E = (cx, cy, 0) − d·a`.
@@ -34,9 +33,10 @@ generated: 2026-10-01
   height and far (`rules/buildings.md`), unit cuboids, `scene::RANK_LIFT` 0.01 m per rank.
 - **Perspective** (`view`, `render --camera`): `draw::perspective(pose, fx, fy, aspect)`
   maps world `(x, y, z)` to Bevy `(x − fx, z, −(y − fy))`; eye `E` on the look-at point, up
-  `u`, fov 45°, near 0.1, far 20·d. The building mesh has `NoFrustumCulling`: never dropped.
-- Perspective boxes use `shaded_box_mesh()`, vertex colours × the unlit speed colour: top
-  1.0, long sides 0.55, ends 0.4, bottom 0.25 (linear). The lift is `RANK_LIFT_3D`, 0.001 m.
+  `u`, fov 45°, near 0.1, far 20·d. The buildings' and boxes' meshes have `NoFrustumCulling`.
+- Perspective boxes: `boxes_mesh`, one mesh and one draw in `vehicle_id` order: a depth tie
+  goes to the higher id every run, and a box bit-equal in x, y, heading and length to a later
+  one is not drawn. Speed colour × shade: top 1, sides 0.55, ends 0.4, bottom 0.25; lift 0.001 m.
 
 ## Keyframe line (`src/keyframes.rs`)
 - `Keyframe { t, at: Centre(x, y) | Follow(id), height_m, yaw_deg, pitch_deg }`. `format`:

@@ -13,7 +13,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-10-02
+generated: 2026-10-03
 ---
 
 # Render
@@ -37,11 +37,11 @@ generated: 2026-10-02
   `total_width` wide. Its centreline is sampled with `interpolate_with_lateral(link, s,
   0.0)` at `s = L·i/n`, `n = ceil(L / 1 m)`, and the edges are offset along the right
   normal `(cos h, −sin h)`.
-- **Road material** is unlit and not culled. **Vehicles:** a pool of unit cuboids, up
-  to the most drawn at once, filled in `vehicle_id` order; where: `rules/motion.md`.
-  - Each box is scaled to length × 1.8 m × 1.5 m on the placed point, lifted 0.01 m per
-    rank in `vehicle_id` order (0.001 m and shaded faces in perspective). The depth test,
-    not Bevy's binned draw order, decides overlaps: the higher id wins.
+- **Road material** is unlit and not culled. **Vehicles** in `vehicle_id` order (where:
+  `rules/motion.md`): a pool of unit cuboids orthographic, one shaded mesh in perspective.
+  - Each box is length × 1.8 m × 1.5 m on the placed point, lifted 0.01 m per rank (0.001 m
+    in perspective). The higher id wins an overlap: straight down by the lift and the depth
+    test; in perspective by the one draw's order, a bit-identical lower box not drawn.
   - Yawed by `90° − heading` about +Y; unlit colour from 5 speed bins (< 2, 5, 9, 13, ∞ m/s).
 - **Colours.** Background `#12161e`, road `#5c6068`, speed colours distinct from both.
   World to Bevy is `(x − cx, height, −(y − cy))`.

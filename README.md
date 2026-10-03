@@ -31,7 +31,8 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
 - **Errors.** Any error is a single line and a non-zero exit. No file is left at `--out`.
 - **Camera.** Without `--camera` the camera looks straight down on the whole network,
   orthographically. With `--camera <file.toml>` it is perspective and flies through the
-  file's keyframes (below). `--camera` changes no other default.
+  file's keyframes (below). `--camera` changes no other default. Boxes stacked at one
+  point, heading and length show as the one with the highest vehicle id.
 - **Buildings.** `--buildings <file.geojson>` draws the buildings of a cache fetched for
   this network (below). Without it nothing about the video changes.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
@@ -180,6 +181,7 @@ cargo test --release --test gates -- --ignored --test-threads=1 --nocapture   # 
 cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture   # Phase 3 gates 2, 4–9
 cargo test --release --test slider -- --include-ignored --test-threads=1 --nocapture # Phase 4 gates 4–10
 cargo test --release --test camera -- --include-ignored --test-threads=1 --nocapture # Phase 5 gates 4–9, 11, 12
+cargo test --release --test ties -- --include-ignored --test-threads=1 --nocapture   # Phase 6 gates 6–8
 ```
 
 `scripts/gates.sh` also compares the default render's frames with
@@ -198,14 +200,14 @@ cargo test --release --test buildings -- --include-ignored --test-threads=1 --no
 scripts/gates-credit.sh           # Phase 2 gates 4 (its checks), 5, 9 (CLI) and 14, offline
 REFETCH=1 scripts/gates-credit.sh # adds gate 4's second fetch (network)
 cargo test --release --test credit -- --include-ignored --test-threads=1 --nocapture      # Phase 2 gates 3, 6–8, 10, 11
+scripts/gates-ties.sh             # vis-001 Phase 6 gates 2 and 9, offline
 ```
 
 `FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps the fetched
 `buildings.geojson`. The engine at the pin does not give the same Midtown traffic twice,
-so the run in `scratch/midtown` is the fixture. Two checks of `gates-city.sh` are known
-misses until their causes are fixed, and print `FAIL`: gate 3's comparison with the
-2026-09-30 run (the engine, vis-002 OQ-4) and gate 13's flight comparison (the
-`--camera` render, OQ-8).
+so the run in `scratch/midtown` is the fixture. One check of `gates-city.sh` is a known
+miss until its cause is fixed, and prints `FAIL`: gate 3's comparison with the 2026-09-30
+run (the engine, vis-002 OQ-4).
 
 ## Map data
 
