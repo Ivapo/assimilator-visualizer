@@ -35,7 +35,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 6 — Deterministic --camera: the perspective boxes as one mesh, in vehicle_id order"
-    reviewed: null
+    reviewed: 2026-10-03
     shipped: null
     cut: null
     by: null
@@ -2608,12 +2608,23 @@ path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
       `src/draw.rs:box_transform` at rank = slice index. Vertex colour is the speed colour
       (linear) × the face shade. A box whose `at.x`, `at.y`, `at.heading` and `length`
       equal a later box's bit for bit is left out, found with a set of keys seen, scanning
-      from the last box back. It is `None` when no box is drawn.
-    - New `draw::spawn_boxes(world) -> BoxesEntity` spawns the entity: a mesh handle, one
-      `StandardMaterial { base_color: WHITE, unlit: true }`, `NoFrustumCulling`, hidden.
-      New `draw::set_boxes(world, &BoxesEntity, boxes, (cx, cy), lift)` puts
-      `boxes_mesh`'s mesh in the handle's place (`Assets::insert`), or hides the entity
-      when it is `None`.
+      from the last box back. It is `None` when no box is drawn. Its layout is the one the
+      probe measured (§2.12.2's tie-free frames): `TriangleList`,
+      `RenderAssetUsages::default()`, positions through `Transform::transform_point` of
+      the box's transform, normals through its rotation, the colour attribute, and
+      `Indices::U32` with each box's indices offset by its first vertex.
+    - New `draw::spawn_boxes(world) -> BoxesEntity` spawns the entity with
+      `Visibility::Hidden`, `NoFrustumCulling`, `Transform::IDENTITY`, one
+      `StandardMaterial { base_color: WHITE, unlit: true }`, and a mesh handle from
+      `Assets::add` of a placeholder: `boxes_mesh` of one box (any box; it is never shown,
+      because the entity stays hidden until `set_boxes` replaces it). New
+      `draw::set_boxes(world, &BoxesEntity, boxes, (cx, cy), lift)` puts `boxes_mesh`'s
+      mesh in the handle's place (`Assets::insert` on the handle's id, its `Result`
+      `expect`ed, since the handle is held) and sets the entity `Visible`, or sets it
+      `Hidden` when the mesh is `None`. The first frame with boxes thus turns the entity
+      visible and replaces its mesh in one update. The probe never ran that path (it kept
+      its entity visible), and gates 7–9 render it at their first frame with boxes (gate 6
+      runs on the unfixed renderer).
     - `src/draw.rs:spawn_pool`, `src/draw.rs:fill_pool`, `src/draw.rs:box_transform`,
       `src/draw.rs:shaded_box_mesh` and `src/draw.rs:RANK_LIFT_3D` are unchanged. The pool
       functions are the orthographic path's now.
@@ -2624,14 +2635,26 @@ path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
     holds no more boxes than `pool` stays on both paths. `src/lib.rs` is unchanged.
   - **`view` (`src/view/mod.rs`).** `Viewer` holds the `BoxesEntity` in place of the pool
     and the speed materials. `src/view/mod.rs:frame` calls `set_boxes` where it called
-    `fill_pool`. Nothing else in `view` changes.
+    `fill_pool`, and `src/view/mod.rs:run` calls `spawn_boxes` where it built the box
+    mesh and the speed materials and called `spawn_pool`. Nothing else in `view` changes.
   - **Tests.** `tests/ties.rs` (new), every case `#[ignore]`d because it renders through
     the GPU:
     - `synthetic` (gates 6 and 7) needs no fixture. Its input is built in the file: §2.12.1's
       scene, the strip, the four-box stack (vehicles 72, 126, 130, 180 at (0, 0), heading
       209.23°, speeds 1, 4, 7 and 11 m/s, four speed bins) and 500 other boxes: 25 per row,
       8 m apart, from (−92, −76); ids from 1, skipping the stack's; heading 37·k mod 360;
-      speeds cycling the five bins. The churn sequence is an LCG seeded 42. There are two
+      speeds cycling the five bins. The churn sequence is an LCG seeded 42. These are the
+      probe's values, written out here because the probe is not committed:
+      - the strip: one `Strip`, 60 m long along heading 209.23° through (0, 0), sampled
+        every 1 m (61 points per side), 7 m wide (3.5 m each side);
+      - filler `k` (0-based, in id order) sits at (8·(k mod 25) − 92, 8·⌊k/25⌋ − 76),
+        heading 37·k mod 360°, length 4.5 m, speed [1, 4, 7, 11, 20][k mod 5] m/s;
+      - the LCG is `s = s·6364136223846793005 + 1442695040888963407` (wrapping), drawing
+        `s >> 33`. A churn frame takes each box in slice order, drops it when a draw
+        `% 5 == 0`, and otherwise keeps it with speed [1, 4, 7, 11, 20][next draw `% 5`];
+      - the scene `Camera` is `cx = cy = 0`, `k = 1`, at the pose's size, and the renderer
+        is `Renderer::new_perspective(&strips, cam, 1024, &pose, None, None)`. Each tie
+        frame is preceded by one churn frame of the same slice. There are two
       stacks, equal lengths (4.5 m) and mixed (4.5, 4.1, 5.2, 4.8 m), each at three poses,
       all with look-at (0, 0) and yaw 30: close (`height_m` 12, pitch 40, 1280×720), far
       (400, 55, 1920×1080) and down (12, 90, 1280×720). For each of the six cases it
@@ -2641,7 +2664,11 @@ path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
     - `urban_grid_sample` (gate 8) needs `scripts/fixture.sh`'s fixture. It renders frames
       0, 100, …, 8600 (87) of `render --camera tests/flight.toml`'s defaults through
       `Job::prepare_with_camera` and `Job::render_frame`. With `TIES_WRITE=<dir>` it
-      writes them raw, and with `TIES_BASELINE=<dir>` it compares against them. None of
+      writes them raw, and with `TIES_BASELINE=<dir>` it compares against them. With
+      neither set, it renders the 87 frames, prints one hash per frame and writes nothing.
+      Its compare prints, per frame, the pixels that differ and how many of them are not
+      edge pixels. A pixel is an edge pixel when its 3×3 neighbourhood in the baseline
+      frame, clipped to the frame at the border, is not all one colour. None of
       the 87 holds an overlapping pair (§2.12.1).
   - `scripts/gates-ties.sh` (new, gates 2 and 9), offline, on the Midtown fixture.
   - No other test file, script or `Cargo.toml` line is edited.
@@ -2659,7 +2686,10 @@ path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
     test file with `--include-ignored --test-threads=1`, and keep their output. The default
     render must give 8700 of 8700 against `ref-8eb9052`, the `--camera` render 8700 of
     8700 against `ref-camera-f9d2985`, and gate 14's `city1` and `roads1` 1800 of 1800
-    against the copies, or the run stops;
+    against the copies, or the run stops. A comparison against a reference `framemd5`
+    is the line-by-line count `scripts/gates.sh`'s Phase 3 gate 1 does (frame lines,
+    `#` lines skipped, equal when the hash matches). For `ref-camera-f9d2985` it is run
+    by hand on `scratch/out/camera.framemd5`, here and in gate 8;
   - record spec-lint, `Cargo.lock`'s package count and `target/`'s size.
 
   - **What must not change:**
@@ -2681,9 +2711,10 @@ path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
      buildings draw through it, so their test files are re-run with `--include-ignored
      --test-threads=1`, and every printed number equals the baseline's, except as said:
      - `--test view` **10 of 10** and `--test slider` **8 of 8**: headless, no drawing;
-     - `--test camera` **19 of 19**. Gate 8's three centroid errors are within 0.05 px of
-       the baseline's (0.55, 0.55 and 0.49 px at Phase 5), because only edge samples can
-       move (§2.12.2), and gate 9 stays at 0 pixels (`render_empty`, no boxes);
+     - `--test camera` **19 of 19**. Gate 8's three centroid errors, and the centroid
+       coordinates printed on the same lines, are each within 0.05 px of the baseline's
+       (errors 0.55, 0.55 and 0.49 px at Phase 5), because only edge samples can move
+       (§2.12.2). Gate 9 stays at 0 pixels (`render_empty`, no boxes);
      - `--test buildings`, every case, its gate 12 at `render_empty` unchanged.
   - **The fix:**
   6. **The synthetic test fails before the fix.** Commit 1 adds `tests/ties.rs` alone, and
@@ -2747,8 +2778,8 @@ path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
       `scripts/gates-ties.sh` and `--test ties` under the gates, and gains one line under
       Camera: identical boxes show as the highest vehicle id;
     - no `CLAUDE.md` stanza change.
-  - vis-002 OQ-8 gets its `RESOLVED` line when gate 12 passes, pointing here. The user
-    closes it.
+  - When gate 12 passes and the user says to close OQ-8, the implementer writes vis-002
+    OQ-8's `RESOLVED` line in the close-out commit, pointing here.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
     its cause.
   - Write this phase's `shipped` date.
