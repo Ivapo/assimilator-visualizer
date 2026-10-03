@@ -13,6 +13,10 @@
 # file's stem as the collection's "name", so the file is always written as
 # buildings.geojson and then moved, and a failed fetch leaves nothing at --out.
 #
+# The file carries its provenance (vis-002 §2.14.3): the release in the collection's
+# "description" ("Overture Maps buildings, release <release>"), and each building's
+# datasets in properties.sources, distinct and sorted, which `render` credits.
+#
 # Stdout is one JSON report line; an error is one line on stderr and a non-zero exit.
 # DuckDB's own output is kept off both streams unless it fails.
 set -uo pipefail
@@ -53,19 +57,25 @@ BOX=$("$ROOT/target/release/network-extent" --project "$PROJECT" --scenario "$SC
     || die "network-extent: $(sed 's/^error: //' "$TMP/extent.err" | head -1)"
 read -r W S E N <<< "$BOX"
 
-# The query (§2.3.2): intersects, not contains, so a building across the margin comes
-# whole; ORDER BY id, so the same release and box give the same bytes.
+# The query (§2.3.2, §2.14.3): intersects, not contains, so a building across the margin
+# comes whole; ORDER BY id, so the same release and box give the same bytes. The two HTTP
+# settings change no byte; DuckDB's defaults (30 s, 3 retries) failed on a slow link.
 sq() { printf "%s" "${1//\'/\'\'}"; }
 cat > "$TMP/fetch.sql" <<SQL
 INSTALL httpfs; INSTALL spatial; LOAD httpfs; LOAD spatial;
 SET s3_region = 'us-west-2';
 SET geometry_always_xy = true;
+SET http_timeout = 120;
+SET http_retries = 8;
 COPY (
-  SELECT id, height, num_floors, geometry
+  SELECT id, height, num_floors,
+         list_sort(list_distinct([s.dataset FOR s IN sources])) AS sources,
+         geometry
   FROM read_parquet('s3://overturemaps-us-west-2/release/$(sq "$RELEASE")/theme=buildings/type=building/*.parquet')
   WHERE bbox.xmin <= $E AND bbox.xmax >= $W AND bbox.ymin <= $N AND bbox.ymax >= $S
   ORDER BY id
-) TO '$(sq "$TMP")/buildings.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON');
+) TO '$(sq "$TMP")/buildings.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON',
+      LAYER_CREATION_OPTIONS 'DESCRIPTION=Overture Maps buildings, release $(sq "$RELEASE")');
 SQL
 t0=$SECONDS
 duckdb -bail < "$TMP/fetch.sql" > "$TMP/duckdb.log" 2>&1 \
@@ -82,10 +92,29 @@ COUNTS=$(duckdb -bail -noheader -csv -separator ' ' -c "LOAD spatial;
   FROM ST_Read('$(sq "$TMP")/buildings.geojson');" 2> "$TMP/count.err") \
     || die "release $RELEASE: cannot count the buildings: $(grep -m1 -i 'error' "$TMP/count.err")"
 read -r NB NH NF ND <<< "$COUNTS"
+
+# The datasets (§2.14.3): each building counts once under each dataset it names, and
+# "no_sources" counts those with null or []. Read as JSON, not through GDAL, whose field
+# type turns to text when null or [] sit beside arrays.
+SOURCES=$(duckdb -bail -noheader -list -separator $'\t' -c "
+  CREATE TEMP TABLE s AS SELECT json_extract(f, '\$.properties.sources') AS j
+    FROM (SELECT unnest(features) AS f FROM read_json('$(sq "$TMP")/buildings.geojson',
+          columns = {'features': 'JSON[]'}, maximum_object_size = 1073741824));
+  SELECT 'none', count(*) FILTER (WHERE j IS NULL OR json_type(j) = 'NULL' OR json_array_length(j) = 0) FROM s;
+  SELECT d, count(*) FROM (SELECT unnest(from_json(j, '[\"VARCHAR\"]')) AS d FROM s
+    WHERE json_type(j) = 'ARRAY') GROUP BY d ORDER BY d;" 2> "$TMP/sources.err") \
+    || die "release $RELEASE: cannot count the sources: $(grep -m1 -i 'error' "$TMP/sources.err")"
+NS="" SRC=""
+while IFS=$'\t' read -r name n; do
+    if [ -z "$NS" ]; then NS=$n; continue; fi
+    name=${name//\\/\\\\}
+    name=${name//\"/\\\"}
+    SRC="$SRC${SRC:+, }\"$name\": $n"
+done <<< "$SOURCES"
 BYTES=$(wc -c < "$TMP/buildings.geojson" | tr -d ' ')
 
 mv "$TMP/buildings.geojson" "$OUT" || die "cannot move the file to $OUT"
 out_json=${OUT//\\/\\\\}
 out_json=${out_json//\"/\\\"}
-printf '{"release": "%s", "bbox": [%s, %s, %s, %s], "buildings": %s, "height": %s, "num_floors": %s, "default": %s, "bytes": %s, "seconds": %s, "out": "%s"}\n' \
-    "$RELEASE" "$W" "$S" "$E" "$N" "$NB" "$NH" "$NF" "$ND" "$BYTES" "$SECS" "$out_json"
+printf '{"release": "%s", "bbox": [%s, %s, %s, %s], "buildings": %s, "height": %s, "num_floors": %s, "default": %s, "sources": {%s}, "no_sources": %s, "bytes": %s, "seconds": %s, "out": "%s"}\n' \
+    "$RELEASE" "$W" "$S" "$E" "$N" "$NB" "$NH" "$NF" "$ND" "$SRC" "$NS" "$BYTES" "$SECS" "$out_json"
