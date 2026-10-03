@@ -6,7 +6,8 @@ note: >
   fetched once by a script into a cached GeoJSON, then projected with the engine's formula,
   extruded and lit. Phase 1 draws opaque grey blocks on the Midtown fixture. Phase 2 draws
   the data's credit line (OpenStreetMap, Overture, building sources) on every frame of an
-  imported network's render.
+  imported network's render. Phase 3 cuts the buildings between the camera and the point it
+  looks at down to stubs, on request, in a keyframed render and in view.
 status: accepted
 last_updated: 2026-10-03
 
@@ -19,6 +20,11 @@ phases:
   - name: "Phase 2 — Credit: a line built from the data, on every frame of an imported network's render"
     reviewed: 2026-10-02
     shipped: 2026-10-03
+    cut: null
+    by: null
+  - name: "Phase 3 — See-through: buildings in the way cut to stubs, in a keyframed render and in view"
+    reviewed: null
+    shipped: null
     cut: null
     by: null
 
@@ -626,12 +632,31 @@ constraint.
   *(2026-10-03)* Drafted as vis-001 Phase 6 (§2.12 there).
 - **Nicer buildings:**
   - Overture `building_part` (towers on podiums; OQ-5) and raised bases;
+    *(2026-10-03)* This is **Phase 4**, next after Phase 3, and its content is decided
+    (§2.15.1, decision 4):
+    - a building with parts is drawn from its parts, each from its own `min_height`;
+    - raised bases are honoured;
+    - flat roofs and the neutral grey stay;
+    - no roof shapes, and no Overture colours.
+
+    **Its deadline:** the parts must come from release `2026-09-23.1`, the cache's and
+    the roads' release. It leaves S3 about 2026-11-22 (§2.14.3), so Phase 4 starts by
+    early November 2026. Otherwise a newer release is pinned and every count is
+    predicted again (§2.2 m);
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
+    *(2026-10-03)* See-through, opaque, is drafted as **Phase 3** (§2.15). The user
+    chose to cut to stubs, not to fade (§2.15.1, decision 2);
   - later sources: NYC Open Data footprints (measured roof heights, NYC only), and Google
     Photorealistic 3D Tiles (paid; its terms for video to be checked).
 - **Ground:** land use and water from Overture's `base` theme.
 - **Sky, fog and a wider extent**, where vis-001 OQ-12 (a pitch floor below 25°) is decided
   (§2.2 g).
+- **Streets** *(added 2026-10-03, agreed by the user)*: junction surfaces, lane lines and
+  stop lines. It comes before vis-001's data item (vis-001 §2.7 item 5), because signal
+  states need stop lines to be drawn at.
+- **Vehicle shapes** *(added 2026-10-03, agreed by the user)*: a shape per FCD
+  `vehicle_class`, after vis-001's data item. Midtown's 985 vehicles are all `car`
+  (counted 2026-10-03).
 - **Re-frozen traffic** after the engine fix (OQ-4). This is a pin move with a re-gate
   (vis-001 §2.2.2), not a phase.
 
@@ -1148,6 +1173,286 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
   - **222 of 222 segments found, each with `[OpenStreetMap]` only.** No other dataset
     appears, TomTom included.
 
+### 2.15 See-through (Phase 3)
+
+Drafted 2026-10-03. At vis-001 Phase 6's gate 12 the user found that tall buildings hide
+much of the traffic in Midtown's flight. This phase cuts the buildings that stand between
+the camera and the point it looks at down to stubs, when asked to. It works in the
+perspective draw path that vis-001 Phase 6 made deterministic (`specs/visualizer_spec.md`
+§2.12), and changes only the buildings' mesh, never the boxes' draw. The numbers below
+come from a probe run while drafting (§2.15.9).
+
+#### 2.15.1 The user's decisions (decision, recorded)
+
+Decided by the user, 2026-10-03, before drafting:
+1. **Order:** see-through first, as this phase. Building parts are the next phase, Phase 4.
+2. **Look:** a building that stands between the camera and the point the camera looks at
+   is cut down to a stub a few metres tall. The street and its traffic then show, and the
+   block's footprint stays. It is opaque: no transparency.
+3. **Opt-in:** `render` gets a flag (or a setting in the flight file; the draft proposes
+   one), and `view` gets a key. Without it, every render stays byte-identical.
+4. **Phase 4, recorded now:** a building with `building_part`s is drawn from its parts,
+   each standing from its own `min_height`. Raised bases are honoured. Flat roofs and the
+   neutral grey stay. No roof shapes, and no Overture colours.
+
+Agreed by the user the same day, for the roadmap (§2.13): two new items, "Streets" and
+"Vehicle shapes", and Phase 4's deadline.
+
+The rest of this section is the draft's proposal. It settles:
+- which buildings are in the way (§2.15.2);
+- how far down they go, and how they get there (§2.15.3);
+- which renders it applies to (§2.15.4);
+- how the cut is drawn, and its cost (§2.15.5);
+- the flag, the key and their errors (§2.15.6).
+
+§2.15.7 says what it does not fix.
+
+#### 2.15.2 Which buildings are in the way: a wedge from the camera to the look-at point
+
+The point the camera looks at is already defined:
+- in `render --camera` it is the pose's `(cx, cy)` at each frame. That is a keyframe's
+  centre, the followed vehicle's placed point, or the flight between them (vis-001
+  §2.11.5);
+- in `view` it is the state's centre, which the camera orbits and a follow moves
+  (`rules/view.md`).
+
+From the pose (`src/camera.rs:Pose`):
+- `L = (cx, cy)` is the look-at point. `G` is the eye's ground point, the `x` and `y` of
+  `src/camera.rs:Pose::eye`. `G` lies `d·cos(pitch)` from `L` toward the camera, where
+  `d = 1.2071·height_m`;
+- **the half-width** is `r = 0.15 · height_m · cos(pitch)` metres (`see_through::WIDTH` =
+  0.15). `cos` is `src/camera.rs:cos_deg`, so `r` is exactly 0 at pitch 90;
+- **the wedge** `W` is the convex hull of `G` and the disc of radius `r` about `L`. That
+  is the triangle from `G` to the two points where lines from `G` touch the circle,
+  together with the disc. When `G` lies inside the disc, `W` is the disc. Seen from
+  above, the wedge opens from the camera's foot at a fixed half-angle,
+  `asin(0.15/1.2071)` = 7.14°, whatever the pose, and ends round the look-at point;
+- **a building's distance** `δ` is the ground distance from its footprint to `W`. The
+  footprint is all of the building's polygons, with holes as outside. `δ` is 0 when they
+  meet. Because `W` is a triangle and a disc, `δ` is the smaller of the footprint's
+  distance to the triangle and its distance to `L` less `r` (at least 0);
+- **in the way** means `δ < e`, where `e = max(r, 10 m)` is the ease band
+  (`see_through::EASE_MIN_M` = 10, §2.15.3).
+
+**Why a wedge, and why it narrows to nothing straight down.**
+- A building hides what lies behind it, seen from the eye. The ground line from the
+  camera's foot to the look-at point is where a building hides the look-at point itself.
+  The wedge widens toward `L` so that the ground around `L` shows too.
+- A building near the camera's foot stands under a sight line that is high up there, and
+  hides little of the middle. A capsule of even width cuts more such buildings for the
+  same gain. In the drafting probe, both with a hard edge and without `cos(pitch)`, a
+  capsule of half-width `0.1·height_m` cut 44.7 buildings a frame on the city flight, and
+  a wedge of the same `r` cut 28.3, with the same centre cleared (12.9 %) (§2.15.9).
+- **Straight down, a building hides only the ground under it and a strip beside it**,
+  through perspective. A disc of even radius would then cut a crater round the look-at
+  point for little gain. At `view`'s launch fit on Midtown (`height_m` about 1,725 m),
+  a radius of `0.15·height_m` would be 259 m. `cos(pitch)` makes `r` 0 at pitch 90, so
+  only a building within 10 m of `L` is lowered there.
+- **The width is measured, and it is iteration** (vis-001 §2.6). On the probe's poses:
+
+  | Width `WIDTH` | Orbit flight: centre boxes hidden | Orbit: buildings cut a frame (in frame) | City flight: centre boxes hidden | City: buildings cut a frame (in frame) |
+  |---|---|---|---|---|
+  | none | 59.4 % | 0 | 22.7 % | 0 |
+  | 0.10 | 3.8 % | 24.1 (14.8) | 18.3 % | 23.8 (17.3) |
+  | **0.15** | **0.0 %** | **33.4 (20.8)** | **16.0 %** | **33.3 (23.9)** |
+  | 0.20 | 0.0 % | 44.9 (28.7) | 12.0 % | 43.9 (30.5) |
+
+  "Centre" is the middle sixteenth of the frame, a quarter of its width by a quarter of
+  its height. A box counts as hidden when the sight line to its top centre (1.55 m) meets
+  a building. "In frame" counts buildings whose footprint centroid projects into the
+  frame. The flights are §2.15.9's: the orbit circles a busy crossing at `height_m` 250
+  and pitch 35, and the city flight is `tests/city-flight.toml`. Of about 300 buildings in
+  the orbit's frame, 0.15 cuts about 21 (7 %). Of about 946 in the city flight's frame, it
+  cuts about 24 (2.5 %). 0.15 is the narrowest width that clears the orbit's centre in
+  every frame. The traffic-free pose grid (24 look-at points on roads × 8 yaws, at
+  `height_m` 80, 200 and 500 and pitch 25–60) agrees: road points hidden in the centre
+  fall from 51–93 % to 0.4–22 % at 0.15, and the worst cases are at `height_m` 500 and
+  pitch 25. Straight down they barely move (11.3 % to 11.2 % at most), and 0.7
+  buildings a pose are lowered.
+- **The look-at point must be on the traffic.** From 327 s on, the city flight looks
+  into Central Park, at the network's north edge, and its centre holds no box at all. So
+  the wedge helps it less (22.7 % to 16.0 %). §2.15.7 and OQ-15 say what that leaves.
+
+#### 2.15.3 How far down: a 3 m stub, eased, never popped
+
+A building in the way is drawn with height
+
+```
+h′ = min(h, s + (h − s) · smoothstep(δ / e))     for δ < e
+h′ = h                                           for δ ≥ e  (untouched, bit for bit)
+```
+
+with `s` = 3 m (`see_through::STUB_M`) and `smoothstep(x) = 3x² − 2x³`. A building
+touching the wedge is a 3 m stub. One `e` away it is at full height. One already under
+3 m keeps its own height. Only the height changes: footprint, courtyards, walls and roof
+shape stay, so a stub is the block's footprint as a low slab with its roof lighter than
+its walls (§2.7).
+
+- **The stub's height barely matters** to what shows. A 6 m stub instead of 3 m left
+  16.2 % of the city flight's centre boxes hidden instead of 16.0 %, and 0.0 % on the
+  orbit, in an earlier probe run that drew the disc as a 32-gon. Over 1–8 m, another
+  variant moved by 0.2 points (§2.15.9). 3 m is one storey, so the block still reads as a
+  block. Near the middle of the frame at the 25° floor, a 3 m wall hides the ground for
+  6.4 m behind it, about a sidewalk.
+- **Easing rather than a hard edge.** With a hard edge (`h′ = s` inside `W`, else `h`), a
+  building pops from full height to a stub between two frames as the wedge sweeps over
+  it: up to 469 m in one frame on the city flight, and 163 times a building in frame
+  changed by more than 10 m from one frame to the next. Eased, the largest change of a
+  building in frame between two consecutive frames is **9.39 m** on the city flight and
+  **3.16 m** on the orbit, and **0** changes exceed 10 m. A 200 m tower takes at least
+  21 frames (0.7 s) to sink, so it sinks and rises rather than pops.
+- **`h′` is continuous in the pose:** `G`, `r`, `e` and `δ` are, and so is `smoothstep`.
+  A flight's pose is continuous in time (vis-001 §2.11.5), so a flight never pops.
+  `view`'s fixed steps (`Q E R F`, 15° and 5°) move the pose in one frame, and the heights
+  move with the image.
+- **The 10 m floor on `e`** keeps it continuous straight down, where `r` is 0. There, as
+  the look-at point is panned onto a building, it sinks over 10 m of travel.
+
+#### 2.15.4 Which renders: the perspective ones
+
+- **`render --camera` and `view`** draw in perspective, at every pose (vis-001 §2.11.2).
+  See-through applies to both.
+- **The orthographic render (`render` without `--camera`) is unchanged.** Straight down
+  through an orthographic camera, a building hides exactly the road under its footprint:
+  2.239 % of Midtown's centreline length (Phase 1 gate 10). A stub would still cover
+  that, and a roof's lit colour does not depend on its height, so the cut would change
+  nothing a viewer could see. `--see-through` without `--camera` is an error (§2.15.6).
+
+#### 2.15.5 How the cut is drawn: the building mesh's heights, rewritten on the CPU
+
+The buildings stay **one mesh, one draw, opaque** (§2.6). Phase 6 showed that Bevy's
+binned and sorted passes do not keep draw order stable (vis-001 §2.12.1), so nothing
+here adds an entity per building or a transparent pass. The candidates:
+
+| | (a) Rewrite the mesh's heights on the CPU | (b) A vertex shader clamps the heights | (c) An entity per building, scaled in height |
+|---|---|---|---|
+| How | Each vertex of building `b` gets `z′ = min(z, h′_b)`, and the mesh asset is replaced when any `h′` changed | `ExtendedMaterial` on the lit material. Each vertex carries its building's index, and a buffer of 4,336 heights is uploaded each frame | 4,336 entities; `Transform` scale `h′/h` |
+| Per frame, Midtown (measured, §2.15.9) | **+3.1 to +4.1 ms** at the median: 0.5 ms to compute the heights and build and insert the mesh, and the rest Bevy re-uploading 213,880 vertices and 359,190 indices | not built; 17 KB a frame | not built |
+| Draw order | one draw, as today | one draw | 4,336 draws through the binned pass, **not stable**; and overlapping footprints of equal height (§2.4.1) have tied roofs |
+| Off | the shipped mesh, untouched | the shipped material, or the extension with its output unproven equal | — |
+| Code | about 60 lines in Rust; no shader | a WGSL vertex stage, a new vertex attribute, a material plugin | — |
+| Packages | 0 | 0 | 0 |
+
+**The plan: (a).** It is exact by construction:
+- `min(z, h′)` with `h′ = h` returns every vertex as it was. So a frame where no building
+  is in the way is the shipped frame, byte for byte;
+- with `h′` = `c`, the vertices are exactly those `src/buildings.rs:building_mesh` gives
+  for a building of height `c`. Its roof triangulation does not depend on the height.
+  So a cut frame equals the frame of a buildings file in which the cut buildings have
+  those heights, byte for byte (gate 6; 0 pixels apart in the probe).
+
+The heights are plain `f64` arithmetic on the pose and the file, in building order, and
+the vertices go to `f32` as `src/draw.rs:buildings_mesh` converts them today. So the
+same pose gives the same mesh. In the probe, two runs of each flight gave the same hash
+over all 1800 frames. (b) is the fallback if `view`'s bench (gate 13) falls below 30 fps.
+Taking it is a scope change that sends the phase back to review.
+
+**Normals and indices do not change**, so a later optimisation could upload positions
+only. Bevy 0.19 re-uploads a replaced mesh whole, and the measured cost does not call for
+it.
+
+#### 2.15.6 The flag, the key and their errors
+
+**The draft's proposal (OQ-14):**
+- **`render --see-through`.** It needs `--buildings` and `--camera`. Each frame's
+  heights follow that frame's pose.
+- **`view --see-through`** starts `view` with see-through on. It needs `--buildings`.
+- **`X`** in `view` (by position, `KeyCode::KeyX`; unbound today) flips see-through at any
+  moment, like `B`, and changes nothing else.
+  - With the buildings hidden (`B`), nothing changes on screen until `B` shows them, cut
+    or not as `X` says.
+  - Without `--buildings`, `X` flips a flag that nothing reads.
+  - The keyframe line does not carry it, since `render` takes it as a flag.
+- **`--bench` with `--see-through`** rebuilds the mesh on every frame, changed or not. The
+  bench's camera stands still at the launch fit, where nothing would be rebuilt, so this
+  measures the worst case.
+
+**The errors.** Each is one line with exit 1, no progress line, no output file and no
+window (vis-001 §2.4). They are checked first, before any file is read, in this order:
+- `error: --see-through needs --buildings <file.geojson>`;
+- `error: --see-through needs --camera <file.toml>` (`render` only).
+
+Then every other check runs in its own order. A flight on urban_grid with `--buildings`
+and `--see-through` still stops at `--buildings`' "needs a georeferenced network"
+(§2.4.3).
+
+**The alternative, a setting in the flight file** (`see_through = true`, a top-level key
+beside `keyframes`):
+- its benefit is that a flight carries its own look;
+- its costs:
+  - the keyframe file is the camera's file, and today any other top-level key is an
+    error (`rules/camera.md`);
+  - a file with the key would still need `--buildings`, and would fail or be ignored on
+    a network without buildings;
+  - `view` has no file, so it needs the key and a flag anyway, and `K` cannot print the
+    setting.
+
+The draft recommends the flag (OQ-14).
+
+#### 2.15.7 What it does not do
+
+- **Buildings outside the wedge still hide traffic.** Over the frame, boxes hidden fall
+  from 79.2 % to 54.8 % on the orbit flight, and from 47.5 % to 46.3 % on the city
+  flight. That is the user's look (decision 2): the street at the look-at point shows,
+  and the rest of the city stands. Wider cuts are measured above (0.20), and anything
+  beyond the wedge is OQ-15.
+- **A stub still covers a road that passes under its footprint.** For example, at 330 s
+  six queued vehicles near (−337, 400) stand inside the footprint of a 10 m building
+  (`196bfb75-…`). Midtown's roads under footprints are 2.239 % of the
+  centreline (Phase 1 gate 10).
+- **Pick, pan and zoom** keep their planes (§2.8). A click on a stub picks as a click on
+  the building did.
+- **Building parts** (Phase 4, decision 4). When parts come, a part is cut with its
+  building: the wedge test is on the building's footprint, and each part's top is
+  clamped to `h′`. Phase 4 settles a part whose `min_height` is above `h′`.
+- **Not in Phase 3:** fading or transparency (decision 2); see-through in the
+  orthographic render (§2.15.4); per-keyframe see-through; shadows.
+
+#### 2.15.8 Build cost
+
+0 packages, no Bevy feature, no `Cargo.toml` change. One new module, `src/see_through.rs`,
+with no Bevy types. At run time, with see-through on, the building mesh's `f64` positions
+(Midtown: 213,880 vertices) are kept beside the Bevy mesh, about 5 MB. Without it,
+nothing new is kept or spawned.
+
+#### 2.15.9 Measured while drafting (2026-10-03)
+
+A throwaway probe crate in gitignored `scratch/vis002p3-probe/` (release build, Apple M3,
+sharing this repo's `target/`). It used the library's public API at `2b25d5e`
+(`run::load`, `keyframes::Flight`, `buildings::read`, `draw::*`) and a copy of
+`src/render.rs:Renderer`'s perspective path whose building mesh can be replaced. Nothing
+in `src/` or `tests/` was touched. The record is `specs/reviews/vis-002.md`, "Phase 3
+draft".
+- **The copy is the shipped renderer:** frames 0, 450, 900, 1350 and 1799 of the city
+  flight with buildings, through the copy and through `Job::prepare_without_credit`, are
+  byte-identical.
+- **The flights:** `tests/city-flight.toml`, and an orbit of (−675, 375) (the probe's
+  `orbit-flight.toml`, proposed as `tests/see-through-flight.toml`): four keyframes at
+  300, 320, 340 and 360 s, `height_m` 250, pitch 35, yaw 0, 120, 240 and 0, so one full
+  turn clockwise. (−675, 375) is the second-busiest 50 m cell of the window (428
+  box-seconds over 300–360 s at a mean 9.9 m/s). The busiest (−325, 375) is OQ-4's queue
+  at 0.2 m/s.
+- **Occlusion, geometric:** sight lines from the eye to each box's top centre, and to
+  road points about every 10 m (3,178 of them), tested against every footprint prism at
+  its drawn height, over all 1800 frames. The tables are in §2.15.2 and §2.15.3.
+- **Occlusion, in pixels:** for every 15th frame (120 frames), a box pixel is one that
+  differs between the frame with boxes and the same frame without (`render(&[])`).
+  - Orbit flight, off → on: centre 59,506 → 159,502, middle quarter 91,305 → 258,570, and
+    whole frame 168,189 → 387,849.
+  - City flight, off → on: 3,928 → 4,719, 42,502 → 45,322, and 90,710 → 99,748.
+- **Cost**, interleaved per frame on the same pose, so the machine's load (other
+  sessions) cancels. Each flight ran 900 pairs at a load average of 1.5–1.9:
+  - orbit: render median 18.74 ms without the rebuild and 22.86 ms with it (p99 20.3 and
+    26.6);
+  - city: 14.99 and 18.05 ms;
+  - the heights and the mesh build and insert are 0.48–0.55 ms of that.
+- **Deterministic:** two runs of each flight with the cut gave the same hash over all
+  1800 frames: `b1d3d025994688bf` (city) and `95f90640178fa91e` (orbit).
+- **The synthetic case** (gate 6's scene): the box's pixels are 0 without the cut and
+  1,564 with it, which is also the count without buildings. The cut frame equals the
+  frame built from a file with the in-the-way block at 3 m: 0 pixels apart. Every pixel
+  that changes lies inside the in-the-way block's image rectangle.
+
 ## 3. Open questions
 
 - **OQ-1** — Depend on `assimilator-import` for the projection, or copy its three lines?
@@ -1426,6 +1731,43 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     whoever publishes a video puts the full credit, OQ-7's text with
     `openstreetmap.org/copyright`, in its description. A closing card waits for the
     harness contract. Recorded as §2.14.1 decision 10 and Phase 2's close-out.
+- **OQ-14** — How see-through is asked for: a flag, or a setting in the flight file
+  (§2.15.6). Decision 3 left it to the draft.
+  - *The draft:*
+    - `render --see-through` needs `--buildings` and `--camera`;
+    - `view --see-through` starts with it on and needs `--buildings`;
+    - `X` in `view` flips it.
+
+    Each missing companion flag is one error line, checked before any file is read.
+  - *The alternative:* `see_through = true` beside `keyframes` in the flight file.
+    - The flight would carry its own look.
+    - The keyframe file would stop being the camera's alone: today another top-level
+      key is an error.
+    - A file with the key would fail, or be ignored, on a network without buildings.
+    - `view` would still need a key and a flag, and `K` cannot print the setting.
+  - *Recommendation:* the flag, with the names as drafted: `--see-through` on both
+    commands and `X` in `view`.
+  - *(design call: the user; blocks Phase 3's CLI and gate 10's cases, not the rule, the
+    drawing or any other gate.)*
+- **OQ-15** — Should more than the wedge be cut (§2.15.7)?
+  - *The facts:*
+    - The wedge clears the look-at point's surroundings: centre boxes hidden fall from
+      59.4 % to 0.0 % on the orbit flight. Over the whole frame, boxes hidden fall
+      only from 79.2 % to 54.8 % there, and from 47.5 % to 46.3 % on the city flight.
+    - From 327 s on, the city flight looks into Central Park, where no box is in its
+      centre, so the wedge has little traffic to show there.
+    - `WIDTH` is the dial. 0.20 instead of 0.15 clears the city flight's centre a little
+      more (16.0 % to 12.0 % hidden), at a third more buildings cut a frame (33.3 to
+      43.9).
+  - *The options:*
+    - (a) the wedge, as decided (decision 2), with flights written to look at the
+      traffic;
+    - (b) a later phase that also cuts buildings hiding roads elsewhere in the middle of
+      the frame. It is not measured here, and it would change decision 2's look;
+    - (c) a wider `WIDTH`, which is iteration (§2.15.2).
+  - *Recommendation:* (a) for Phase 3. The user judges at gate 14, on the orbit, whether
+    (b) or (c) is wanted.
+  - *(design call: the user, at gate 14; non-blocking.)*
 
 ## 4. Implementation phases
 
@@ -2106,4 +2448,284 @@ there:
     - status artifact: none needed, since this repo has none.
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and its
     cause.
+  - Write this phase's `shipped` date.
+
+### Phase 3 — See-through: buildings in the way cut to stubs, in a keyframed render and in view
+*Produces the observable: yes. `render --buildings <file> --camera <file.toml>
+--see-through` writes the run's video with every building between the camera and the
+point it looks at cut to a 3 m stub, so the street there and its traffic show. Without
+`--see-through`, every render is byte-identical to today's (gates 1 and 2).*
+
+Drafted 2026-10-03; the design is §2.15, and the user's decisions are §2.15.1. Phase 3
+builds on Phase 2 and on vis-001 Phase 6, the perspective boxes as one mesh. Without the
+flag it changes neither's output, and with it it changes no box. The CLI below is the
+draft's answer to OQ-14.
+
+- **Scope:**
+  - **The rule (`src/see_through.rs`, new; no Bevy types).**
+    - `WIDTH` = 0.15, `EASE_MIN_M` = 10.0 and `STUB_M` = 3.0 (§2.15.2, §2.15.3);
+    - `Wedge { g, l, r, ease }` and `wedge(&Pose) -> Wedge`. `g` comes from
+      `src/camera.rs:Pose::eye`, and `r` uses `src/camera.rs:cos_deg`;
+    - `distance(&Wedge, &Building) -> f64`, which is `δ`: the smaller of the footprint's
+      distance to the triangle and its distance to `l` less `r` (at least 0). It is 0
+      when they meet, and holes count as outside;
+    - `height(&Wedge, &Building) -> f64`, which is §2.15.3's `h′`. For `δ ≥ ease` it is
+      the building's own `height`, the same `f64`;
+    - `heights(&Buildings, &Pose) -> Vec<f64>`, in file order.
+  - **Drawing (`src/draw.rs`).**
+    - `BuildingsCut::new(&Buildings, (fx, fy))` keeps `buildings::mesh_data`'s
+      positions in `f64`, and each vertex's building index.
+    - `BuildingsCut::mesh(&self, heights) -> Mesh` gives every vertex `z′ = min(z,
+      heights[b])`. It converts to `f32` and Bevy axes as `draw::buildings_mesh` does,
+      with the same usages, normals and indices. With every building's own height, its
+      mesh equals `buildings_mesh(&mesh_data(b), fx, fy)`, attribute for attribute.
+    - `draw::set_building_heights(world, mesh: Entity, &BuildingsCut, heights)` puts that
+      mesh in place of the asset behind the entity's `Mesh3d` handle, with
+      `Assets::insert`, as `draw::set_boxes` does.
+    - `spawn_buildings`, `buildings_mesh` and every box function are unchanged.
+  - **`render` (`src/render.rs`, `src/lib.rs`, `src/main.rs`).**
+    - `src/render.rs:Renderer::build` keeps `spawn_buildings`' mesh entity and the
+      `Buildings`. Today it drops the returned `BuildingEntities`.
+    - `Renderer::set_see_through(&mut self, on: bool)` works only with buildings, on the
+      perspective path, and builds the `BuildingsCut` once. From then on, `set_pose`
+      computes `see_through::heights` and replaces the mesh when any height differs from
+      the last drawn. Off, nothing is built, kept or replaced.
+      `Renderer::building_heights() -> Option<&[f64]>` returns the last drawn heights.
+    - `Job::set_see_through(&mut self, on: bool) -> Result<()>` gives §2.15.6's errors
+      when there are no buildings or no flight. `Job::heights_at(t) -> Option<Vec<f64>>`
+      is `see_through::heights` at `pose_at(t)`.
+    - `render --see-through` (a clap flag) makes §2.15.6's two checks first, then
+      `Job::prepare_with` as today, then `set_see_through(true)`. `RenderOptions` and
+      every `Job::prepare*` signature are unchanged.
+  - **`view` (`src/view/state.rs`, `src/view/mod.rs`, `src/main.rs`).**
+    - `view --see-through` makes §2.15.6's first check. `ViewOptions` gains `see_through`.
+    - `src/view/state.rs:Pressed` gains `x`. `src/view/state.rs:ViewState` gains
+      `see_through`, false at `new` and set from the flag at launch. `x` flips it at any
+      moment, as `b` flips `buildings_shown`, and changes nothing else.
+    - The window reads `KeyCode::KeyX`. With buildings, after the camera is set each
+      frame, the wanted heights are `see_through::heights` at the state's pose when
+      `see_through` and `buildings_shown` are both on, else each building's own. The mesh
+      is replaced only when they differ from the last drawn, and on every frame under
+      `--bench` with see-through on.
+    - Nothing else in the frame order changes.
+  - **Tests.**
+    - `tests/see_through.rs` (new):
+      - headless, not ignored: gates 5 and 11;
+      - headless but needing the Midtown fixture, so ignored: gate 9;
+      - through the GPU, ignored: gate 6 (no fixture) and gate 8 (Midtown).
+    - `tests/see-through-flight.toml` (new), the probe's orbit (§2.15.9):
+      ```toml
+      keyframes = [
+        { t = 300.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 0.00, pitch_deg = 35.00 },
+        { t = 320.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 120.00, pitch_deg = 35.00 },
+        { t = 340.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 240.00, pitch_deg = 35.00 },
+        { t = 360.000, x = -675.00, y = 375.00, height_m = 250.00, yaw_deg = 0.00, pitch_deg = 35.00 },
+      ]
+      ```
+    - `scripts/gates-see-through.sh` (new, offline, on the Midtown fixture): gates 2, 7
+      and 10, and the renders for gate 14.
+    - **Not edited:**
+      - the test files `tests/gates.rs`, `view.rs`, `slider.rs`, `camera.rs`,
+        `buildings.rs`, `credit.rs` and `ties.rs`;
+      - every existing script;
+      - `src/buildings.rs`, `src/credit.rs`, `src/camera.rs` and `src/keyframes.rs`;
+      - `Cargo.toml` and `Cargo.lock`.
+- **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
+  on urban_grid (engine `df8aec0`, baseline, seed 42) and on Midtown (`scratch/midtown`
+  with its Phase 2 cache). Everything runs offline. The predictions come from §2.15.9's
+  probe, which rendered through a byte-identical copy of the shipped renderer.
+
+  **Baseline, before any change**, at `origin/main` (`2b25d5e`):
+  - **The four Midtown references were copied while drafting.** They come from
+    `scratch/out/ties/`, written by vis-001 Phase 6's gate run at `ef741d8`, whose `src/`
+    is `2b25d5e`'s. They are `scratch/ref-ties-{ortho-city,ortho-roads,flight-city1,
+    flight-roads1}-2b25d5e.framemd5`, with SHA-256 `3d516485…`, `1442054c…`,
+    `d6ff4845…` and `ab292818…`. The two orthographic ones equal
+    `ref-ortho-{city,roads}-92d09a0`. If one is missing or differs, run
+    `scripts/gates-ties.sh` at `2b25d5e` and copy its outputs.
+  - **Run** `scripts/gates.sh`, `scripts/gates-ties.sh`, `scripts/gates-credit.sh`,
+    `scripts/gates-city.sh` and every test file with `--include-ignored
+    --test-threads=1`, and keep their output.
+    - The default render must give 8700 of 8700 against `ref-8eb9052`. The `--camera`
+      render must give 8700 of 8700 against `ref-camera-ef741d8`, compared by hand on
+      `scratch/out/camera.framemd5` as vis-001 Phase 6 did. Otherwise the run stops.
+    - Record spec-lint and `Cargo.lock`'s package count.
+
+  - **What must not change:**
+  1. **urban_grid.** `scripts/gates.sh` passes. Its default render gives **8700 of 8700**
+     against `ref-8eb9052`, and its `--camera` render **8700 of 8700** against
+     `ref-camera-ef741d8`, compared by hand. `--test gates` passes 5 of 5.
+  2. **Midtown without `--see-through`.** `scripts/gates-see-through.sh` renders
+     `--from 300 --to 360 --speedup 1` four times:
+     - orthographic, with and without `--buildings`;
+     - `--camera tests/city-flight.toml`, with and without `--buildings`.
+
+     Each `framemd5` against its `ref-ties-…-2b25d5e` copy gives **1800 of 1800**. These
+     are CLI renders, so the credit line is in them.
+  3. **The shared draw path's tests.** Re-run with `--include-ignored --test-threads=1`:
+     - `--test view` 10 of 10, `--test slider` 8 of 8 and `--test camera` 19 of 19;
+     - `--test buildings`, `--test credit` and `--test ties`.
+
+     Every printed number equals the baseline's, and no file is edited.
+  4. **Build cost** (§2.15.8). `git diff 2b25d5e -- Cargo.toml Cargo.lock` is empty:
+     **0 packages**, no feature.
+  - **The rule — headless, offline:**
+  5. **The wedge and the heights** (`tests/see_through.rs`). The buildings are made up in
+     the test through `Building`'s fields, so no file is read:
+     - **straight down** (`L` (0, 0), `height_m` 100, pitch 90): `r` is exactly 0 and `g`
+       is exactly `l`. A 30 m square containing `L` gives **3**. A 30 m square whose
+       nearest edge is 5 m from `L` gives **16.5** (`3 + 27·smoothstep(0.5)`). One whose
+       nearest edge is 10 m or more away gives **its own height**, compared with `==`;
+     - **gate 6's pose** (`L` (0, 0), `height_m` 60, yaw 0, pitch 35): `r` = 0.15 · 60 ·
+       cos 35° (7.372 m), the ease band is 10, and `g` is `(0, −59.328…)`, equal to
+       `Pose::eye`'s. Gate 6's two blocks give **[3, 20]**, the second compared with `==`;
+     - a 2 m building inside the wedge gives **2**;
+     - a courtyard building whose hole holds the whole disc about `L`: `δ` is the disc's
+       distance to the courtyard's walls, not 0.
+  - **The cut — through the GPU:**
+  6. **The synthetic scene** (`tests/see_through.rs`, ignored, no fixture). It is the
+     probe's, written out here because the probe is not committed:
+     - one road strip from (−60, 0) to (60, 0), 7 m wide, sampled every 1 m;
+     - two blocks: *in the way*, x −10…10, y −45…−25, `height` 30; and *off*, x 25…40,
+       y −40…−25, `height` 20;
+     - one box, vehicle 7 at (0, 0), heading 90°, 4.5 m long, 10 m/s;
+     - `scene::Camera { cx: 0, cy: 0, k: 1 }` at 1280×720, and the pose of gate 5;
+     - the scene goes through `Renderer::new_perspective` with a pool of 4. A box's
+       pixels are those that differ between the frame with the box and `render(&[])`.
+
+     The predictions:
+     - see-through off: the box's pixels are **0**, because the block hides it;
+     - on: **1,564**, the same count as the scene with no buildings;
+     - on, against a scene built with the in-the-way block at 3 m: **0 pixels** apart;
+     - every pixel that differs between on and off lies inside the in-the-way block's
+       image rectangle (its eight corners projected, ±2 px): **0** outside.
+
+     A cut that does nothing fails the second and third, so the test fails without the cut.
+  7. **Midtown, deterministic.** `scripts/gates-see-through.sh` renders `--buildings
+     --see-through` twice with `--camera tests/city-flight.toml`, and twice with
+     `--camera tests/see-through-flight.toml`. Each is `1920,1080,30/1,1800`
+     (`ffprobe`), and each pair is **1800 of 1800**. It also renders the orbit once
+     without `--see-through`, for gate 14.
+  8. **Midtown, the traffic shows** (`tests/see_through.rs`, ignored).
+     - Each flight goes through `Job::prepare_without_credit` with `--buildings`, with
+       see-through off and on. Every 15th frame (120) is rendered with `render_frame`,
+       then `render_empty` at the same pose and heights.
+     - Box pixels are counted in the centre (the middle quarter of the width and of the
+       height), the middle (the middle half of each) and the whole frame.
+     - The probe's counts, off → on:
+       - orbit: **59,506 → 159,502**, **91,305 → 258,570** and **168,189 → 387,849**;
+       - city flight: **3,928 → 4,719**, **42,502 → 45,322** and **90,710 → 99,748**.
+     - Each count is predicted within 1 % of the probe's, since rounding in `δ` may move
+       an edge sample. The orbit's centre on is at least 2.5 times its centre off.
+  9. **Untouched buildings are the shipped buildings** (`tests/see_through.rs`, ignored,
+     headless).
+     - At every 30th frame (60) of both flights, every building with `δ ≥ e` keeps
+       `h′ == h`. Its vertices in `BuildingsCut::mesh` equal those of
+       `buildings_mesh(&mesh_data(b))` bit for bit. With every height its own, the two
+       meshes are equal attribute for attribute.
+     - Over all 1800 frames of each flight, no building whose footprint centroid
+       projects into the frame changes its height by more than **10 m** between two
+       consecutive frames. The probe's largest such changes are 9.39 m (city) and 3.16 m
+       (orbit), and both are recorded.
+     - The buildings lowered per frame are recorded. The probe gave a mean of 33.3
+       (city) and 33.4 (orbit).
+  10. **Errors** (`scripts/gates-see-through.sh`; OQ-14). Each exits 1 with one stderr
+      line, with no progress line, no file at `--out` and no window:
+      - on Midtown, `render --see-through --camera tests/city-flight.toml` without
+        `--buildings` gives the `--buildings` line;
+      - `render --see-through --buildings …` without `--camera` gives the `--camera` line;
+      - with neither, the `--buildings` line comes first;
+      - `view --see-through` without `--buildings` gives the `--buildings` line. It runs
+        under `perl -e 'alarm 60; exec @ARGV'`, so a window that opens fails the case;
+      - on urban_grid, `--see-through --buildings tests/shapes.geojson --camera
+        tests/flight.toml` still gives Phase 1's `metadata.map_origin` error.
+  11. **`X`, headless** (`tests/see_through.rs`), as Phase 1's gate 14 tests `B`:
+      - on the plain state of vis-001 Phase 3, `x` flips `see_through` from false to
+        true, and a second `x` flips it back;
+      - `t`, the clock, the pose, `k`, `follow` and `buildings_shown` stay exactly as they
+        were;
+      - during a right-button orbit, a left drag and a scrub, `x` flips the flag and the
+        gesture goes on unchanged.
+  - **Recorded, with one bar:**
+  12. **Render time.** Record the wall time of gate 7's see-through flights beside gate
+      2's flights. The probe added 3.1–4.1 ms a frame, about 6–7 s over 1800 frames.
+  13. **`view --bench 20`** on Midtown at the default window, with `--buildings
+      --see-through` (rebuilding every frame, §2.15.6) and with `--buildings` alone.
+      Record its JSON and the load average.
+      - **A `mean_fps` below 30 with `--see-through` stops the build.** §2.15.5's
+        fallback is then a scope change, and the phase goes back to review.
+      - Prediction: at least 30, and likely 60 (vsync). Midtown with buildings gave 60.00
+        fps at Phase 1, and the rebuild adds 3.1–4.1 ms to a 16.7 ms frame.
+  - **The user's check:**
+  14. **The user watches** gate 7's orbit, `see-through-orbit-on1.mp4` against
+      `see-through-orbit-off.mp4`, and its city flight `see-through-city-on1.mp4` against
+      gate 2's flight with buildings. Times are the video's, from 0:00.
+      - **Orbit, 0:26–0:33, 0:42–0:45 and 0:50–0:57, the middle of the frame.**
+        - Off, towers fill it and no box shows there. In the probe, every box in the
+          centre was hidden in those seconds.
+        - On, the buildings between the camera and the middle are flat, light slabs a few
+          metres tall. The crossing in the middle shows its roads and moving boxes.
+        - Buildings away from the line to the middle stand at full height.
+      - **Orbit, throughout.** As the camera circles, buildings sink as the line to the
+        middle reaches them and rise once it has passed, over a second or more. None
+        jumps between full height and a slab from one frame to the next. At 0:59 the
+        camera is back where it was at 0:00, and so is every building.
+      - **City flight.** From 0:00 to 0:10 the camera is high and nearly straight down,
+        and only buildings near the middle of the frame change. In the probe, 2 changed
+        in the first frame, among them a tower of about 435 m standing within 10 m of the
+        look-at point, and 53 changed by 0:10. Around 0:30, the towers in the lower
+        middle of the frame, between the camera and the park's edge, are slabs, and
+        streets show there.
+      - **In `view`** with `--buildings`:
+        - tilt to 30–40° over a busy street and press `X`: the blocks between the camera
+          and the centre drop to slabs;
+        - orbit with a right-drag: they sink and rise smoothly;
+        - `X` again restores them, and `B` still hides every building.
+
+      Then say whether `WIDTH`, the ease band or the stub should change (iteration,
+      §2.15.2–§2.15.3), and answer OQ-15.
+- **Predictions at a glance:**
+
+  | What | Prediction | Gate |
+  |---|---|---|
+  | urban_grid: default and `--camera` | 8700 of 8700 against `ref-8eb9052` and `ref-camera-ef741d8` | 1 |
+  | Midtown without the flag: ortho and flight, each with and without buildings | 1800 of 1800 against each `ref-ties-…-2b25d5e` | 2 |
+  | Packages; `Cargo.toml` | 0; unchanged | 4 |
+  | Heights straight down at 0, 5 and ≥ 10 m from `L`; gate 6's blocks | 3; 16.5; own; [3, 20] | 5 |
+  | Synthetic box pixels off / on / no buildings; on against the stubbed file; changes outside the block | 0 / 1,564 / 1,564; 0; 0 | 6 |
+  | Midtown see-through renders, twice each | 1800 of 1800 | 7 |
+  | Box pixels, orbit centre / middle / frame, off → on | 59,506 → 159,502 / 91,305 → 258,570 / 168,189 → 387,849, each ± 1 % | 8 |
+  | Box pixels, city flight, off → on | 3,928 → 4,719 / 42,502 → 45,322 / 90,710 → 99,748, each ± 1 % | 8 |
+  | Untouched buildings; largest change in frame between two frames | bit-identical vertices; ≤ 10 m (probe: 9.39 and 3.16 m) | 9 |
+  | `view --bench` with see-through | ≥ 30 fps (likely 60) | 13 |
+- **Not predicted, and so not gated:**
+  - the look: `WIDTH`, the ease band and the stub, for the user at gate 14;
+  - render and build times (gate 12), and `view`'s frame rate above 30 (gate 13);
+  - the number of buildings lowered (gate 9 records it).
+- **Close-out (standing plan steps, the methodology's §3):**
+  - **Commit plan:** one branch (`vis-002-phase-3`), one push. The commits:
+    - `src/see_through.rs` and its headless tests (gates 5 and 9's rule half);
+    - the drawing, `render`, `view`, the CLI, `tests/see-through-flight.toml`, the GPU
+      tests and `scripts/gates-see-through.sh` (gates 1–4, 6–8 and 10–13);
+    - the gate run and its record;
+    - the close-out.
+  - **Reconciliation:**
+    - **a new `rules/see-through.md`** (`max_lines: 40`) covering the wedge, the heights
+      and their constants, the drawing, the flag, `X` and the errors. Its `sources` are
+      `src/see_through.rs`, `src/draw.rs`, `src/render.rs`, `src/view/state.rs`,
+      `src/view/mod.rs` and `src/main.rs`;
+    - **three rules at their caps gain a pointer to it**, reworded to fit, with no
+      `max_lines` raised: `rules/render.md` (60/60), whose CLI line gains
+      `[--see-through]`; `rules/view.md` (60/60), with the CLI and `X`; and
+      `rules/buildings.md` (60/60);
+    - `rules/camera.md` and `rules/credit.md`: none needed, since neither the camera nor
+      the line changes;
+    - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
+    - **the README** gains `--see-through` and `X`, and the new gate commands:
+      `scripts/gates-see-through.sh` and `cargo test --release --test see_through --
+      --include-ignored --test-threads=1`;
+    - `CLAUDE.md`: none needed, since no stanza changes;
+    - status artifact: none needed, since this repo has none.
+  - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and
+    its cause.
   - Write this phase's `shipped` date.
