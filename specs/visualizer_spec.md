@@ -6,7 +6,7 @@ note: >
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
 status: accepted
-last_updated: 2026-09-30
+last_updated: 2026-10-03
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
@@ -34,11 +34,16 @@ phases:
     shipped: 2026-09-30
     cut: null
     by: null
+  - name: "Phase 6 — Deterministic --camera: the perspective boxes as one mesh, in vehicle_id order"
+    reviewed: 2026-10-03
+    shipped: null
+    cut: null
+    by: null
 
 extends: null
 supersedes: null
 superseded_by: null
-related: []
+related: [vis-002]
 reference: >
   Seed brief: ~/dev/ivapo/Orchtr-assimilator-visualizer/idea.md (the idea, the stack discussion and
   the roadmap to v1). Engine: ~/dev/main/assimilator (asm-001 §10 owns the engine side of
@@ -230,6 +235,14 @@ frame to frame, and gate 2 failed.
 only. Under Phase 5's perspective the lift is visible, so that path lifts 0.001 m per rank
 instead (§2.11.2); the orthographic path is unchanged.
 
+*CORRECTED (2026-10-03, Phase 6 draft; vis-002 OQ-8).* Under perspective the depth order
+does not make frames deterministic either. The lift raises a whole box, so it separates
+stacked boxes' tops but not their side faces, which stay in one plane and show at a tilt.
+Where such faces overlap, Bevy's binned draw order decides again, and Midtown's flight
+differed between runs. Phase 6 draws the perspective path's boxes as one mesh in
+`vehicle_id` order, and draws a box identical to a higher id's once (§2.12). The
+orthographic path's claim above stands: straight down, no side face shows.
+
 ### 2.4 CLI
 
 ```
@@ -320,6 +333,10 @@ drafted and reviewed. Each ends with a video.
    signal states from the plans (moved from item 2, 2026-09-29).
 6. **Harness contract (v1)** — `check`, supported schema version ranges, stable
    `scene.toml`, harness-side docs, a Linux build check.
+
+   *Note (2026-10-03):* §1 and OQ-4 and OQ-6 call this item "Phase 6 of the roadmap" or
+   "roadmap Phase 6". That means item 6. Implementation Phase 6 is the deterministic
+   `--camera` render (§2.12, §4), and item 6 takes the next number when it is drafted.
 
 ### 2.8 Motion between samples (Phase 2)
 
@@ -929,6 +946,11 @@ centre (§2.9.2: world `(x, y, z)` → Bevy `(x − fx, z, −(y − fy))`).
   overlapping boxes one rank apart may tie. A tie is still resolved the same way on every
   run, so determinism does not rest on the lift. The orthographic path keeps 0.01 m. A
   keyframed render is gated for determinism the same way (Phase 5 gate 10).
+  *CORRECTED (2026-10-03, Phase 6 draft):* "a tie is still resolved the same way on
+  every run" is false. A tie is resolved by Bevy's binned draw order, which is not stable
+  (§2.3's Phase 1 correction), and the lift leaves stacked boxes' side faces tied. Midtown's
+  flight showed it (vis-002 OQ-8), and §2.12 is the cause and the fix. Gate 10 passed on
+  urban_grid, which has no stacked boxes.
 - **Box faces are shaded** in the perspective path, still unlit: the top keeps today's
   speed colour, and the sides are fixed fractions of it, as vertex colours on the box mesh,
   so a tilted box reads as a solid. The fractions are iteration (§2.6). The orthographic
@@ -1208,6 +1230,168 @@ Decided by the user, 2026-09-30, on the Phase 5 draft, before review round 1:
   it arrives as Left + Ctrl, so that is the binding; Option + left-drag was the fallback
   and is not used.
 
+### 2.12 A deterministic `--camera` render (Phase 6)
+
+Drafted 2026-10-03 to fix vis-002 OQ-8: two renders of one flight on the Midtown fixture
+do not give the same video. The user scheduled the fix right after vis-002's credit line
+(vis-002 §2.13), and it is a small phase in §2.11's draw path. The measurements below come
+from a probe run while drafting, recorded in `specs/reviews/vis-001.md` ("Phase 6 draft").
+It lived in `scratch/`, and nothing from it is committed.
+
+#### 2.12.1 The fault, and its cause (confirmed)
+
+- **The symptom** (vis-002 OQ-8): `render --camera tests/city-flight.toml --from 300 --to
+  360 --speedup 1` on Midtown gives 1663 or 1695 of 1800 equal frames between runs. The
+  orthographic render and urban_grid's flights are deterministic. The pixels that differ
+  lie under vehicle boxes stacked at one point: vis-002 OQ-4's frozen vehicles, 0.000 m
+  apart at one heading.
+- **How common stacks are**, from the runs' data (`Job::boxes_at` at every frame time, the
+  2D footprints tested for overlap):
+  - Midtown's window holds at least one stack in **all 1800 frames**. Of 15,463 overlapping
+    pair-frames, **11,508 are bit-for-bit identical** in placed point, heading and length.
+    The largest stack holds 4 boxes. The rest are pairs 1–50 mm apart (1,801), 51–999 mm
+    apart (1,873), 1 m or more apart (278), and 3 pairs 0.000 m apart that are not
+    bit-identical. Every overlapping pair has equal lengths.
+  - urban_grid's flight (`tests/flight.toml`, 8700 frames) holds **38 overlapping
+    pair-frames**, frames 7202–7239, all one pair at least 1 m apart. It has no stack.
+- **The cause.** Every box is its own entity. The entities share one cuboid mesh and one
+  material per speed bin (`src/draw.rs:spawn_pool`, `src/draw.rs:fill_pool`). The lift
+  (`src/draw.rs:box_transform`) raises a whole box, so stacked boxes' tops are 0.001 m
+  apart per rank, but their long sides stay in one vertical plane. At a tilt those sides
+  show, and their depths tie. Bevy 0.19.1's opaque pass tests depth with `GreaterEqual`
+  (`bevy_pbr`, `render/mesh.rs`), so a tie goes to whichever draw comes later. It bins
+  draws, and the order within a bin is the order entities were added, compacted with
+  `swap_remove` when one leaves (`bevy_render`, `render_phase/mod.rs`). That order depends
+  on which entities changed bins in earlier frames, and on parallel queueing. Straight
+  down no side face shows, which is why the orthographic path is deterministic.
+- **Confirmed by the probe**, on a synthetic scene that uses neither Midtown nor the engine:
+  - The scene: one 60 m road strip, and four boxes at (0, 0), heading 209.23°, 4.5 m, in
+    four speed bins. The ids are 72, 126, 130 and 180, Midtown frame 363's.
+  - It is rendered through `Renderer::new_perspective` and `render`, as shipped. The tie
+    frame is rendered 24 times, and each time a churn frame comes before it. A churn frame
+    redraws every speed and drops about a fifth of the boxes, from one seeded sequence.
+  - **With the four boxes alone it does not fail:** 1 distinct frame in 24, in 3 of 3
+    processes.
+  - **With 500 other boxes** on a grid around the stack it fails. Tilted close up (pitch
+    40°, `height_m` 12): **3 distinct frames in every one of 5 processes**, differing in
+    13 or 638 pixels on the stack. Tilted far out (pitch 55°, `height_m` 400; a box is a
+    few pixels, as in Midtown): 2 distinct frames in 4 of 5 processes, and the first frame
+    itself differs between processes, in 1 pixel by 18. Straight down at pitch 90:
+    1 distinct, always.
+  - A copy of the shipped scene built in the probe gives the same bytes, ties included.
+    So the fault is the draw, not the run's data.
+  - Rendered alone, the top box is not what the stack shows: lower boxes show in **7,356**
+    of its 30,127 pixels close up, and 14 of 78 far out. That is the side faces. Straight
+    down: 0.
+
+#### 2.12.2 The fix: one mesh, in `vehicle_id` order
+
+The perspective path draws all of a frame's boxes as **one mesh, one draw**. The order of
+triangles inside one draw is the order the depth test sees them in. That is a guarantee of
+the graphics API, not of Bevy's binning, so a tie between two boxes always goes to the
+later one, the higher `vehicle_id`. Each frame:
+- each box, in `vehicle_id` order (the slice order `run::boxes_at` gives), adds the shaded
+  cuboid's 24 vertices (`src/draw.rs:shaded_box_mesh`). Each goes through the box's own
+  `src/draw.rs:box_transform`, with rank = its index in the slice and
+  `src/draw.rs:RANK_LIFT_3D`, as today. Its vertex colour is the speed colour (sRGB to
+  linear) times the face's shade;
+- **a box identical to a later box is not drawn.** "Identical" means the same placed `x`,
+  `y` and heading and the same length, bit for bit. Ranks are counted before any box is
+  left out, so leaving one out moves no other box. The box drawn is the stack's highest
+  `vehicle_id`, at its own rank;
+- the mesh replaces the previous frame's, on one entity with one white unlit material.
+  The entity has `NoFrustumCulling`, as the buildings' mesh has, and is hidden when no box
+  is drawn. So a frame with no boxes (`render_empty`) is drawn exactly as before.
+
+What does not change: the orthographic path keeps its pool of entities, its plain cuboid,
+its speed materials and `src/scene.rs:RANK_LIFT` (0.01 m), so its frames stay
+byte-identical. The roads, the buildings, the credit line, the colours, the face shades,
+MSAA and the camera are unchanged. `view` draws with the same function: it is the
+perspective path too (§2.9.6, §2.11.2), and its interactive frames had the same unstable
+order.
+
+**What it changes on a frame with no tie.** The vertices are transformed on the CPU in
+`f32`, not by the GPU's model matrix. The two round differently in the last bits, so an
+MSAA sample on a box edge can fall on the other side. In the probe, 48 tie-free frames of
+300 boxes at random poses gave 33 frames byte-identical to the shipped draw. The other 15
+differed in 23 pixels in all, **every one an edge pixel**, whose 3×3 neighbourhood in the
+shipped frame is not all one colour. No face's interior changed. So urban_grid's `--camera`
+video changes at box edges (Phase 6 gate 8), and its frames are not byte-identical to
+`scratch/ref-camera-f9d2985.framemd5`.
+
+#### 2.12.3 What the viewer sees where boxes coincide
+
+The rule in one line: **the higher `vehicle_id` wins, as the orthographic path's lift has
+always made it (§2.3, approved by the user 2026-09-28), and now in perspective too.**
+- **Identical boxes** (a stack): only the highest id is drawn. The stack looks exactly
+  like that box alone, in its speed colour. In the synthetic scene the four-box stack's
+  frame equals the frame with 72, 126 and 130 moved 9 km away, off screen with their ranks
+  kept: **0 pixels apart**, close up, far out and straight down (probe, §2.12.4).
+  Midtown frame 363's stack (72, 126, 130 at 16.67 m/s, 180 at 12.97 m/s) shows as
+  vehicle 180, in the 9–13 m/s colour.
+- **Other overlaps** (offset along a lane, different lengths, crossing): the tops still
+  show the higher id, by the lift. Where two side faces share a plane, each sample goes to
+  whichever depth rounds nearer, and a tie goes to the higher id. The resulting pattern is
+  the same on every run of the same frame, but it is not predicted, and it can change from
+  frame to frame as the camera moves (OQ-14). Midtown has 3,955 such pair-frames in the
+  window. Most are 1–999 mm apart.
+
+#### 2.12.4 The candidates, and why this one
+
+All of these were measured by the same probe (§2.12.1). Determinism is the most distinct
+tie frames in any of 5 processes × 24 renders, close up and far out. The rule column counts
+the pixels of the top box alone in which another box shows in the equal stack's frame,
+close up (of 30,127) and far out (of 78).
+
+| candidate | distinct frames | lower boxes show |
+|---|---|---|
+| shipped: an entity per box, Bevy's binned order | **3**, 2 | 7,356, 14 |
+| one mesh in `vehicle_id` order, lift kept | 1, 1 | 7,356, 14: fixed, still mixed |
+| one mesh, no lift | 1, 1 | 0, 0 |
+| one mesh, each box pulled toward the eye by 10⁻⁶ × rank of its distance (no pixel moves), lift kept | 1, 1 | 57, 7: the lifted bottom edges |
+| the same pull, no lift | 1, 1 | 0, 0 |
+| **one mesh, a box identical to a later one not drawn, lift kept** (chosen) | **1**, 1 | **0**, 0 |
+
+A stack of four lengths, 4.5, 4.1, 5.2 and 4.8 m, was deterministic under every candidate,
+the shipped one included. It separates them in two places:
+- **one mesh with no lift** loses its tops and sides to rounding: lower boxes show in
+  28,202 of the top box's 31,656 pixels close up, against 10,173 with the lift. Some of
+  those are the 5.2 m box's ends, which stick out;
+- **the pull with no lift** differs from the same draw with a pull 1000 times larger, in
+  which the higher id wins every shared face, by 364 pixels close up and 17 far out. So
+  depth rounding beats a separation of 8–17 depth steps there.
+
+- **The draw order is the only guarantee.** Any geometric separation (a pull toward the
+  eye, a lift of the sides, a wider box per rank) leaves the result to depth precision.
+  The mixed stack shows that at a tilt, rounding beats a separation of 8–17 depth steps.
+  The rasteriser's depth error grows with a face's slope, so a pull would have to be large
+  enough to move real occlusions. With Midtown's 212 boxes, 10⁻⁶ per rank already pulls
+  the last box 0.46 m toward the eye at 2.2 km, so a box that close behind a wall would
+  show in front of it. And a separation by global rank grows with the frame's box count.
+- **Leaving out identical boxes** is the cheap, exact part. It changes no geometry, since
+  an identical box is wholly inside the one drawn, and it covers Midtown's 11,508 stacked
+  pair-frames. Leaving out near-identical boxes would need a tolerance and would hide
+  real geometry, so it is OQ-14.
+- **Reasoned from the sources, not probed:**
+  - the boxes in a sorted (transparent) phase. It turns off depth writes and sorts by
+    distance, so equal distances still tie;
+  - one mesh asset per box. Bevy sorts bins by asset id, but the order inside a
+    multi-draw batch set follows `swap_remove` too.
+
+#### 2.12.5 Build cost
+
+0 packages, no feature, no `Cargo.toml` change. Per frame, one mesh of 24 vertices per
+drawn box is built and uploaded: at most 212 boxes in Midtown's flight window, 5,088
+vertices. Render time is recorded, not predicted.
+
+#### 2.12.6 Not in Phase 6
+
+- Near-identical boxes and their shared side faces (OQ-14).
+- The engine's frozen vehicles themselves (vis-002 OQ-4); a fixed engine may stop
+  stacking them, and Phase 6's test does not depend on Midtown or the engine for that
+  reason.
+- The orthographic path, and `view`'s pick of a stacked box (§2.9.3 picks as before).
+
 ## 3. Open questions
 
 - ~~**OQ-1** — Reuse the engine's placement (`assimilator-geometry`, git-pinned) or
@@ -1333,6 +1517,26 @@ Decided by the user, 2026-09-30, on the Phase 5 draft, before review round 1:
   by evidence to Phase 5 gate 13; if yes, a phase of its own.)* *Note (2026-09-30, Phase 5
   gate 13):* the user left this open. The orchestrator's recommendation: a later phase; a
   2-minute render is enough for now.
+
+- **OQ-14** — Should boxes that overlap but are not identical be drawn so the higher id
+  wins their shared faces too (§2.12.3)? Phase 6 leaves out only boxes identical bit for
+  bit. Midtown's window also has 3,955 overlapping pair-frames that are not identical,
+  most 1–999 mm apart along a lane, at equal lengths. Their tops show the higher id, but
+  each sample of a shared side face goes to whichever depth rounds nearer. The pattern is
+  the same on every run, so it does not break determinism, but it can shimmer as the
+  camera moves. The options:
+  - (a) leave it. The cause is the engine's frozen vehicles (vis-002 OQ-4), and an engine
+    fix removes most of these pairs;
+  - (b) treat boxes within a tolerance, say 0.05 m and 0.1°, as one stack and draw only
+    the highest id. That hides real geometry at the tolerance's edge, and a tolerance
+    is not transitive, so the grouping needs a rule of its own;
+  - (c) separate shared faces geometrically, for example a lateral inset per rank within
+    an overlapping group. Still left to depth precision (§2.12.4), and every box in a
+    group changes size.
+
+  *Recommendation:* (a), and decide from Phase 6 gate 12, where the user watches the
+  Midtown flight. *(design call: the user; deferred by evidence to Phase 6 gate 12;
+  blocks nothing in Phase 6.)*
 
 ## 4. Implementation phases
 
@@ -2383,6 +2587,199 @@ strictly after Phase 4: it extends `view`'s camera and reads `view`'s keyframe l
       file's checks as one pointer. No `max_lines` is raised;
     - the README gains `--camera`, the file's format, and `view`'s orbit and keys;
     - no `CLAUDE.md` stanza change.
+  - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
+    its cause.
+  - Write this phase's `shipped` date.
+
+### Phase 6 — Deterministic `--camera`: the perspective boxes as one mesh, in `vehicle_id` order
+*Produces the observable: yes. `render --camera <file.toml>` gives the same video every
+time from the same inputs, on the same machine, GPU and driver (§2.3's claim, now true
+of the perspective path). Midtown's flight is one of those videos (vis-002 OQ-8). A stack
+of identical boxes shows as its highest-id box. Without `--camera`, the video is
+byte-identical to today's (gates 1 and 2).*
+
+Drafted 2026-10-03; the design is §2.12. Phase 6 is strictly after Phase 5, whose draw
+path it changes, and it fixes vis-002 OQ-8, found in vis-002 Phase 1's gate 13.
+
+- **Scope:**
+  - **Drawing (`src/draw.rs`).**
+    - New `draw::boxes_mesh(boxes, (cx, cy), lift) -> Option<Mesh>` (§2.12.2). It holds
+      every box of the slice, in slice order, with the shaded cuboid's vertices through
+      `src/draw.rs:box_transform` at rank = slice index. Vertex colour is the speed colour
+      (linear) × the face shade. A box whose `at.x`, `at.y`, `at.heading` and `length`
+      equal a later box's bit for bit is left out, found with a set of keys seen, scanning
+      from the last box back. It is `None` when no box is drawn. Its layout is the one the
+      probe measured (§2.12.2's tie-free frames): `TriangleList`,
+      `RenderAssetUsages::default()`, positions through `Transform::transform_point` of
+      the box's transform, normals through its rotation, the colour attribute, and
+      `Indices::U32` with each box's indices offset by its first vertex.
+    - New `draw::spawn_boxes(world) -> BoxesEntity` spawns the entity with
+      `Visibility::Hidden`, `NoFrustumCulling`, `Transform::IDENTITY`, one
+      `StandardMaterial { base_color: WHITE, unlit: true }`, and a mesh handle from
+      `Assets::add` of a placeholder: `boxes_mesh` of one box (any box; it is never shown,
+      because the entity stays hidden until `set_boxes` replaces it). New
+      `draw::set_boxes(world, &BoxesEntity, boxes, (cx, cy), lift)` puts `boxes_mesh`'s
+      mesh in the handle's place (`Assets::insert` on the handle's id, its `Result`
+      `expect`ed, since the handle is held) and sets the entity `Visible`, or sets it
+      `Hidden` when the mesh is `None`. The first frame with boxes thus turns the entity
+      visible and replaces its mesh in one update. The probe never ran that path (it kept
+      its entity visible), and gates 7–9 render it at their first frame with boxes (gate 6
+      runs on the unfixed renderer).
+    - `src/draw.rs:spawn_pool`, `src/draw.rs:fill_pool`, `src/draw.rs:box_transform`,
+      `src/draw.rs:shaded_box_mesh` and `src/draw.rs:RANK_LIFT_3D` are unchanged. The pool
+      functions are the orthographic path's now.
+  - **`render` (`src/render.rs`).** `src/render.rs:Renderer` built with a pose spawns
+    `spawn_boxes` instead of the pool, and its `render` calls `set_boxes` with
+    `RANK_LIFT_3D`. The orthographic build and `render` are unchanged. Every public
+    signature stays: `new_perspective` still takes `pool`, and the check that a frame
+    holds no more boxes than `pool` stays on both paths. `src/lib.rs` is unchanged.
+  - **`view` (`src/view/mod.rs`).** `Viewer` holds the `BoxesEntity` in place of the pool
+    and the speed materials. `src/view/mod.rs:frame` calls `set_boxes` where it called
+    `fill_pool`, and `src/view/mod.rs:run` calls `spawn_boxes` where it built the box
+    mesh and the speed materials and called `spawn_pool`. Nothing else in `view` changes.
+  - **Tests.** `tests/ties.rs` (new), every case `#[ignore]`d because it renders through
+    the GPU:
+    - `synthetic` (gates 6 and 7) needs no fixture. Its input is built in the file: §2.12.1's
+      scene, the strip, the four-box stack (vehicles 72, 126, 130, 180 at (0, 0), heading
+      209.23°, speeds 1, 4, 7 and 11 m/s, four speed bins) and 500 other boxes: 25 per row,
+      8 m apart, from (−92, −76); ids from 1, skipping the stack's; heading 37·k mod 360;
+      speeds cycling the five bins. The churn sequence is an LCG seeded 42. These are the
+      probe's values, written out here because the probe is not committed:
+      - the strip: one `Strip`, 60 m long along heading 209.23° through (0, 0), sampled
+        every 1 m (61 points per side), 7 m wide (3.5 m each side);
+      - filler `k` (0-based, in id order) sits at (8·(k mod 25) − 92, 8·⌊k/25⌋ − 76),
+        heading 37·k mod 360°, length 4.5 m, speed [1, 4, 7, 11, 20][k mod 5] m/s;
+      - the LCG is `s = s·6364136223846793005 + 1442695040888963407` (wrapping), drawing
+        `s >> 33`. A churn frame takes each box in slice order, drops it when a draw
+        `% 5 == 0`, and otherwise keeps it with speed [1, 4, 7, 11, 20][next draw `% 5`];
+      - the scene `Camera` is `cx = cy = 0`, `k = 1`, at the pose's size, and the renderer
+        is `Renderer::new_perspective(&strips, cam, 1024, &pose, None, None)`. Each tie
+        frame is preceded by one churn frame of the same slice. There are two
+      stacks, equal lengths (4.5 m) and mixed (4.5, 4.1, 5.2, 4.8 m), each at three poses,
+      all with look-at (0, 0) and yaw 30: close (`height_m` 12, pitch 40, 1280×720), far
+      (400, 55, 1920×1080) and down (12, 90, 1280×720). For each of the six cases it
+      prints the number of distinct tie frames in 24 and a hash of the first, and for each
+      equal stack the pixels apart from the top box alone (72, 126 and 130 moved to
+      (9000, 9000), ranks kept).
+    - `urban_grid_sample` (gate 8) needs `scripts/fixture.sh`'s fixture. It renders frames
+      0, 100, …, 8600 (87) of `render --camera tests/flight.toml`'s defaults through
+      `Job::prepare_with_camera` and `Job::render_frame`. With `TIES_WRITE=<dir>` it
+      writes them raw, and with `TIES_BASELINE=<dir>` it compares against them. With
+      neither set, it renders the 87 frames, prints one hash per frame and writes nothing.
+      Its compare prints, per frame, the pixels that differ and how many of them are not
+      edge pixels. A pixel is an edge pixel when its 3×3 neighbourhood in the baseline
+      frame, clipped to the frame at the border, is not all one colour. None of
+      the 87 holds an overlapping pair (§2.12.1).
+  - `scripts/gates-ties.sh` (new, gates 2 and 9), offline, on the Midtown fixture.
+  - No other test file, script or `Cargo.toml` line is edited.
+- **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
+  on both fixtures: urban_grid (engine `df8aec0`, baseline, seed 42) and Midtown
+  (`scratch/midtown`, vis-002 §2.9). The predictions come from §2.12's design. The probe
+  confirmed the cause (§2.12.1), and its numbers are not the gates' bounds. Where a gate
+  quotes one, it says so.
+
+  **Baseline, before any change**, at `origin/main` (`92d09a0`):
+  - copy `scratch/out/credit/city1.framemd5` and `roads1.framemd5` to
+    `scratch/ref-ortho-city-92d09a0.framemd5` and `scratch/ref-ortho-roads-92d09a0.framemd5`.
+    `scripts/gates-credit.sh` rewrites the originals;
+  - run `scripts/gates.sh`, `scripts/gates-credit.sh`, `scripts/gates-city.sh` and every
+    test file with `--include-ignored --test-threads=1`, and keep their output. The default
+    render must give 8700 of 8700 against `ref-8eb9052`, the `--camera` render 8700 of
+    8700 against `ref-camera-f9d2985`, and gate 14's `city1` and `roads1` 1800 of 1800
+    against the copies, or the run stops. A comparison against a reference `framemd5`
+    is the line-by-line count `scripts/gates.sh`'s Phase 3 gate 1 does (frame lines,
+    `#` lines skipped, equal when the hash matches). For `ref-camera-f9d2985` it is run
+    by hand on `scratch/out/camera.framemd5`, here and in gate 8;
+  - record spec-lint, `Cargo.lock`'s package count and `target/`'s size.
+
+  - **What must not change:**
+  1. **`render` without `--camera`, urban_grid.** `scripts/gates.sh` passes, with Phase 3
+     gate 1 at **8700 of 8700** against `scratch/ref-8eb9052.framemd5`. `--test gates`
+     passes 5 of 5, `determinism_overlap_frames` among them.
+  2. **`render` without `--camera`, Midtown.** `scripts/gates-ties.sh` renders `--from 300
+     --to 360 --speedup 1` once with `--buildings` and once without. Against
+     `ref-ortho-city-92d09a0` and `ref-ortho-roads-92d09a0`: **1800 of 1800** each.
+     `scripts/gates-credit.sh` passes, its gate 14 pairs at 1800 of 1800.
+  3. **The credit line.** `--test credit` passes with the baseline's printed numbers,
+     among them vis-002 Phase 2's gate 10: roads box `[1101, 1034, 1902, 1062]`, city box
+     `[699, 1034, 1902, 1062]`, 0 pixels outside at every time, and the camera case 0
+     outside, 19,440 inside. That case is drawn at `render_empty()`, where the boxes'
+     entity is hidden (§2.12.2).
+  4. **Build cost** (§2.12.5). `Cargo.lock` and `Cargo.toml` have no diff: **0 packages**,
+     no feature.
+  5. **The other gates of the shared draw path.** `view`, `render --camera` and the
+     buildings draw through it, so their test files are re-run with `--include-ignored
+     --test-threads=1`, and every printed number equals the baseline's, except as said:
+     - `--test view` **10 of 10** and `--test slider` **8 of 8**: headless, no drawing;
+     - `--test camera` **19 of 19**. Gate 8's three centroid errors, and the centroid
+       coordinates printed on the same lines, are each within 0.05 px of the baseline's
+       (errors 0.55, 0.55 and 0.49 px at Phase 5), because only edge samples can move
+       (§2.12.2). Gate 9 stays at 0 pixels (`render_empty`, no boxes);
+     - `--test buildings`, every case, its gate 12 at `render_empty` unchanged.
+  - **The fix:**
+  6. **The synthetic test fails before the fix.** Commit 1 adds `tests/ties.rs` alone, and
+     `synthetic` is run on the unfixed renderer. It must fail. Predicted from §2.12.1's
+     cause: the equal stack's top box alone differs from the stack's frame by **more than
+     0 pixels** close up and far out, because the lift does not separate side faces.
+     Down, 0, because no side face shows. Whether more than one distinct frame appears
+     depends on Bevy's bins, so it is recorded, not predicted (the probe: 3 close up, in
+     5 of 5 processes). The failure output is kept in the gate record. A test that
+     passes here proves nothing, so the run stops.
+  7. **The synthetic test passes after it.** In all six cases: **1 distinct frame of 24**.
+     The equal stack against its top box alone: **0 pixels**, close up, far out and down.
+     The file is run twice, in two processes, and every printed hash is equal. The mixed
+     stack is checked for determinism only (OQ-14).
+  8. **`--camera` on urban_grid.** `scripts/gates.sh`'s Phase 5 gate 10: two renders,
+     **8700 of 8700** equal. Against `scratch/ref-camera-f9d2985.framemd5` it is **not**
+     byte-identical, and the number of equal frames is recorded, not predicted. The exact
+     change is gated on raw frames. `urban_grid_sample` ran on commit 1 with `TIES_WRITE`
+     (the unfixed draw), and runs again after the fix with `TIES_BASELINE`. Every pixel
+     that differs is an edge pixel, whose 3×3 neighbourhood in the unfixed frame is not
+     all one colour: **0 non-edge pixels**. The cause is the CPU's rounding of the
+     vertices (§2.12.2). The count of differing pixels and frames is recorded. The raw
+     frames (87 × 8.3 MB, about 720 MB) are deleted afterwards. The new `framemd5` is kept
+     as `scratch/ref-camera-<commit>.framemd5` for later phases.
+  9. **Midtown's flight** (vis-002 OQ-8). `scripts/gates-ties.sh` renders `--camera
+     tests/city-flight.toml --from 300 --to 360 --speedup 1` twice with `--buildings` and
+     twice without. Each is `1920,1080,30/1,1800` (`ffprobe`), and each pair is
+     **1800 of 1800** equal.
+  10. **vis-002's own check.** `scripts/gates-city.sh` gives gate 13's flight run 1 against
+      run 2 **1800 of 1800**, and against run 3 (sandboxed) **1800**, with the orthographic
+      pair at 1800. Its only `FAIL` is gate 3's FCD comparison, vis-002 OQ-4's recorded
+      miss, which Phase 6 does not touch.
+  - **Recorded, not predicted:**
+  11. The wall time of gates.sh's `--camera` render (Phase 5: 128 s; vis-002 Phase 2's
+      baseline: 141 s) and of gate 9's renders (vis-002 Phase 2: 29–39 s). `view --bench
+      20` at the default window on urban_grid (Phase 5: 59.99 fps) and on Midtown with
+      `--buildings` (vis-002 Phase 1: 60.00 fps). And `target/` before and after.
+  - **The user's check:**
+  12. **The user watches the flights.** These are gate 9's Midtown flight with buildings
+      and gates.sh's urban_grid `--camera` video. Optionally, `view` on Midtown at a
+      stack, orbiting. A stack shows as one box and does not flicker. Everything else
+      looks as it did. And the user answers OQ-14 from what the flight shows of
+      near-identical boxes.
+- **Not predicted, and so not gated:** the number of urban_grid `--camera` frames that
+  change (gate 8 gates where they change); the pattern on shared faces of boxes that are
+  not identical (OQ-14); the render times (gate 11).
+- **Close-out (standing plan steps, §3 of the methodology):**
+  - **Commit plan:** one branch (`vis-001-phase-6`) and one push. Commits: (1)
+    `tests/ties.rs`, run before the fix (gates 6 and 8's baseline); (2) the fix in
+    `src/draw.rs`, `src/render.rs` and `src/view/mod.rs`, with `scripts/gates-ties.sh`;
+    (3) the gate record; (4) the close-out.
+  - **Reconciliation:**
+    - `rules/camera.md` (60/60): the perspective boxes as one mesh in `vehicle_id` order,
+      the identical-box rule and the tie rule, reworded to stay at its cap;
+    - `rules/render.md` (60/60): the vehicles bullet. The depth test decides overlaps on
+      the orthographic path; on the perspective path a tie goes to the higher id by the
+      draw order. Reworded to fit;
+    - `rules/view.md` (60/60): "the box pool" becomes the boxes' one mesh, reworded to fit.
+      No `max_lines` is raised;
+    - the README drops gate 13's flight from `gates-city.sh`'s known misses, gains
+      `scripts/gates-ties.sh` and `--test ties` under the gates, and gains one line under
+      Camera: identical boxes show as the highest vehicle id;
+    - no `CLAUDE.md` stanza change.
+  - When gate 12 passes and the user says to close OQ-8, the implementer writes vis-002
+    OQ-8's `RESOLVED` line in the close-out commit, pointing here.
   - Record the gate results in `specs/reviews/vis-001.md`, with any missed prediction and
     its cause.
   - Write this phase's `shipped` date.

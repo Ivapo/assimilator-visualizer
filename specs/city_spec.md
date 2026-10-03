@@ -623,6 +623,7 @@ constraint.
   byte-identical.
 - **A deterministic `--camera` render on Midtown** (OQ-8): a small phase in vis-001
   §2.11's draw path. The user scheduled it right after the credit (2026-10-02).
+  *(2026-10-03)* Drafted as vis-001 Phase 6 (§2.12 there).
 - **Nicer buildings:**
   - Overture `building_part` (towers on podiums; OQ-5) and raised bases;
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
@@ -1319,6 +1320,12 @@ only under `scratch/` and the session's scratchpad. The record, with the method,
     credit (§2.13).
   - *(2026-10-03, user, at Phase 2's gate 16)* Stays open. The credit has shipped, so its
     fix phase comes next, as §2.13 says.
+  - *(2026-10-03)* Drafted as vis-001 Phase 6 (`specs/visualizer_spec.md` §2.12), not yet
+    reviewed. A drafting probe confirmed the hypothesis on a synthetic stack, with neither
+    Midtown nor the engine. The fix draws the perspective boxes as one mesh in
+    `vehicle_id` order, and leaves out a box identical to a higher id's, so a stack shows
+    as its highest id. Its gates include this spec's flight pair, with and without
+    buildings. Stays open until vis-001 Phase 6 ships.
   - *(design call: the user; non-blocking.)*
 - **OQ-9** — The credit line's wording, and which non-CC-BY building sources it names
   (§2.14.2). **RESOLVED.**
