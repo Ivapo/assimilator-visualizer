@@ -12,6 +12,7 @@
 pub mod buildings;
 pub mod camera;
 pub mod clock;
+pub mod credit;
 pub mod draw;
 pub mod encode;
 pub mod fcd;
