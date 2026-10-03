@@ -64,6 +64,8 @@ pub struct Pressed {
     pub f: bool,
     /// Hide or show the buildings (vis-002 §2.8), by position.
     pub b: bool,
+    /// See-through on or off (vis-002 §2.15.6), by position.
+    pub x: bool,
 }
 
 /// Keys held this frame.
@@ -216,6 +218,9 @@ pub struct ViewState {
     pub follow: Option<Follow>,
     /// Whether the buildings are drawn; `B` flips it. Read only with `--buildings`.
     pub buildings_shown: bool,
+    /// Whether the buildings in the way are cut to stubs (vis-002 §2.15.6); `X` flips it.
+    /// Off at [`ViewState::new`]; `view` sets it at launch. Read only with `--buildings`.
+    pub see_through: bool,
 }
 
 impl ViewState {
@@ -239,6 +244,7 @@ impl ViewState {
             orbit: None,
             follow: None,
             buildings_shown: true,
+            see_through: false,
         }
     }
 
@@ -330,6 +336,9 @@ impl ViewState {
         }
         if input.pressed.b {
             self.buildings_shown = !self.buildings_shown;
+        }
+        if input.pressed.x {
+            self.see_through = !self.see_through;
         }
 
         // Orbit: a right press, or a left press with Control held, off the bar and with no

@@ -3,7 +3,8 @@
 //! or, for a keyframed render, a perspective one set from a pose each frame (§2.11.2).
 //! With buildings (vis-002), the scene adds their mesh and the sun. With a credit line
 //! (vis-002 §2.14), a UI tree draws it in the bottom-right corner of the image, fitted
-//! to the frame's width after the settle frames.
+//! to the frame's width after the settle frames. With see-through on (vis-002 §2.15), a
+//! perspective renderer redraws the buildings at each pose's heights.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -30,10 +31,11 @@ use bevy::winit::WinitPlugin;
 use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::credit;
-use crate::draw::{self, CreditNodes};
+use crate::draw::{self, BuildingsCut, CreditNodes};
 use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
+use crate::see_through;
 
 /// One box to draw.
 #[derive(Debug, Clone, Copy)]
@@ -71,6 +73,16 @@ enum Boxes {
     Mesh(draw::BoxesEntity),
 }
 
+/// See-through as kept by a perspective renderer with buildings (vis-002 §2.15.5).
+struct Cut {
+    buildings: Buildings,
+    mesh: BuildingsCut,
+    /// The heights the buildings' mesh is drawn at now, in file order.
+    drawn: Vec<f64>,
+    /// Off after on: the next `set_pose` restores every height, then drops the cut.
+    on: bool,
+}
+
 pub struct Renderer {
     apps: SubApps,
     target: Handle<Image>,
@@ -85,6 +97,10 @@ pub struct Renderer {
     lift: f64,
     /// The credit line; `None` without one.
     credit: Option<Credit>,
+    /// The buildings' mesh entity; `None` without buildings.
+    buildings_mesh: Option<Entity>,
+    /// See-through; `None` while it is off.
+    cut: Option<Cut>,
 }
 
 impl Renderer {
@@ -220,9 +236,8 @@ impl Renderer {
             None => Boxes::Mesh(draw::spawn_boxes(world)),
         };
         // Nothing is spawned without buildings, so such a render is unchanged.
-        if let Some(b) = buildings {
-            draw::spawn_buildings(world, b, (camera.cx, camera.cy));
-        }
+        let buildings_mesh =
+            buildings.map(|b| draw::spawn_buildings(world, b, (camera.cx, camera.cy)).mesh);
         // Nor without a credit line: a synthetic network's render is unchanged.
         let credit = credit.map(|line| {
             let size = credit::font_size(camera.width, camera.height);
@@ -259,6 +274,8 @@ impl Renderer {
                 Some(_) => draw::RANK_LIFT_3D,
             },
             credit,
+            buildings_mesh,
+            cut: None,
         };
         // Let assets and pipelines settle before the first frame that counts.
         r.settle()?;
@@ -339,16 +356,57 @@ impl Renderer {
         &self.camera
     }
 
+    /// See-through (vis-002 §2.15.6): `Some(b)`, with `b` the buildings this renderer was
+    /// built with, turns it on, keeping a copy of them and the mesh's `f64` positions;
+    /// `None` turns it off. It takes effect at the next [`Renderer::set_pose`]. It has no
+    /// effect on an orthographic renderer or one without buildings.
+    pub fn set_see_through(&mut self, cut: Option<&Buildings>) {
+        if self.perspective.is_none() || self.buildings_mesh.is_none() {
+            return;
+        }
+        match (cut, self.cut.as_mut()) {
+            (Some(_), Some(c)) => c.on = true,
+            (Some(b), None) => {
+                let cam = self.camera;
+                self.cut = Some(Cut {
+                    buildings: b.clone(),
+                    mesh: BuildingsCut::new(b, (cam.cx, cam.cy)),
+                    drawn: b.buildings.iter().map(|x| x.height).collect(),
+                    on: true,
+                });
+            }
+            (None, Some(c)) => c.on = false,
+            (None, None) => {}
+        }
+    }
+
     /// Set the perspective camera to `pose` for the next frames; nothing on the
-    /// orthographic path.
+    /// orthographic path. With see-through on, the buildings are redrawn at `pose`'s
+    /// heights when any differs from the last drawn.
     pub fn set_pose(&mut self, pose: &Pose) {
         let Some(e) = self.perspective else { return };
         let cam = self.camera;
         let aspect = cam.width as f64 / cam.height as f64;
         let (transform, projection) = draw::perspective(pose, cam.cx, cam.cy, aspect);
-        let mut ent = self.apps.main.world_mut().entity_mut(e);
+        let world = self.apps.main.world_mut();
+        let mut ent = world.entity_mut(e);
         *ent.get_mut::<Transform>().unwrap() = transform;
         *ent.get_mut::<Projection>().unwrap() = projection;
+        let (Some(mesh), Some(c)) = (self.buildings_mesh, self.cut.as_mut()) else {
+            return;
+        };
+        let want = if c.on {
+            see_through::heights(&c.buildings, pose)
+        } else {
+            c.buildings.buildings.iter().map(|x| x.height).collect()
+        };
+        if want != c.drawn {
+            draw::set_building_heights(world, mesh, &c.mesh, &want);
+            c.drawn = want;
+        }
+        if !c.on {
+            self.cut = None;
+        }
     }
 
     /// Render one frame with exactly these boxes (in draw order) and return its RGBA8

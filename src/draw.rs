@@ -5,6 +5,7 @@
 //! Phase 6 (§2.12) draws every box of a frame as one mesh in `vehicle_id` order; the pool
 //! is the orthographic path's. vis-002 adds the buildings: one lit mesh, a sun and the
 //! orthographic eye's rule, and, for `render` only, the credit line's UI tree (§2.14.5).
+//! See-through (vis-002 §2.15.5) rebuilds the buildings' mesh with lowered heights.
 
 use std::collections::HashSet;
 
@@ -502,6 +503,85 @@ pub fn spawn_buildings(
         ..default()
     });
     BuildingEntities { mesh, sun }
+}
+
+/// The buildings' mesh kept for see-through (vis-002 §2.15.5): [`crate::buildings::mesh_data`]'s
+/// positions in `f64` and each vertex's building, so the mesh can be rebuilt with any
+/// building's height lowered. Normals and indices never change.
+pub struct BuildingsCut {
+    positions: Vec<[f64; 3]>,
+    owner: Vec<u32>,
+    normals: Vec<[f32; 3]>,
+    indices: Vec<u32>,
+    fx: f64,
+    fy: f64,
+}
+
+impl BuildingsCut {
+    /// Each building's `building_mesh` in file order, appended as `mesh_data` appends
+    /// them, baked relative to `(fx, fy)` as [`buildings_mesh`] bakes them.
+    pub fn new(buildings: &Buildings, (fx, fy): (f64, f64)) -> BuildingsCut {
+        let mut cut = BuildingsCut {
+            positions: Vec::new(),
+            owner: Vec::new(),
+            normals: Vec::new(),
+            indices: Vec::new(),
+            fx,
+            fy,
+        };
+        for (i, b) in buildings.buildings.iter().enumerate() {
+            let m = crate::buildings::building_mesh(b);
+            let base = cut.positions.len() as u32;
+            cut.owner
+                .extend(std::iter::repeat_n(i as u32, m.positions.len()));
+            cut.positions.extend(m.positions);
+            cut.normals.extend(
+                m.normals
+                    .iter()
+                    .map(|n| [n[0] as f32, n[2] as f32, -n[1] as f32]),
+            );
+            cut.indices.extend(m.indices.iter().map(|k| base + k));
+        }
+        cut
+    }
+
+    /// The mesh with every vertex of building `b` at `z′ = min(z, heights[b])`. With
+    /// every building's own height, it equals [`buildings_mesh`] of the same data.
+    pub fn mesh(&self, heights: &[f64]) -> Mesh {
+        let pos: Vec<[f32; 3]> = self
+            .positions
+            .iter()
+            .zip(&self.owner)
+            .map(|(p, &b)| {
+                [
+                    (p[0] - self.fx) as f32,
+                    p[2].min(heights[b as usize]) as f32,
+                    -(p[1] - self.fy) as f32,
+                ]
+            })
+            .collect();
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD,
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals.clone())
+        .with_inserted_indices(Indices::U32(self.indices.clone()))
+    }
+}
+
+/// Draw the buildings at `heights` (see-through, vis-002 §2.15.5): [`BuildingsCut::mesh`]
+/// in place of the asset behind `mesh`'s `Mesh3d`, the entity [`spawn_buildings`] spawned.
+pub fn set_building_heights(world: &mut World, mesh: Entity, cut: &BuildingsCut, heights: &[f64]) {
+    let handle = world
+        .get::<Mesh3d>(mesh)
+        .expect("the buildings' entity has a mesh")
+        .0
+        .id();
+    world
+        .resource_mut::<Assets<Mesh>>()
+        .insert(handle, cut.mesh(heights))
+        .expect("the buildings' mesh handle is held");
 }
 
 /// The credit line's font (vis-002 §2.14.6): Fira Sans Medium 4.203, under the SIL Open
