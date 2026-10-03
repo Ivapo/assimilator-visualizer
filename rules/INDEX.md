@@ -2,7 +2,7 @@
 
 # Rules
 
-- **[buildings](buildings.md)** — generated 2026-10-02 · 6 sources · 60/60 lines
+- **[buildings](buildings.md)** — generated 2026-10-03 · 6 sources · 60/60 lines
   Buildings around a georeferenced network: the fetch script and its report, the cache format and its checks, the projection, the height rule, the mesh, the light, the orthographic eye rule and `view`'s `B`.
 - **[camera](camera.md)** — generated 2026-10-03 · 3 sources · 60/60 lines
   The 3D camera: the pose and its perspective projection, what the orthographic and perspective paths draw, the keyframe line and the keyframe file with its errors, and the flight `render --camera` takes through the keyframes.
@@ -14,6 +14,8 @@
   How each vehicle's FCD rows become a position at any time: Hermite along links, junction spans on the engine's turn paths, lane slides, when a vehicle is drawn, and the motion report.
 - **[render](render.md)** — generated 2026-10-03 · 8 sources · 60/60 lines
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
+- **[see-through](see-through.md)** — generated 2026-10-03 · 7 sources · 40/40 lines
+  See-through: which buildings stand between the camera and the point it looks at, the heights they are drawn at, how the building mesh is rebuilt, where it is on by default, `--no-see-through` and `view`'s `X`.
 - **[slider](slider.md)** — generated 2026-09-30 · 3 sources · 35/40 lines
   `view`'s time slider: the bar's geometry, x ↔ t, the ticks, how a press on the bar scrubs and what it takes from the camera and the clock, and how the window draws it.
 - **[view](view.md)** — generated 2026-10-03 · 5 sources · 60/60 lines

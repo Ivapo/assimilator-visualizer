@@ -23,7 +23,7 @@ generated: 2026-10-03
 ## CLI
 `assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
 [--results] [--fcd] [--from] [--to] [--speedup] [--fps 30] [--width 1920] [--height 1080]
-[--camera <file.toml>] [--buildings <file.geojson>]`; neither changes another default.
+[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through]`.
 - Width and height must be even. Stderr: one `{"frame": n, "of": N}` per frame, then `{"done": "<out>"}`.
 - On error, one `error: …` line and exit 1; a clap usage error exits 2 with its first line.
 - No logger: Bevy's `bevy_log` feature is off, so neither Bevy nor wgpu prints.
@@ -45,7 +45,8 @@ generated: 2026-10-03
   - Yawed by `90° − heading` about +Y; unlit colour from 5 speed bins (< 2, 5, 9, 13, ∞ m/s).
 - **Colours.** Background `#12161e`, road `#5c6068`, speed colours distinct from both.
   World to Bevy is `(x − cx, height, −(y − cy))`.
-- **Buildings**, only with `--buildings`: one lit mesh and a sun (`rules/buildings.md`).
+- **Buildings**, only with `--buildings`: one lit mesh and a sun (`rules/buildings.md`); with
+  `--camera` too, those in the way cut to stubs unless `--no-see-through` (`rules/see-through.md`).
 - **Credit line**, only on a network with `map_origin`: bottom-right UI text (`rules/credit.md`).
 
 ## Camera
@@ -53,8 +54,7 @@ generated: 2026-10-03
   plus 20 m: `k = max(bw / width, bh / height)` metres per pixel. With it: perspective,
   set from the flight's pose every frame, baked at the same fit (`rules/camera.md`).
 - `world_to_pixel(x, y) = (W/2 + (x − cx)/k, H/2 − (y − cy)/k)`; pixel (i, j) covers
-  `[i, i+1) × [j, j+1)`.
-- urban_grid: bbox 1200 m, so k = 0.5741 at 3840×2160 and 1.1481 at 1920×1080.
+  `[i, i+1) × [j, j+1)`. urban_grid: bbox 1200 m, so k = 0.5741 at 3840×2160, 1.1481 at 1920×1080.
 
 ## Pipeline
 - Bevy 0.19 `DefaultPlugins` without `WinitPlugin`, `PipelinedRenderingPlugin` or
@@ -66,7 +66,7 @@ generated: 2026-10-03
   until the observer has the lossless readback (≤ 200 updates): `W·H·4` bytes, top row first.
 - `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate):
   size, fps, speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings,
-  the credit line (`prepare_without_credit`: none). For the gates: `render_frame(n)`,
+  the credit line (`prepare_without_credit`: none), see-through off (`set_see_through`). Gates: `render_frame(n)`,
   `render_at(t)`, `render_empty()`, `camera()`/`k()` (the fit), `pose_at(t)`, `boxes_at(t)`,
   `buildings()`, `motion_report()`, `credit()`, `credit_size()` and `credit_box()`.
 

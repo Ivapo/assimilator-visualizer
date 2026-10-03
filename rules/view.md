@@ -21,7 +21,7 @@ generated: 2026-10-03
 
 ## CLI
 `assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd]
-[--from] [--to] [--width 1280] [--height 720] [--buildings <file>]`: logical, positive.
+[--from] [--to] [--width 1280] [--height 720] [--buildings <file>] [--no-see-through]`.
 - `run::load` runs `render`'s checks after width and height, then `--buildings`'s, before
   any `App` is built; no ffmpeg. An error is one `error: …` line, exit 1, no window.
 - Stdout carries only keyframe lines, one per `K`, flushed. Stderr carries only the
@@ -36,7 +36,8 @@ generated: 2026-10-03
   baked relative to the launch fit's centre `(fx, fy)`. The camera is perspective at the
   state's pose (`height_m = H·k`), set every frame by `draw::perspective`.
 - The readout is a 14 px white UI text line at left 16, bottom 30, just above the slider.
-- `--buildings` adds their mesh and sun; `B` hides and shows them (`rules/buildings.md`).
+- `--buildings` adds their mesh and sun; `B` hides and shows them (`rules/buildings.md`). Those
+  in the way are cut to stubs from launch unless `--no-see-through`; `X` flips it (`rules/see-through.md`).
 
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
@@ -67,8 +68,7 @@ generated: 2026-10-03
 - Following sets the centre to the vehicle's placed point each frame it is drawn. When it
   is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops
   it; an orbit or a key step does not.
-- Frame order: bar press; clock; scrub; `Esc`; `B`; orbit, `Q E R F`; pan, zoom; click;
-  follow; `K`.
+- Frame order: bar press; clock; scrub; `Esc`; `B`; `X`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`
