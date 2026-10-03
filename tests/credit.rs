@@ -1,5 +1,6 @@
-//! vis-002 Phase 2 exit gates 6–8 (`specs/city_spec.md`): the rule on made-up inputs,
-//! Midtown's lines and the numbers. Gates 6 and 8 are headless and run in plain
+//! vis-002 Phase 2 exit gates 3 (the `Buildings` equality), 6–8, 10 and 11
+//! (`specs/city_spec.md`): the rule on made-up inputs, Midtown's lines, the numbers, the
+//! line confined to its box, and legible. Gates 6 and 8 are headless and run in plain
 //! `cargo test`. Those that need the Midtown fixture of `scripts/fixture.sh midtown` (its
 //! cache fetched again in Phase 2's form) or the GPU are ignored; run everything with
 //! `cargo test --release --test credit -- --include-ignored --test-threads=1 --nocapture`.
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use assimilator_config::network::NetworkConfig;
 use assimilator_video::credit::{self, FILL, OUTLINE, TooSmall};
-use assimilator_video::inputs;
+use assimilator_video::{Job, RenderOptions, buildings, inputs};
 use serde_json::{Value, json};
 
 const MIDTOWN_ROADS: &str =
@@ -325,10 +326,26 @@ fn gate8_numbers() {
     }
 }
 
-// ── Gate 7: the Midtown lines ────────────────────────────────────────────────
+// ── Gates 3 and 7: the Midtown cache and lines ───────────────────────────────
 
 fn midtown_network() -> NetworkConfig {
     inputs::load_network(&midtown(), "baseline").unwrap()
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture, its cache fetched again"]
+fn gate3_buildings_equal() {
+    let net = midtown_network();
+    let old = buildings::read(&root().join("scratch/buildings-vis002p1.geojson"), &net).unwrap();
+    let new = buildings::read(&cache(), &net).unwrap();
+    println!(
+        "gate3 Phase 1's cache: {} buildings {:?}; Phase 2's: {} {:?}",
+        old.buildings.len(),
+        old.counts,
+        new.buildings.len(),
+        new.counts
+    );
+    assert_eq!(old, new);
 }
 
 #[test]
@@ -341,4 +358,199 @@ fn gate7_midtown_lines() {
     println!("gate7 with buildings: {city:?}");
     assert_eq!(roads.as_deref(), Some(MIDTOWN_ROADS));
     assert_eq!(city.as_deref(), Some(MIDTOWN_CITY));
+}
+
+// ── Gates 10 and 11: through the GPU ─────────────────────────────────────────
+
+fn options(width: u32, height: u32) -> RenderOptions {
+    RenderOptions {
+        project: midtown(),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from: Some(300.0),
+        to: Some(360.0),
+        speedup: Some(1.0),
+        fps: 30,
+        width,
+        height,
+    }
+}
+
+/// The pixels that differ between `a` and `b`, as `(x, y)`.
+fn differing(a: &[u8], b: &[u8], width: u32) -> Vec<(u32, u32)> {
+    assert_eq!(a.len(), b.len());
+    (0..a.len() / 4)
+        .filter(|&k| a[4 * k..4 * k + 4] != b[4 * k..4 * k + 4])
+        .map(|k| ((k as u32) % width, (k as u32) / width))
+        .collect()
+}
+
+fn inside(b: [u32; 4], (x, y): (u32, u32)) -> bool {
+    b[0] <= x && x < b[2] && b[1] <= y && y < b[3]
+}
+
+/// The differing pixels outside and inside `bx`.
+fn split(a: &[u8], b: &[u8], width: u32, bx: [u32; 4]) -> (usize, usize) {
+    let d = differing(a, b, width);
+    let n_in = d.iter().filter(|&&p| inside(bx, p)).count();
+    (d.len() - n_in, n_in)
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture and the GPU"]
+fn gate10_confined() {
+    let (w, h) = (1920u32, 1080u32);
+    let cache = cache();
+    for (label, b, want) in [
+        ("roads", None, MIDTOWN_ROADS),
+        ("city", Some(cache.as_path()), MIDTOWN_CITY),
+    ] {
+        let o = options(w, h);
+        let mut with = Job::prepare_with(&o, None, b).unwrap();
+        let mut without = Job::prepare_without_credit(&o, None, b).unwrap();
+        assert_eq!(with.credit(), Some(want), "{label}");
+        assert_eq!(without.credit(), None);
+        assert_eq!(without.credit_box(), None);
+        let bx = with.credit_box().unwrap();
+        let s = with.credit_size().unwrap();
+        println!("gate10 {label}: size {s}, box {bx:?}");
+        assert_eq!(s, 20);
+        assert_eq!((bx[2], bx[3]), (1902, 1062), "{label}: right and bottom");
+        assert!(bx[1].abs_diff(1034) <= 1, "{label}: top {}", bx[1]);
+        let n = with.clock.frames;
+        let times = [0, n / 2, n - 1].map(|k| with.clock.time_of(k));
+        let pairs = std::iter::once((
+            "empty".to_string(),
+            with.render_empty().unwrap(),
+            without.render_empty().unwrap(),
+        ))
+        .chain(times.iter().map(|&t| {
+            (
+                format!("t={t:.3}"),
+                with.render_at(t).unwrap(),
+                without.render_at(t).unwrap(),
+            )
+        }))
+        .collect::<Vec<_>>();
+        for (at, a, c) in &pairs {
+            let (out, inn) = split(a, c, w, bx);
+            println!("gate10 {label} {at}: {out} pixels differ outside the box, {inn} inside");
+            assert_eq!(out, 0, "{label} {at}");
+            assert!(inn > 0, "{label} {at}");
+            assert_eq!(with.credit_box(), Some(bx), "{label} {at}: the box moved");
+        }
+    }
+
+    // Once through a one-keyframe camera, with buildings, at render_empty only (OQ-8).
+    let dir = case_dir("gate10-camera");
+    let cam = dir.join("camera.toml");
+    std::fs::write(
+        &cam,
+        "keyframes = [\n  { t = 300.000, x = 0.00, y = 0.00, height_m = 900.00, yaw_deg = 0.00, pitch_deg = 60.00 },\n]\n",
+    )
+    .unwrap();
+    let o = options(w, h);
+    let mut with = Job::prepare_with(&o, Some(&cam), Some(&cache)).unwrap();
+    let mut without = Job::prepare_without_credit(&o, Some(&cam), Some(&cache)).unwrap();
+    let bx = with.credit_box().unwrap();
+    let (out, inn) = split(
+        &with.render_empty().unwrap(),
+        &without.render_empty().unwrap(),
+        w,
+        bx,
+    );
+    println!("gate10 camera: box {bx:?}, {out} pixels differ outside the box, {inn} inside");
+    assert_eq!(out, 0);
+    assert!(inn > 0);
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture and the GPU"]
+fn gate11_legible() {
+    let cache = cache();
+    for (w, h, size, span) in [(1280u32, 720u32, 13u32, 16u32), (3840, 2160, 40, 49)] {
+        let o = options(w, h);
+        let mut with = Job::prepare_with(&o, None, Some(&cache)).unwrap();
+        let mut without = Job::prepare_without_credit(&o, None, Some(&cache)).unwrap();
+        let s = with.credit_size().unwrap();
+        let bx = with.credit_box().unwrap();
+        let a = with.render_empty().unwrap();
+        let c = without.render_empty().unwrap();
+        let d = differing(&a, &c, w);
+        let (out, inn) = split(&a, &c, w, bx);
+        let rows: Vec<u32> = d.iter().filter(|&&p| inside(bx, p)).map(|p| p.1).collect();
+        let ink = rows.iter().max().unwrap() - rows.iter().min().unwrap() + 1;
+        let off = credit::outline_offset(size);
+        let fill_w = (bx[2] - bx[0] - 2 * off) as f64;
+        let em = fill_w / s as f64;
+        let px = |x: u32, y: u32| {
+            let k = 4 * (y * w + x) as usize;
+            [a[k], a[k + 1], a[k + 2]]
+        };
+        let pixels: Vec<[u8; 3]> = (bx[1]..bx[3])
+            .flat_map(|y| (bx[0]..bx[2]).map(move |x| (x, y)))
+            .map(|(x, y)| px(x, y))
+            .collect();
+        let lightest = pixels
+            .iter()
+            .map(|p| *p.iter().min().unwrap())
+            .max()
+            .unwrap();
+        let darkest = pixels
+            .iter()
+            .map(|p| *p.iter().max().unwrap())
+            .min()
+            .unwrap();
+        println!(
+            "gate11 {w}x{h}: size {s}, box {bx:?}, ink rows {ink}, fill {fill_w} px = {em:.2} em, {out} outside / {inn} inside, lightest min-channel {lightest}, darkest max-channel {darkest}"
+        );
+        assert_eq!(s, size);
+        assert!(ink.abs_diff(span) <= 2, "ink rows {ink}");
+        assert!((em / 60.37 - 1.0).abs() <= 0.03, "{em} em");
+        assert!(fill_w <= (w - 2 * credit::margin(size)) as f64);
+        assert!(lightest >= 220 && darkest <= 20, "{lightest} {darkest}");
+        assert_eq!(out, 0);
+    }
+
+    // The shrink: the made-up *six sources* file at 1920×1080.
+    let dir = case_dir("gate11-six");
+    let six = dir.join("six.geojson");
+    let sources = [
+        "Esri Community Maps",
+        "Google Open Buildings",
+        "Microsoft ML Buildings",
+        "USGS Lidar",
+        "Alpha Survey",
+        "Zeta Lab",
+    ]
+    .map(|d| Some(json!([d])))
+    .to_vec();
+    shapes_with(
+        &six,
+        Some("Overture Maps buildings, release test"),
+        &sources,
+    );
+    let (w, h) = (1920u32, 1080u32);
+    let o = options(w, h);
+    let mut with = Job::prepare_with(&o, None, Some(&six)).unwrap();
+    let mut without = Job::prepare_without_credit(&o, None, Some(&six)).unwrap();
+    let s = with.credit_size().unwrap();
+    let bx = with.credit_box().unwrap();
+    let off = credit::outline_offset(credit::font_size(w, h));
+    let fill_w = bx[2] - bx[0] - 2 * off;
+    let (out, inn) = split(
+        &with.render_empty().unwrap(),
+        &without.render_empty().unwrap(),
+        w,
+        bx,
+    );
+    println!(
+        "gate11 six sources: {:?}\ngate11 six sources: size {s}, box {bx:?}, fill {fill_w} px, {out} outside / {inn} inside",
+        with.credit()
+    );
+    assert!(s == 17 || s == 18, "size {s}");
+    assert!(fill_w <= w - 2 * credit::margin(20));
+    assert_eq!(out, 0);
 }

@@ -2,7 +2,7 @@
 name = "assimilator-video"
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR Apache-2.0"
+license = "(MIT OR Apache-2.0) AND OFL-1.1"
 description = "Renders a video of one Assimilator simulation run"
 repository = "https://github.com/Ivapo/assimilator-visualizer"
 publish = false

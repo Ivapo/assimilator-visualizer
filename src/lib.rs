@@ -7,7 +7,9 @@
 //! motion report ([`Job::motion_report`]). Phase 5 adds a keyframed render through a
 //! perspective camera ([`Job::prepare_with_camera`]) and its pose at any time
 //! ([`Job::pose_at`]). vis-002 adds the buildings of a `--buildings` file
-//! ([`Job::prepare_with`], [`Job::buildings`]).
+//! ([`Job::prepare_with`], [`Job::buildings`]), and the credit line of an imported
+//! network's render ([`Job::credit`], [`Job::credit_size`], [`Job::credit_box`]), with
+//! the same job without it for the gates ([`Job::prepare_without_credit`]).
 
 pub mod buildings;
 pub mod camera;
@@ -84,6 +86,8 @@ pub struct Job {
     flight: Option<Flight>,
     /// The `--buildings` file's buildings; `None` without one.
     buildings: Option<Buildings>,
+    /// The credit line drawn on every frame; `None` without one.
+    credit: Option<String>,
 }
 
 impl Job {
@@ -101,12 +105,34 @@ impl Job {
     /// [`Job::prepare`]'s run, then the keyframe file at `camera`, if any: read, checked
     /// against the run and built into a flight (vis-001 §2.11.4). Then the buildings file
     /// at `buildings`, if any: read and checked against the run's network (vis-002
-    /// §2.4.3). Then the scene: Phase 1's, through a perspective camera set from the
-    /// flight each frame when there is one, with the buildings and the sun when given.
+    /// §2.4.3). Then the credit line, for a network with `metadata.map_origin` (vis-002
+    /// §2.14.2): the project's `import_report.json` and the buildings file's provenance,
+    /// checked. Then the scene: Phase 1's, through a perspective camera set from the
+    /// flight each frame when there is one, with the buildings and the sun when given,
+    /// and the line fitted to the frame (§2.14.5).
     pub fn prepare_with(
         o: &RenderOptions,
         camera: Option<&Path>,
         buildings: Option<&Path>,
+    ) -> Result<Job> {
+        Self::prepare_inner(o, camera, buildings, true)
+    }
+
+    /// [`Job::prepare_with`] with no credit line, whatever the network: for the gates
+    /// (vis-002 §2.14.7). No flag reaches it.
+    pub fn prepare_without_credit(
+        o: &RenderOptions,
+        camera: Option<&Path>,
+        buildings: Option<&Path>,
+    ) -> Result<Job> {
+        Self::prepare_inner(o, camera, buildings, false)
+    }
+
+    fn prepare_inner(
+        o: &RenderOptions,
+        camera: Option<&Path>,
+        buildings: Option<&Path>,
+        with_credit: bool,
     ) -> Result<Job> {
         let (clock, run) = Self::load(o)?;
         let flight = match camera {
@@ -119,6 +145,7 @@ impl Job {
                 Some(Flight::new(keyframes, &run.fcd))
             }
         };
+        let buildings_file = buildings;
         let buildings = match buildings {
             None => None,
             Some(file) => Some(
@@ -126,16 +153,24 @@ impl Job {
                     .map_err(|e| anyhow!("--buildings {}: {e}", file.display()))?,
             ),
         };
+        let credit = if with_credit {
+            credit::line(&run.placement.network, &o.project, buildings_file)?
+        } else {
+            None
+        };
         let fit = Camera::fit(&run.strips, o.width, o.height);
         let pool = run.motion.max_drawn();
+        let line = credit.as_deref();
         let renderer = match &flight {
-            None => Renderer::new(&run.strips, fit, pool, buildings.as_ref())?,
+            None => Renderer::new(&run.strips, fit, pool, buildings.as_ref(), line)?,
             Some(flight) => {
                 let pose = flight.pose_at(clock.from, &run.motion, &run.fcd, &run.placement);
-                Renderer::new_perspective(&run.strips, fit, pool, &pose, buildings.as_ref())?
+                Renderer::new_perspective(&run.strips, fit, pool, &pose, buildings.as_ref(), line)?
             }
         };
-        Ok(Self::assemble(clock, run, renderer, flight, buildings))
+        Ok(Self::assemble(
+            clock, run, renderer, flight, buildings, credit,
+        ))
     }
 
     fn assemble(
@@ -144,6 +179,7 @@ impl Job {
         renderer: Renderer,
         flight: Option<Flight>,
         buildings: Option<Buildings>,
+        credit: Option<String>,
     ) -> Job {
         let run::Run {
             fcd,
@@ -161,6 +197,7 @@ impl Job {
             renderer,
             flight,
             buildings,
+            credit,
         }
     }
 
@@ -222,6 +259,22 @@ impl Job {
     /// The `--buildings` file's buildings; `None` without one.
     pub fn buildings(&self) -> Option<&Buildings> {
         self.buildings.as_ref()
+    }
+
+    /// The credit line drawn on every frame (vis-002 §2.14.2); `None` without one.
+    pub fn credit(&self) -> Option<&str> {
+        self.credit.as_deref()
+    }
+
+    /// The credit line's font size after the fit, px (§2.14.5); `None` without one.
+    pub fn credit_size(&self) -> Option<u32> {
+        self.renderer.credit_size()
+    }
+
+    /// The credit box, `[x0, y0, x1, y1]` in pixels with `x1` and `y1` exclusive: the
+    /// fill text's rectangle grown by the outline offset (§2.14.5); `None` without a line.
+    pub fn credit_box(&self) -> Option<[u32; 4]> {
+        self.renderer.credit_box()
     }
 
     /// Metres per pixel.
