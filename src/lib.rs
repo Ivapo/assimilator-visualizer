@@ -9,7 +9,8 @@
 //! ([`Job::pose_at`]). vis-002 adds the buildings of a `--buildings` file
 //! ([`Job::prepare_with`], [`Job::buildings`]), and the credit line of an imported
 //! network's render ([`Job::credit`], [`Job::credit_size`], [`Job::credit_box`]), with
-//! the same job without it for the gates ([`Job::prepare_without_credit`]).
+//! the same job without it for the gates ([`Job::prepare_without_credit`]). vis-002
+//! Phase 3 cuts the buildings in the camera's way to stubs ([`Job::set_see_through`]).
 
 pub mod buildings;
 pub mod camera;
@@ -25,6 +26,7 @@ pub mod place;
 pub mod render;
 pub mod run;
 pub mod scene;
+pub mod see_through;
 pub mod view;
 
 use std::path::{Path, PathBuf};
@@ -259,6 +261,14 @@ impl Job {
     /// The `--buildings` file's buildings; `None` without one.
     pub fn buildings(&self) -> Option<&Buildings> {
         self.buildings.as_ref()
+    }
+
+    /// See-through (vis-002 §2.15.6), from the next frame: on cuts the buildings in the
+    /// way to stubs at each frame's pose. No effect on a job without buildings or without
+    /// a flight. Every `prepare*` builds a job with it off; `render` turns it on.
+    pub fn set_see_through(&mut self, on: bool) {
+        let cut = if on { self.buildings.as_ref() } else { None };
+        self.renderer.set_see_through(cut);
     }
 
     /// The credit line drawn on every frame (vis-002 §2.14.2); `None` without one.

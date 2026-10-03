@@ -2,7 +2,8 @@
 //! Bevy's input into a [`ViewInput`], applies it to the [`ViewState`], prints a returned
 //! keyframe line on stdout, and draws the state: the perspective camera at the state's
 //! pose (§2.11), the shaded boxes at `t`, the readout and the time slider (§2.10). With
-//! `--buildings` (vis-002 §2.8), the buildings and the sun, shown or hidden by `B`.
+//! `--buildings` (vis-002 §2.8), the buildings and the sun, shown or hidden by `B`, with
+//! the buildings in the way cut to stubs while see-through is on (§2.15.6), flipped by `X`.
 
 pub mod slider;
 pub mod state;
@@ -15,8 +16,10 @@ use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::window::{CursorMoved, PrimaryWindow, WindowResolution};
 
-use crate::draw;
+use crate::buildings::Buildings;
+use crate::draw::{self, BuildingsCut};
 use crate::run::{self, LoadOptions, Run};
+use crate::see_through;
 pub use state::{Fit, ViewInput, ViewState};
 
 /// What `view` needs, after CLI parsing.
@@ -25,6 +28,8 @@ pub struct ViewOptions {
     pub load: LoadOptions,
     /// The `--buildings` file.
     pub buildings: Option<std::path::PathBuf>,
+    /// See-through at launch (vis-002 §2.15.6): true unless `--no-see-through`.
+    pub see_through: bool,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -43,11 +48,21 @@ struct Viewer {
     state: ViewState,
     boxes: draw::BoxesEntity,
     camera: Entity,
-    /// The buildings' mesh and sun; `None` without `--buildings`.
-    buildings: Option<draw::BuildingEntities>,
+    /// The buildings, their mesh and sun; `None` without `--buildings`.
+    buildings: Option<ViewBuildings>,
     readout: Entity,
     bar: BarNodes,
     bench: Option<Bench>,
+}
+
+/// The buildings as drawn, for `B` and `X`.
+struct ViewBuildings {
+    entities: draw::BuildingEntities,
+    buildings: Buildings,
+    /// The heights the mesh is drawn at now, in file order.
+    drawn: Vec<f64>,
+    /// Built the first time see-through is on.
+    cut: Option<BuildingsCut>,
 }
 
 /// The time slider's `bevy_ui` nodes, placed each frame from [`ViewState::bar`].
@@ -99,6 +114,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     let fit = Fit::new(&run.strips, o.width, o.height);
     let snaps = run.fcd.snapshots.iter().map(|s| s.time).collect();
     let mut state = ViewState::new(run.from, run.to, snaps, fit);
+    state.see_through = o.see_through;
     if o.bench.is_some() {
         state.t = BENCH_T.clamp(state.from, state.to);
         state.playing = true;
@@ -134,9 +150,12 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         Transform::IDENTITY,
     ));
     let boxes = draw::spawn_boxes(world);
-    let buildings = buildings
-        .as_ref()
-        .map(|b| draw::spawn_buildings(world, b, (fit.cx, fit.cy)));
+    let buildings = buildings.map(|b| ViewBuildings {
+        entities: draw::spawn_buildings(world, &b, (fit.cx, fit.cy)),
+        drawn: b.buildings.iter().map(|x| x.height).collect(),
+        buildings: b,
+        cut: None,
+    });
     let readout = world
         .spawn((
             Text::new(state.readout()),
@@ -231,6 +250,7 @@ fn input(world: &mut World) -> ViewInput {
             r: keys.just_pressed(KeyCode::KeyR),
             f: keys.just_pressed(KeyCode::KeyF),
             b: keys.just_pressed(KeyCode::KeyB),
+            x: keys.just_pressed(KeyCode::KeyX),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -272,18 +292,34 @@ fn frame(world: &mut World) {
         *cam.get_mut::<Projection>().unwrap() = projection;
         let boxes = run.boxes_at(s.t);
         draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D);
-        if let Some(b) = v.buildings {
+        if let Some(b) = v.buildings.as_mut() {
             let want = if s.buildings_shown {
                 Visibility::Inherited
             } else {
                 Visibility::Hidden
             };
-            for e in [b.mesh, b.sun] {
+            for e in [b.entities.mesh, b.entities.sun] {
                 let mut ent = world.entity_mut(e);
                 let mut vis = ent.get_mut::<Visibility>().unwrap();
                 if *vis != want {
                     *vis = want;
                 }
+            }
+            // See-through (vis-002 §2.15.6): the mesh is replaced only when a height
+            // changes, and on every frame of `--bench` while it is on.
+            if s.see_through && b.cut.is_none() {
+                b.cut = Some(BuildingsCut::new(&b.buildings, (fx, fy)));
+            }
+            let heights = if s.see_through && s.buildings_shown {
+                see_through::heights(&b.buildings, &s.pose())
+            } else {
+                b.buildings.buildings.iter().map(|x| x.height).collect()
+            };
+            if let Some(cut) = &b.cut
+                && (heights != b.drawn || (v.bench.is_some() && s.see_through))
+            {
+                draw::set_building_heights(world, b.entities.mesh, cut, &heights);
+                b.drawn = heights;
             }
         }
         let text = s.readout();

@@ -12,7 +12,7 @@ covers: >
   format and its checks, the projection, the height rule, the mesh, the light, the
   orthographic eye rule and `view`'s `B`.
 max_lines: 60
-generated: 2026-10-02
+generated: 2026-10-03
 ---
 
 # Buildings
@@ -52,8 +52,7 @@ generated: 2026-10-02
 - `lnglat_to_xy(map_origin, lng, lat)` is the engine's `wgs84_to_metric`, copied with its
   operation order: `x = (lng − lng0)·111320·cos(lat0·π/180)`, `y = (lat − lat0)·111320`.
   `xy_to_lnglat` is its inverse.
-- Height is `height`, else `num_floors` × 3.5 m, else 10 m; the counts per rule and the
-  tallest are kept.
+- Height is `height`, else `num_floors` × 3.5 m, else 10 m; counts per rule and the tallest kept.
 - Each ring is projected and loses its closing position; exteriors are turned
   counter-clockwise and holes clockwise, seen from above.
 
@@ -71,6 +70,7 @@ generated: 2026-10-02
 - Without `--buildings` nothing is spawned. The orthographic eye (`draw::ortho_eye`) is
   `max(500, tallest + 10)` m up with far = eye + 500 m: (500, 1000) without buildings.
 
-## `B` in `view`
+## `B` in `view`, and see-through
 `B` (by position) flips `ViewState::buildings_shown`, true at launch, at any moment, and
-changes nothing else. Each frame the mesh's and the sun's visibility follow it.
+changes nothing else; each frame the mesh's and the sun's visibility follow it. In
+perspective, buildings in the camera's way are cut to stubs in this mesh (`rules/see-through.md`).

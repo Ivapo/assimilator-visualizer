@@ -12,13 +12,15 @@ and tilts, and `render --camera` flies a perspective camera through keyframes.
 vis-002 (`specs/city_spec.md`) Phase 1 puts the real buildings around an imported
 network: Overture footprints, fetched once into a cache and drawn as grey, sunlit blocks.
 Its Phase 2 draws the data's credit line in the corner of every frame of an imported
-network's video.
+network's video. Its Phase 3 cuts the buildings between the camera and the point it looks
+at down to stubs, so the traffic there shows.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
                          [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                          [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
                          [--camera <file.toml>] [--buildings <file.geojson>]
+                         [--no-see-through]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -35,6 +37,12 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   point, heading and length show as the one with the highest vehicle id.
 - **Buildings.** `--buildings <file.geojson>` draws the buildings of a cache fetched for
   this network (below). Without it nothing about the video changes.
+- **See-through.** A flight with `--buildings` and `--camera` is cut by default: each
+  frame, every building between the camera and the point it looks at sinks to a 3 m stub,
+  easing over a second or so rather than popping. `--no-see-through` draws every building
+  at full height, the video as before Phase 3. It is accepted, with no effect, where
+  nothing is cut: the orthographic render, which is never cut, and a render without
+  buildings.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
   bottom-right corner of every frame, with or without `--buildings`, crediting its data
   (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
@@ -99,6 +107,7 @@ scripts/fetch-buildings.sh --project <dir> --out <dir>/buildings.geojson
 assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                        [--width <px>] [--height <px>] [--buildings <file.geojson>]
+                       [--no-see-through]
 ```
 
 `view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
@@ -127,6 +136,7 @@ and framings worth rendering.
 | click or drag on the time slider | jump or scrub to that time (pauses while held, resumes on release) |
 | `K` | print the camera as a keyframe line on stdout |
 | `B` | hide / show the buildings (with `--buildings`) |
+| `X` | see-through on / off: buildings in the way cut to stubs (on at launch with `--buildings`, unless `--no-see-through`) |
 
 The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
 with a handle at the current time and a tick at each whole minute (thinned on long runs).
@@ -201,6 +211,8 @@ scripts/gates-credit.sh           # Phase 2 gates 4 (its checks), 5, 9 (CLI) and
 REFETCH=1 scripts/gates-credit.sh # adds gate 4's second fetch (network)
 cargo test --release --test credit -- --include-ignored --test-threads=1 --nocapture      # Phase 2 gates 3, 6–8, 10, 11
 scripts/gates-ties.sh             # vis-001 Phase 6 gates 2 and 9, offline
+scripts/gates-see-through.sh      # Phase 3 gates 2, 7, 10 (CLI) and the gate 14 renders, offline
+cargo test --release --test see_through -- --include-ignored --test-threads=1   # Phase 3 gates 5, 6, 8, 9, 11
 ```
 
 `FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps the fetched

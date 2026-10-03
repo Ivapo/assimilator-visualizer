@@ -25,7 +25,7 @@ phases:
     by: null
   - name: "Phase 3 — See-through: buildings in the way cut to stubs, in a keyframed render and in view"
     reviewed: 2026-10-03
-    shipped: null
+    shipped: 2026-10-03
     cut: null
     by: null
 
@@ -1790,7 +1790,7 @@ draft".
     `--no-see-through` with nothing to cut is accepted with no effect. Recorded as
     §2.15.1 decision 3's dated note, §2.15.6 and Phase 3's scope and gates 2, 3, 7, 10,
     12, 13 and 14.
-- **OQ-15** — Should more than the wedge be cut (§2.15.7)?
+- **OQ-15** — Should more than the wedge be cut (§2.15.7)? **RESOLVED.**
   - *The facts:*
     - The wedge clears the look-at point's surroundings: centre boxes hidden fall from
       59.4 % to 0.0 % on the orbit flight. Over the whole frame, boxes hidden fall
@@ -1808,7 +1808,10 @@ draft".
     - (c) a wider `WIDTH`, which is iteration (§2.15.2).
   - *Recommendation:* (a) for Phase 3. The user judges at gate 14, on the orbit, whether
     (b) or (c) is wanted.
-  - *(design call: the user, at gate 14; non-blocking.)*
+  - ~~*(design call: the user, at gate 14; non-blocking.)*~~
+  - *(answered 2026-10-03, user, at Phase 3's gate 14)* **(a): keep the wedge.** Flights
+    are aimed at the traffic. Neither (b) nor (c) is taken: `WIDTH` stays 0.15, the ease
+    band `max(r, 10 m)` and the stub 3 m.
 
 ## 4. Implementation phases
 
@@ -2793,6 +2796,12 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
 
       Then say whether `WIDTH`, the ease band or the stub should change (iteration,
       §2.15.2–§2.15.3), and answer OQ-15.
+
+      *(Passed by the user, 2026-10-03.)* The user watched
+      `scratch/out/see-through/see-through-orbit-{off,on1}.mp4` and
+      `see-through-city-{off,on1}.mp4`. The look stays as built: `WIDTH` 0.15, the ease
+      band `max(r, 10 m)` and the 3 m stub. OQ-15 is answered (a). The gate record is in
+      `specs/reviews/vis-002.md`.
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
