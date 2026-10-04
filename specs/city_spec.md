@@ -8,9 +8,11 @@ note: >
   the data's credit line (OpenStreetMap, Overture, building sources) on every frame of an
   imported network's render. Phase 3 cuts the buildings between the camera and the point it
   looks at down to stubs, by default, in a keyframed render and in view;
-  `--no-see-through` turns it off.
+  `--no-see-through` turns it off. Phase 4 draws a building that has Overture
+  building_parts from its parts, each from its own base, so towers stand on podiums and
+  raised bases stand above the street; a cache without parts draws as before.
 status: accepted
-last_updated: 2026-10-03
+last_updated: 2026-10-04
 
 phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
@@ -28,6 +30,11 @@ phases:
     shipped: 2026-10-03
     cut: null
     by: null
+  - name: "Phase 4 — Building parts: towers on podiums and raised bases, from Overture's parts"
+    reviewed: null
+    shipped: null
+    cut: null
+    by: null
 
 extends: null
 supersedes: null
@@ -39,11 +46,14 @@ reference: >
   (GeoParquet, ODbL). Engine: ~/dev/main/assimilator at the pin of vis-001 §2.2.2 (df8aec0),
   read-only; its import projection and metadata.map_origin are what this spec relies on.
   The user's Midtown project is /Users/ivapo/assimilator/projects/midtown-section at
-  e2de274, read-only. Out of scope from Overture: building_part, the base theme (land use,
-  water), transportation (roads come from the network) and places. Phase 2's credit
-  follows Overture's attribution page (https://docs.overturemaps.org/attribution/) and
-  OSMF's attribution guidelines (https://osmfoundation.org/wiki/Licence/Attribution_Guidelines),
-  both read 2026-10-02, and draws with Fira Sans Medium (OFL 1.1, google/fonts).
+  e2de274, read-only. Out of scope from Overture: the base theme (land use, water),
+  transportation (roads come from the network) and places. From Phase 4, type
+  building_part too (theme=buildings/type=building_part/), whose release-2026-09-23.1
+  rows for Midtown are saved in gitignored scratch/overture-2026-09-23.1/ (§2.16.10).
+  Phase 2's credit follows Overture's attribution page
+  (https://docs.overturemaps.org/attribution/) and OSMF's attribution guidelines
+  (https://osmfoundation.org/wiki/Licence/Attribution_Guidelines), both read 2026-10-02,
+  and draws with Fira Sans Medium (OFL 1.1, google/fonts).
 ---
 
 # City
@@ -648,6 +658,9 @@ constraint.
     the roads' release. It leaves S3 about 2026-11-22 (§2.14.3), so Phase 4 starts by
     early November 2026. Otherwise a newer release is pinned and every count is
     predicted again (§2.2 m);
+    *(2026-10-03)* Drafted as **Phase 4** (§2.16). Its deadline is met: Midtown's
+    buildings and parts of `2026-09-23.1` were saved as parquet before drafting
+    (§2.16.10), and the fetch gains `--source` to read them offline (§2.16.3);
   - see-through or fading buildings near the camera or around a followed vehicle (§2.2 f);
     *(2026-10-03)* See-through, opaque, is drafted as **Phase 3** (§2.15). The user
     chose to cut to stubs, not to fade (§2.15.1, decision 2);
@@ -656,6 +669,9 @@ constraint.
 - **Ground:** land use and water from Overture's `base` theme.
 - **Sky, fog and a wider extent**, where vis-001 OQ-12 (a pitch floor below 25°) is decided
   (§2.2 g).
+  *(2026-10-03)* A floor below 22.5° (half the field of view) also lets a view ray rise,
+  so that phase draws the undersides of raised volumes, which Phase 4 leaves out
+  (§2.16.6).
 - **Streets** *(added 2026-10-03, agreed by the user)*: junction surfaces, lane lines and
   stop lines. It comes before vis-001's data item (vis-001 §2.7 item 5), because signal
   states need stop lines to be drawn at.
@@ -1485,6 +1501,368 @@ draft".
   frame built from a file with the in-the-way block at 3 m: 0 pixels apart. Every pixel
   that changes lies inside the in-the-way block's image rectangle.
 
+### 2.16 Building parts (Phase 4)
+
+Drafted 2026-10-03, the phase §2.15.1 decision 4 recorded. Overture's `building` footprint
+carries the whole building's height, so a tower on a podium is drawn today as one slab as
+tall as the tower, and a building on stilts stands on the ground (OQ-5). Overture's
+`building_part` type describes each volume of such a building with its own base and top.
+This phase draws a building that has parts from its parts, and honours raised bases. The
+numbers below come from the raw data saved and the probe run while drafting (§2.16.10).
+
+#### 2.16.1 The user's decisions (decision, recorded)
+
+Decided by the user, 2026-10-03, at §2.15.1 decision 4, and not reopened here:
+- **a building with `building_part`s is drawn from its parts**, each standing from its own
+  `min_height`;
+- **raised bases are honoured**;
+- **flat roofs and the neutral grey stay**: no roof shapes, and no Overture colours.
+
+Given by the user with the brief, 2026-10-03:
+- **The raw data is saved first.** Release `2026-09-23.1` leaves S3 about 2026-11-22
+  (§2.14.3), and the cache keeps only `id`, `height`, `num_floors` and `sources`, so it has
+  neither the parts nor the buildings' `min_height`. Before anything else, every column of
+  `type=building` and of `type=building_part` for Midtown's box (§2.3.1, 250 m) was saved
+  as parquet in gitignored `scratch/overture-2026-09-23.1/`, read as
+  `scripts/fetch-buildings.sh` reads, `ORDER BY id` (§2.16.10).
+  `scratch/midtown/buildings.geojson` was not touched.
+- **The gates the draft must carry** (Phase 4's exit gate): today's cache renders
+  byte-identical; with parts, two Midtown flights agree and the counts and the credit line
+  are predicted from the saved data; a synthetic test fails without parts; `view`'s bench
+  stops the build below 30 fps; 0 crates, or the reason; and the user's visual gate,
+  written as what shows on screen.
+
+The rest of this section is the draft's proposal. It settles, each with one
+recommendation:
+- the fetch and the cache (§2.16.3);
+- what is drawn for a building with parts (§2.16.4, OQ-16);
+- heights and bases (§2.16.5);
+- raised volumes (§2.16.6);
+- see-through with parts (§2.16.7, OQ-17);
+- the credit line (§2.16.8);
+- old caches (§2.16.9);
+- the mesh, its cost and the build cost (§2.16.11).
+
+#### 2.16.2 What Overture has for Midtown
+
+From the saved data (§2.16.10). Midtown's box is §2.3.1's.
+- **4,336 buildings**, as the cache. 487 have `has_parts`, and every one of the 487 has at
+  least one part; no building without `has_parts` has a part.
+- **4,209 parts** belong to those 487 buildings: 1 to 69 a building, median 5.
+  - **A part need not meet the box.** The box gives 4,087 parts. The other 122 belong to
+    buildings that straddle the box's edge, and lie wholly outside it. A query by
+    `building_id`, over the fetched buildings' own extent, gives all 4,209. The same query
+    over that extent widened by 0.01° on every side gives the same 4,209, byte for byte.
+  - Every part is a `POLYGON` (no `MULTIPOLYGON`), valid (`ST_IsValid`), 28 with holes
+    (32 holes).
+  - **Heights:** `height` on 4,152, `num_floors` only on 17, neither on 40. 1.0 to 472.0 m,
+    median 66.0 m.
+  - **Bases:** `min_height` on 695, from 3.0 to 245.0 m (10th, 50th and 90th percentiles
+    10, 70 and 148 m), 694 of them above 3 m. `min_floor` is never the only one given.
+    No part has its base at or above its top.
+  - `is_underground` on none. `roof_shape` on 3,659 and a colour on 3,431, both unused
+    (§2.16.1).
+  - **Datasets:** every part names `OpenStreetMap` only.
+- **The buildings' own bases:** three have one. `2bd09890-…` (`min_height` 7.5, `height` 8,
+  371 m²), `c92d28b5-…` (`min_floor` 2, so 7 m; `num_floors` 10, so 35 m; 1,140 m²) and
+  `de4ad6d6-…` (`min_height` 3.7, `height` 4; it has parts).
+- **A building's `height` is not its parts' top.** Of the 487, the tallest part is above
+  the building's own height in 226 (by up to 405.8 m), below it in 222 (by up to 266.8 m),
+  and equal in 39. So this phase lowers slabs and also raises towers that are missing
+  today:
+  - `62ebe85a-…`, 8,018 m² at 366 m today, keeps a 366 m part, and its other parts are
+    lower; it loses the most volume of any building, about 1.9 million m³ (an estimate
+    that ignores overlaps between parts);
+  - `8dceada5-…` has no height and is a 10 m block today (9,076 m²); its parts reach
+    260 m.
+- **Three of the 487 are underground** (`is_underground`, no height, 10 m today):
+  `8f543471-…` (155,767 m²), `ef5effa2-…` (30,090 m²) and `196bfb75-…` (13,260 m²), the
+  footprint §2.15.7 found over a queue at (−337, 400). Their parts are what stands above
+  ground.
+
+#### 2.16.3 The fetch and the cache: one file, the script extended
+
+| | (a) The script extended, one file | (b) A second script and file | (c) The script extended, two files |
+|---|---|---|---|
+| What | `fetch-buildings.sh` writes the parts into `buildings.geojson`, after the buildings | `fetch-parts.sh` writes `parts.geojson`; `render --building-parts <file>` | `fetch-buildings.sh --out` writes `<out>` and `<out>.parts.geojson` |
+| Flags | none new for `render` and `view` | one more, which the harness must pass | none, but `render` finds a file by name |
+| Travels with the cache | yes | only if both are passed | only if both are copied |
+| The credit (§2.14.3) | reads every feature's `sources`: parts included, no code | a second provenance to read and check against the first | as (b) |
+| Belongs to its cache | by construction | needs a check (a hash) | as (b) |
+
+**The plan: (a).** It is §2.14.3's choice again: one self-describing file, which `render`
+and `view` take with the same `--buildings`.
+
+**The query.** The buildings' query is §2.14.3's, with two columns more. The parts are
+selected by `building_id`, not by the box (§2.16.2), over a box that is the fetched
+buildings' own extent (`min(bbox.xmin)`, … of the buildings selected), which the script
+computes in a first DuckDB statement and writes into the second as literals:
+
+```sql
+CREATE TEMP TABLE b AS
+  SELECT * FROM read_parquet('<source>/type=building/*.parquet')
+  WHERE bbox.xmin <= <E> AND bbox.xmax >= <W> AND bbox.ymin <= <N> AND bbox.ymax >= <S>;
+-- <W2> <S2> <E2> <N2>: SELECT min(bbox.xmin), min(bbox.ymin), max(bbox.xmax), max(bbox.ymax) FROM b
+COPY (
+  SELECT id, NULL::VARCHAR AS building_id, height, num_floors, min_height, min_floor,
+         list_sort(list_distinct([s.dataset FOR s IN sources])) AS sources, geometry
+  FROM b
+  UNION ALL
+  SELECT id, building_id, height, num_floors, min_height, min_floor,
+         list_sort(list_distinct([s.dataset FOR s IN sources])) AS sources, geometry
+  FROM read_parquet('<source>/type=building_part/*.parquet')
+  WHERE bbox.xmin <= <E2> AND bbox.xmax >= <W2> AND bbox.ymin <= <N2> AND bbox.ymax >= <S2>
+    AND building_id IN (SELECT id FROM b)
+  ORDER BY building_id NULLS FIRST, id
+) TO '<tmp>/buildings.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON',
+      LAYER_CREATION_OPTIONS 'DESCRIPTION=Overture Maps buildings, release <release>');
+```
+
+- **The fields kept:** a part's `id`, `building_id`, `height`, `num_floors`, `min_height`,
+  `min_floor`, `sources` (datasets) and `geometry`; a building gains `min_height` and
+  `min_floor`, and a `building_id` of `null`. Nothing else is drawn (§2.16.1), so nothing
+  else is kept.
+- **The order:** the buildings first, by `id`, then the parts, by `building_id` and then
+  `id`. The buildings are today's rows in today's order. Taken out of the file, the three
+  new members (`"building_id": null, ` and `, "min_height": …, "min_floor": …`) leave each
+  building's line equal to today's cache's, byte for byte (§2.16.10). The last building's
+  line then also ends in a comma, since parts follow it.
+- **The bytes are deterministic.** The same release and box give the same file: Midtown's,
+  written twice, is 4,944,032 bytes both times, SHA-256 `714e2f3a…` (§2.16.10). It holds
+  8,545 features.
+- **The description** is unchanged, `Overture Maps buildings, release <r>`, so §2.14.3's
+  check reads either form.
+
+**`--source <dir>`** (new, optional). It replaces the default
+`s3://overturemaps-us-west-2/release/<release>/theme=buildings` with a directory laid out
+the same way: `<dir>/type=building/*.parquet` and `<dir>/type=building_part/*.parquet`.
+- It makes the fixture's cache reproducible after `2026-09-23.1` leaves S3, from the data
+  saved while drafting, and lets the Phase 4 gates fetch offline.
+- `--release` still names the release in `description`. With `--source`, the script cannot
+  check that the files are that release; the README says so.
+- Midtown through `--source` and through S3 gives the same rows: the saved parquet was read
+  from S3 with the same filters (§2.16.10). The saved `building.parquet` rebuilds today's
+  cache through Phase 2's query byte for byte (`f241ccbd…`).
+
+**The report** (§2.3.4) keeps every key and its meaning, and gains two:
+- `"raised"`: the buildings with a base above 0 (§2.16.5), 3 for Midtown;
+- `"parts"`: an object, `{"count": 4209, "buildings": 487, "height": 4152, "num_floors":
+  17, "default": 40, "raised": 695, "sources": {"OpenStreetMap": 4209}, "no_sources": 0}`
+  for Midtown, counted over the written file. `buildings` is the buildings with at least
+  one part.
+
+The fixture (§2.9) keeps `scratch/midtown/buildings.geojson`, today's form, which every
+gate of Phases 1–3 reads. Phase 4 adds `scratch/midtown/buildings-parts.geojson`, written
+by step 6 of `scripts/fixture.sh midtown` only if absent or `REFETCH=1`, with `--source
+scratch/overture-2026-09-23.1/theme=buildings` when that directory exists, else from S3.
+Its report line goes to `scratch/midtown/fetch-parts.log`.
+
+#### 2.16.4 What is drawn for a building with parts: its parts only (OQ-16)
+
+Decision 1 says a building with parts is drawn from its parts. What it leaves open is the
+part of the footprint no part covers. Measured over the 487 (§2.16.10):
+- **the parts cover the footprint to within 1 m² in 414**: 65 have more than 1 % of it
+  uncovered, and 50 more than 10 %;
+- **196,624 m² of footprint is uncovered**, of 1,222,541 m² (16 %). 160,808 m² of it is
+  the three underground buildings' (§2.16.2); the other 35,817 m² is spread over 70
+  buildings;
+- parts reach outside their building's footprint by 101.9 m² in all (13 buildings over
+  1 m²), which is drawn as it is.
+
+| | (a) The parts only | (b) The parts, and the rest of the footprint at the building's height | (c) The parts, and the rest at a fixed low height |
+|---|---|---|---|
+| The three underground buildings | their parts only | 160,808 m² drawn at 10 m, as today | 160,808 m² drawn low |
+| Towers whose footprint the parts do not cover | the parts | the rest as tall as the building: up to 472 m, the slab this phase removes | a low slab under them |
+| Geometry | none | a polygon difference per building: a crate (+1 package at least) or one more `ST_Difference` column in the fetch | as (b) |
+| Decision 1 | as written | adds a volume the data does not describe | as (b) |
+
+**The recommendation: (a).** It is decision 1 as written. The uncovered rest has no height
+of its own, and the largest part of it is underground. (b) puts back the slab this phase
+removes, and (c) invents a height. The user judges what (a) leaves at Phase 4's gate 15,
+which describes the largest of these changes on screen.
+
+#### 2.16.5 Heights and bases
+
+Each feature drawn is a **volume** with a base and a top:
+- **the top** is §2.4.2's rule, unchanged: `height`, else `num_floors` × 3.5 m, else 10 m.
+  A part with neither is 10 m, like a building: 40 of Midtown's parts.
+  - The building's height is not used for its parts (§2.16.2: it is above the tallest part
+    in 222 and below it in 226). Taking it as a part's default would make a podium as tall
+    as the building, the slab this phase removes.
+- **the base** follows the same pattern: `min_height`, else `min_floor` × 3.5 m, else 0.
+  - `min_height` wins over `min_floor`, as `height` wins over `num_floors`.
+  - The same 3.5 m a storey as `num_floors`, so `min_floor` 2 is 7 m (`c92d28b5-…`).
+
+A building with parts is drawn from its parts: its own base and top are not drawn, though
+its `height` and `num_floors` are still checked as today (§2.4.3). A building without parts
+is one volume: its own polygons, from its base to its top. With base 0 that is today's
+building, vertex for vertex.
+
+**A building's drawn top** is the highest top of its volumes: its tallest part's, or its
+own height. `tallest` (§2.8, the orthographic eye) and see-through (§2.16.7) take it. For a
+building without parts it is its `height`, the same `f64`. Midtown's tallest stays 472.0 m,
+so its orthographic eye does not move.
+
+**The checks** (§2.4.3) gain these, each `error: --buildings <file>: feature <id>: …`, in
+each feature's own order after today's:
+- a `building_id` that is neither absent, `null` nor a string;
+- a `min_height` that is used and is not a finite number ≥ 0, or a `min_floor` that is used
+  and is not an integer ≥ 0;
+- a volume whose base is not below its top: `base 30 m is not below its top 20 m`. It is
+  checked on a building only when the building has no parts, since otherwise it is not
+  drawn.
+
+Then, after every feature and before `map_origin`, in file order: a part whose
+`building_id` names no building of the file, `part of <bid>, which is not a building of
+the file`. A part of a part names a part, so it is caught here too. Midtown has none of
+these: no orphan part, and no base at or above its top.
+
+#### 2.16.6 Raised volumes: walls from the base, and no underside
+
+A volume with a base above 0 has its walls from the base to its top, and its roof at its
+top. 697 of Midtown's 8,058 volumes are raised (695 parts and 2 buildings).
+
+**The underside is not drawn**, and no frame can show it:
+- it would face down, so with back faces culled it shows only to an eye below it;
+- every view ray in this renderer descends: the pitch floor is 25°, above half the 45°
+  field of view (`src/camera.rs:PITCH_MIN`, `src/camera.rs:FOV_DEG`; the floor "keeps the
+  horizon out of every frame"), and the orthographic camera looks straight down. So no
+  visible point lies above the eye, and an underside above the eye is never in sight;
+- the open bottom of a raised volume is seen only from below, for the same reason.
+
+So an underside would cost 4,093 triangles and 5,487 vertices on Midtown and change no
+pixel. The synthetic probe agrees: with and without it, its frames are 0 pixels apart
+(§2.16.10). If vis-001 OQ-12 ever lowers the pitch floor below 22.5°, this changes, and
+that phase draws the underside (§2.13).
+
+A raised volume's walls are today's quads with their lower edge at the base. The
+see-through rule needs nothing more (§2.16.7).
+
+#### 2.16.7 See-through with parts: cut with the building (OQ-17)
+
+§2.15.7 already says how parts are cut: the wedge test is on the building's footprint,
+and each part's top is clamped to `h′`. So:
+- **`δ` is unchanged.** It is measured from the building's own polygons, so every building
+  is in the way exactly when it is today.
+- **`h′` takes the drawn top** (§2.16.5) for `h`: `min(top, s + (top − s)·smoothstep(δ/e))`.
+  With `δ ≥ e` it is `top`, and every vertex keeps its `z`. For a building without parts,
+  `top` is `height`, so its `h′` is today's, bit for bit.
+- **The drawing is unchanged:** `draw::BuildingsCut` gives every vertex of building `b`
+  `z′ = min(z, h′_b)`, its parts' vertices included, since `building_mesh` appends a
+  building's volumes in order.
+
+What §2.15.7 left to this phase is a volume whose base is at or above `h′`. The clamp
+puts its base and top both at `h′`: its walls have no height, and its roof lies at `h′`,
+a lid. Where a lower part of the same building lies under it, the lid is in the plane of
+that part's roof and changes no pixel: the synthetic tower on its podium, cut, is 0 pixels
+apart from a 3 m slab of the podium (§2.16.10). Where nothing lies under it, an overhang,
+the lid covers the street below it at `h′`.
+
+| | (a) The lid at `h′` (the clamp) | (b) The volume removed once `h′` falls to its base |
+|---|---|---|
+| An overhang in the way | a lid at `h′`, down to 3 m, over the street, as Phase 3 draws that footprint today (the whole building at `h′`) | gone: the street under it shows |
+| As the wedge reaches it | continuous: the lid sinks with `h′` | its roof, at its base, vanishes in one frame: a pop (§2.15.3 has none) |
+| Code | none: the clamp as built | each vertex's volume and its base kept beside its building; a removed volume's vertices collapsed to one point |
+| Exactness (Phase 3 gate 6's form) | the cut frame equals the frame of a file with each part's base and top at `min(·, h′)` | the same, with removed parts left out |
+
+Measured on the two flights, with see-through on (§2.16.10): on the city flight, 1,157
+frames have at least one part at or above its `h′`, and 726 have one with more than 10 m²
+over no ground part of its building (a part with a base of 3 m or less), up to 2,567 m² of
+such lids in one frame. On the orbit, 248 frames have such a part, and none over nothing.
+These counts are over every frame's whole wedge, not only what is in frame. Over all 694 raised parts, 19,841 m² of their area lies over
+no ground part of their building, in 103 parts of 41 buildings: 11 % of the raised parts'
+180,766 m².
+
+**The recommendation: (a), the lid.** It is §2.15.7's rule as written, it never pops, and
+where it covers a street, Phase 3 covers it too today. (b) shows a little more street on
+the city flight, at the cost of a pop where §2.15.3 promised none.
+
+#### 2.16.8 The credit line
+
+§2.14.2's item 3 names each dataset that at least one feature of the file names, parts
+included: `src/credit.rs` reads every feature's `sources` (§2.14.3) and needs no change.
+Every Midtown part names OpenStreetMap only (§2.16.2), so the line with the new cache is
+the line today:
+
+`© OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1 ·
+Microsoft ML Buildings (ODbL) · USGS Lidar`
+
+Phase 4 adds no item and no wording. A part naming a dataset no building names is credited
+as §2.14.2 already says.
+
+#### 2.16.9 Old caches: read, and drawn as today
+
+A cache written before Phase 4 has no `building_id`, `min_height` or `min_floor`. Read by
+Phase 4, every feature is a building with base 0 and no parts, so it is drawn vertex for
+vertex as today, cut as today and credited as today. Every frame of a render with it is
+byte-identical to today's (Phase 4 gate 2).
+- **No error and no warning.** Phase 2 made an old cache an error because the credit
+  needed its release. Parts change no credit (§2.16.8), and a cache without them is still
+  a correct, if plainer, picture. The README says to fetch again for parts.
+- `tests/shapes.geojson`, hand-written and without parts, reads as before.
+
+#### 2.16.10 Measured while drafting (2026-10-03)
+
+The record, with every query, is `specs/reviews/vis-002.md`, "Phase 4 draft". Read-only
+against S3 and the Midtown fixture; output only under gitignored `scratch/`; nothing in
+`src/` or `tests/`.
+- **The raw data**, saved first (§2.16.1), in `scratch/overture-2026-09-23.1/`, every
+  column, through DuckDB 1.5.1 as the fetch script reads, `ORDER BY id`:
+
+  | File | What | Rows | Bytes | SHA-256 |
+  |---|---|---|---|---|
+  | `building.parquet` | `type=building`, the box | 4,336 | 1,023,962 | `2d41d5ed…` |
+  | `building_part.parquet` | `type=building_part`, the box | 4,087 | 838,028 | `3af90053…` |
+  | `building_part-of-buildings.parquet` | `type=building_part` of the 487, over their own extent (§2.16.3) | 4,209 | 861,070 | `92f19431…` |
+
+  The first two took 19 min 39 s together; the third 23 s.
+- **The saved buildings are the cache's:** Phase 2's query over `building.parquet` gives
+  today's `scratch/midtown/buildings.geojson` byte for byte (2,284,830 bytes,
+  `f241ccbd…`).
+- **The new cache**, §2.16.3's query over the saved parquet: 4,944,032 bytes, `714e2f3a…`,
+  twice.
+- **The probe** (`scratch/vis002p4-probe/`, a crate with a path dependency on this repo at
+  `fb53d7f`, built in release in this repo's `target/`). It copies
+  `src/render.rs:Renderer` without the credit, with a building mesh given as data (so that
+  parts, bases and undersides can be drawn and cut), and draws §2.16.5–§2.16.7's rule.
+  - **The copy is the shipped renderer:** frames 0, 450, 900, 1350 and 1799 of the city
+    flight with today's cache and see-through on are byte-identical through the copy and
+    through `Job::prepare_without_credit` with `set_see_through(true)`.
+  - Its mesh for today's cache equals `buildings::mesh_data`'s, position for position.
+- The counts, the flights, the synthetic scenes and the costs are in §2.16.11 and in
+  Phase 4's gates.
+
+#### 2.16.11 The mesh, its cost, and the build cost
+
+Midtown's building mesh, today and with parts (the probe, §2.16.10):
+
+| | Volumes | Raised | Wall quads | Roof triangles | Triangles | Vertices | Indices |
+|---|---|---|---|---|---|---|---|
+| Today's cache | 4,336 | 0 | 42,776 | 34,178 | 119,730 | 213,880 | 359,190 |
+| With parts | 8,058 | 697 | 67,367 | 51,315 | 186,049 | 336,835 | 558,147 |
+| With parts and undersides (not drawn, §2.16.6) | 8,058 | 697 | 67,367 | 51,315 + 4,093 | 190,142 | 342,322 | 570,426 |
+
+- 8,058 volumes = 4,336 − 487 + 4,209. The roofs follow §2.6's Σ (n + 2h − 2): 67,367
+  ring vertices, 32 holes and 8,058 polygons give 51,315, and `earcut` 0.4.11 gives
+  exactly that.
+- **The mesh grows by 57 %.** It is still one mesh, one draw, opaque (§2.15.5).
+- **Cost.** With see-through on, the mesh is rebuilt on most frames (§2.15.5): 1,653 of
+  the city flight's 1,800 and all 1,800 of the orbit's, today and with parts alike.
+  Interleaved on the same pose, 900 pairs a flight at a load average of 5–12, a frame with
+  the mesh rebuilt and rendered takes, at the median:
+  - city flight: 22.25 ms today and 25.02 ms with parts (p99 31.14 and 34.00);
+  - orbit: 20.13 and 22.70 ms (p99 25.27 and 27.90).
+
+  So the parts add 2.6–2.8 ms a frame. Computing the heights and building the mesh is
+  0.51 → 0.70 ms (city) and 0.46 → 0.65 ms (orbit) of it; the rest is Bevy uploading 57 %
+  more vertices. Phase 3's `view --bench`, rebuilding every frame, gave 59.43 fps (median
+  16.65 ms), so the bench is predicted to stay above 30 fps (Phase 4 gate 14).
+- **0 packages.** No crate is added: the parts are GeoJSON read with `serde_json`, the
+  roofs use `earcut`, and no polygon clipping is needed (OQ-16's (a)). `Cargo.toml` and
+  `Cargo.lock` do not change; no Bevy feature is added.
+- **No network** in `render` or `view`; the fetch alone uses it, and with `--source` not
+  even that.
+
 ## 3. Open questions
 
 - **OQ-1** — Depend on `assimilator-import` for the projection, or copy its three lines?
@@ -1812,6 +2190,35 @@ draft".
   - *(answered 2026-10-03, user, at Phase 3's gate 14)* **(a): keep the wedge.** Flights
     are aimed at the traffic. Neither (b) nor (c) is taken: `WIDTH` stays 0.15, the ease
     band `max(r, 10 m)` and the stub 3 m.
+- **OQ-16** — A building with parts: draw its parts only, or also the rest of its
+  footprint (§2.16.4)?
+  - *The facts:* the parts of 414 of Midtown's 487 buildings with parts cover their
+    footprint to within 1 m². 196,624 m² is uncovered in all, 16 % of their footprint, and
+    160,808 m² of that is three underground buildings (`is_underground`, 10 m blocks
+    today), one of them over OQ-4's queue. The rest, 35,817 m², is spread over 70
+    buildings, and has no height of its own.
+  - *The options:* (a) the parts only, decision 4 as written; (b) the parts, and the rest
+    at the building's height, which puts back the slab this phase removes and needs a
+    polygon difference (a crate, or a column in the fetch); (c) the rest at a fixed low
+    height, which invents one.
+  - *Recommendation:* (a). The user sees what it leaves at Phase 4's gate 15.
+  - *(design call: the user; blocks Phase 4's mesh counts (gate 6) and the predictions of
+    gates 12 and 15, not the fetch or the reader.)*
+- **OQ-17** — A part, or a raised base, wholly above its building's cut height `h′`: a lid
+  at `h′`, or removed (§2.16.7)?
+  - *The facts:* §2.15.7's clamp puts it at `h′` with no walls: a lid. Over a lower part of
+    the same building, it is in that part's roof plane and changes no pixel. Over nothing,
+    an overhang, it covers the street at `h′`, down to 3 m. 19,841 m² of Midtown's raised
+    parts lie over no ground part of their building, in 103 parts of 41 buildings. With
+    see-through on, the city flight has such a lid in 726 of its 1,800 frames, up to
+    2,567 m² in one frame; the orbit has none.
+  - *The options:* (a) the lid: §2.15.7 as written, continuous, and no worse than Phase 3,
+    which cuts the whole footprint to `h′` there today; (b) removed once `h′` falls to its
+    base: the street under an overhang shows, but its roof vanishes in one frame, a pop
+    §2.15.3 does not have, and each vertex must carry its volume's base.
+  - *Recommendation:* (a).
+  - *(design call: the user; blocks Phase 4's gate 8 case "B cut" and gate 12's counts
+    with see-through on, which are (a)'s; not the fetch, the reader or the mesh.)*
 
 ## 4. Implementation phases
 
@@ -2847,6 +3254,341 @@ OQ-14's answer: on by default, `--no-see-through` to turn it off (§2.15.6).
       `--no-see-through`, `X` and the new gate commands:
       `scripts/gates-see-through.sh` and `cargo test --release --test see_through --
       --include-ignored --test-threads=1`;
+    - `CLAUDE.md`: none needed, since no stanza changes;
+    - status artifact: none needed, since this repo has none.
+  - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and
+    its cause.
+  - Write this phase's `shipped` date.
+
+### Phase 4 — Building parts: towers on podiums and raised bases, from Overture's parts
+*Produces the observable: yes. `render --buildings <file>`, with a cache fetched in Phase
+4's form, writes the run's video with each building that has parts drawn from them: a
+tower on its podium, an upper storey over a lower one, a raised base above the street.
+With today's cache every frame is byte-identical to today's (gate 2).*
+
+Drafted 2026-10-03; the design is §2.16, and the user's decisions are §2.16.1 (§2.15.1
+decision 4). It builds on Phase 3 and changes nothing a cache without parts draws: not the
+mesh, the cut, the credit or `view`. The plan, as proposed: one cache file with the parts
+after the buildings (§2.16.3), the parts only (OQ-16's (a)), §2.4.2's rule for tops and
+the same pattern for bases (§2.16.5), no underside (§2.16.6), the lid for a part above the
+cut (OQ-17's (a)), and no new credit item (§2.16.8).
+
+**No deadline.** The data was saved while drafting (§2.16.1). Every gate reads it through
+`--source`, offline, after `2026-09-23.1` has left S3 too.
+
+- **Scope:**
+  - **The fetch (`scripts/fetch-buildings.sh`), §2.16.3.**
+    - The query: the buildings with `min_height` and `min_floor` and a `null`
+      `building_id`, then their parts by `building_id` over the buildings' own extent,
+      ordered by `building_id` (nulls first) and `id`.
+    - `--source <dir>`, default `s3://overturemaps-us-west-2/release/<release>/theme=buildings`.
+      A `--source` that is not a directory is an error, `error: --source: no directory
+      <dir>`, with nothing at `--out`.
+    - The report's `raised` and `parts` (§2.16.3); every other key as today.
+  - **The fixture (`scripts/fixture.sh midtown`).** Step 6 (new) writes
+    `scratch/midtown/buildings-parts.geojson` only if it is absent or `REFETCH=1`, with
+    `--source scratch/overture-2026-09-23.1/theme=buildings` when that directory exists,
+    else from S3; its report line goes to `scratch/midtown/fetch-parts.log`. `FORCE=1`
+    keeps it, as it keeps `buildings.geojson`. Steps 1–5 are unchanged.
+  - **The mirror, once, by hand** (a build step, not a gate): in
+    `scratch/overture-2026-09-23.1/`, `theme=buildings/type=building/` gets a copy of
+    `building.parquet`, and `theme=buildings/type=building_part/` a copy of
+    `building_part-of-buildings.parquet`. Their SHA-256 must be §2.16.10's.
+  - **Reading and the mesh (`src/buildings.rs`).**
+    - `Part { id, polygons, base, height, rule }`. `Building` gains `base: f64` (0 without
+      a base) and `parts: Vec<Part>` (in file order), and `Building::top()`: the highest
+      part's `height`, else the building's own `height` (§2.16.5).
+    - `read` reads `building_id`, `min_height` and `min_floor`, runs §2.16.5's checks in
+      its order, attaches each part to its building, and sets `Buildings::tallest` to the
+      highest `top()`. `Counts` stays the buildings' height rules.
+    - `building_mesh(b)`: without parts, today's walls with their lower edge at `b.base`
+      and its roof at `b.height`; with parts, each part the same way, from its base to its
+      `height`, in order. No floor and no underside (§2.16.6). With base 0 and no parts it
+      is today's `building_mesh`, vertex for vertex.
+    - `mesh_data`, `lnglat_to_xy` and the rest are unchanged.
+  - **See-through (`src/see_through.rs`).** `height` and `heights` take `b.top()` for `h`
+    (§2.16.7). `wedge` and `distance` are unchanged.
+  - **`render` and `view`.** `src/render.rs:Renderer::set_see_through` and
+    `src/render.rs:Renderer::set_pose`, and `src/view/mod.rs`, take each building's
+    `top()` where they take its `height` today, as the heights drawn without a cut.
+    Nothing else changes: `draw::BuildingsCut`, `draw::spawn_buildings`, the credit, the
+    CLI and every key.
+  - **Tests.**
+    - `tests/parts.rs` (new): gates 6, 7 and 8, and gate 10's continuity half; the
+      Midtown and GPU ones ignored, as in `tests/see_through.rs`.
+    - `scripts/gates-parts.sh` (new, offline): gates 2, 5, 9 and 11's CLI half, and the
+      renders for gate 15, into `scratch/out/parts/`.
+    - **Edited:** `tests/see_through.rs`, only to add `base: 0.0,` and `parts: vec![],` to
+      its two `Building` literals (`rect` and gate 5's courtyard), since `Building` gains
+      two fields: four added lines. Gate 3 checks that the diff is those four lines and
+      that every printed number is the baseline's.
+    - **Not edited:** every other test file, every other script, `src/draw.rs`,
+      `src/credit.rs`, `src/camera.rs`, `src/keyframes.rs`, `src/main.rs`, `Cargo.toml`
+      and `Cargo.lock`.
+- **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
+  on urban_grid (engine `df8aec0`, baseline, seed 42) and on Midtown (`scratch/midtown`).
+  Everything runs offline. The predictions come from §2.16.10's data and probe, which
+  rendered through a byte-identical copy of the shipped renderer.
+
+  **Baseline, before any change**, at `origin/main` (its `src/`, `tests/`, `scripts/`,
+  `assets/`, `Cargo.toml` and `Cargo.lock` must equal `fb53d7f`'s):
+  - **The five Midtown references were copied while drafting**, from
+    `scratch/out/see-through/`, which Phase 3's gate run wrote at `3e7e660`; `git diff
+    3e7e660 fb53d7f` touches none of those paths. They are
+    `scratch/ref-p4-<name>-fb53d7f.framemd5`, all `--from 300 --to 360 --speedup 1` with
+    `--buildings scratch/midtown/buildings.geojson`:
+
+    | `<name>` | The render | SHA-256 |
+    |---|---|---|
+    | `ortho-city` | orthographic | `3d516485…` (= `ref-ties-ortho-city-2b25d5e`) |
+    | `city-on` | `--camera tests/city-flight.toml`, cut (the default) | `d7e8795b…` |
+    | `city-off` | the same, `--no-see-through` | `d6ff4845…` (= `ref-ties-flight-city1-2b25d5e`) |
+    | `orbit-on` | `--camera tests/see-through-flight.toml`, cut | `a905bea5…` |
+    | `orbit-off` | the same, `--no-see-through` | `d2e4ec99…` |
+
+    If one is missing or differs, run `scripts/gates-see-through.sh` at `fb53d7f` and copy
+    its outputs (`default-ortho-city`, `see-through-{city,orbit}-{on1,off}`).
+  - **Run** `scripts/gates.sh`, `scripts/gates-ties.sh`, `scripts/gates-credit.sh`,
+    `scripts/gates-city.sh`, `scripts/gates-see-through.sh` and every test file with
+    `--include-ignored --test-threads=1`, and keep their output.
+    - `gates-see-through.sh`'s five renders above must give 1800 of 1800 against the
+      copies, and `gates.sh`'s default render 8700 of 8700 against `ref-8eb9052`.
+      Otherwise the run stops.
+    - Record spec-lint and `Cargo.lock`'s package count (500).
+
+  - **What must not change:**
+  1. **urban_grid.** `scripts/gates.sh` passes. Its default render gives **8700 of 8700**
+     against `ref-8eb9052`, and its `--camera` render **8700 of 8700** against
+     `ref-camera-ef741d8`, compared by hand. `--test gates` passes 5 of 5.
+  2. **Midtown with today's cache, byte-identical.** `scripts/gates-parts.sh` renders the
+     five renders of the baseline table with `--buildings scratch/midtown/buildings.geojson`
+     (today's form, §2.16.9), and each `framemd5` gives **1800 of 1800** against its
+     `ref-p4-…-fb53d7f` copy: five times. These are CLI renders, credit line included.
+  3. **The shared tests and scripts.**
+     - Re-run with `--include-ignored --test-threads=1`: `--test view` 10 of 10, `slider`
+       8 of 8, `camera` 19 of 19, `buildings` 13 of 13, `credit` 6 of 6, `ties` 2 of 2 and
+       `see_through` 7 of 7. Every printed number equals the baseline's.
+     - `git diff <baseline> -- tests/` shows only the four added lines of
+       `tests/see_through.rs` named in the scope, and the new `tests/parts.rs`.
+     - `scripts/gates-ties.sh`, `gates-credit.sh`, `gates-city.sh` and
+       `gates-see-through.sh` run unedited, on today's cache, and print what they printed
+       at baseline. gates-city's only `FAIL` lines stay gate 3's FCD comparison (OQ-4).
+  4. **Build cost** (§2.16.11). `git diff <baseline> -- Cargo.toml Cargo.lock` is empty:
+     **0 packages**, no feature.
+  - **The fetch and the cache — offline:**
+  5. **The fetch from the saved data** (`scripts/gates-parts.sh`). With the mirror laid out
+     (scope), `scripts/fetch-buildings.sh --project scratch/midtown --out <dir>/a.geojson
+     --source scratch/overture-2026-09-23.1/theme=buildings`, twice, into two directories:
+     - each report line is, apart from `seconds` and `out`:
+       `{"release": "2026-09-23.1", "bbox": [-73.9938413, 40.7544211, -73.9643086,
+       40.7740495], "buildings": 4336, "height": 4277, "num_floors": 8, "default": 51,
+       "sources": {"Microsoft ML Buildings": 29, "OpenStreetMap": 4327, "USGS Lidar": 316},
+       "no_sources": 0, "raised": 3, "parts": {"count": 4209, "buildings": 487, "height":
+       4152, "num_floors": 17, "default": 40, "raised": 695, "sources": {"OpenStreetMap":
+       4209}, "no_sources": 0}, "bytes": 4944032}`;
+     - each file is **4,944,032 bytes**, SHA-256
+       **`714e2f3a3ab612618100b82b698cc08d49a9badb96caa7afc31e8dbbdf159b14`**;
+     - its first 4,336 features, with `"building_id": null, ` and `, "min_height": …,
+       "min_floor": …` taken out and the last one's trailing comma dropped, are today's
+       cache's feature lines byte for byte, and the header lines too;
+     - `scratch/midtown/buildings-parts.geojson`, from the fixture's step 6, has the same
+       SHA-256;
+     - `--source scratch/no-such-dir` is one error line, a non-zero exit and nothing at
+       `--out`.
+
+     While S3 still lists `2026-09-23.1` (until about 2026-11-22), the same command
+     without `--source` is run once and its SHA-256 recorded. It is predicted equal, and
+     it is not a gate, since it needs the network.
+  6. **Reading and the mesh** (`tests/parts.rs`).
+     - **Midtown with parts** (ignored, headless): `buildings::read` of
+       `buildings-parts.geojson` gives **4,336 buildings, 487 with parts, 4,209 parts**.
+       The parts' tops: 4,152 by `height`, 17 by `num_floors`, 40 at 10 m. Their bases:
+       695 above 0, all by `min_height`. Three buildings have a base: 7.5 m
+       (`2bd09890-…`), 7.0 m (`c92d28b5-…`, by `min_floor`) and 3.7 m (`de4ad6d6-…`, which
+       has parts). `tallest` is 472.0.
+     - Its `mesh_data`: **336,835 vertices, 558,147 indices, 67,367 wall quads and 51,315
+       roof triangles**.
+     - Every one of the 3,847 buildings with no parts and base 0 has the same
+       `building_mesh`, position for position, as the same building read from today's
+       cache.
+     - **Today's cache** through the same reader: every building has base 0 and no parts,
+       and `mesh_data` gives Phase 1's **213,880 vertices, 359,190 indices, 42,776 wall
+       quads and 34,178 roof triangles**.
+  7. **The reader's new checks** (headless, hand-written cases in the test, on
+     `tests/buildings.rs`'s made-up network with Midtown's `map_origin`). Each is one
+     `buildings::read` error naming the feature, and the first in file order wins:
+     - `"building_id": 7`: the `building_id` error;
+     - `"min_height": -1` on a building without parts, and `"min_floor": 1.5`: the base
+       errors;
+     - a building of `height` 20 with `min_height` 20: `base 20 m is not below its top 20
+       m`; a part of `height` 10 with `min_height` 12, likewise;
+     - a part whose `building_id` is `"nobody"`: `part of nobody, which is not a building
+       of the file`, reported after every feature's own checks pass.
+
+     Accepted: a part with `min_floor` 2 and no `min_height` stands from 7.0 m; a building
+     with parts whose own `min_height` is above its own `height` reads, since it is not
+     drawn; `tests/shapes.geojson` reads exactly as in Phase 1's gate 8.
+  - **The drawing — through the GPU:**
+  8. **The synthetic scenes** (`tests/parts.rs`, ignored, no fixture). Phase 3 gate 6's
+     road strip, box (vehicle 7 at (0, 0), heading 90°, 4.5 m, 10 m/s), `scene::Camera
+     { cx: 0, cy: 0, k: 1 }` at 1280×720 and pose (`height_m` 60, yaw 0, pitch 35),
+     through `Renderer::new_perspective` with a pool of 4 and no credit. A box's pixels
+     are those that differ between the frame with the box and `render(&[])`. The
+     buildings are built in the test:
+     - **A, a tower on a podium**, between the eye and the box: the building x −30…30,
+       y −40…−20, `height` 80, with two parts: the podium, the same footprint, 0 to 12 m;
+       and the tower, x 15…30, y −40…−30, from 12 to 80 m;
+     - **A without parts**: the same building with `parts` empty, as today's cache draws
+       it;
+     - **B, a raised base** over the box: x −8…8, y −10…10, `height` 20, `base` 8, no parts;
+       and **B on the ground**, the same with `base` 0.
+
+     The predictions, from the probe:
+     - no buildings: **1,564** box pixels (Phase 3 gate 6's count);
+     - A without parts **0**; A **1,564**;
+     - A with `set_see_through(Some(&a))`: **1,564**, and its `render(&[])` is **0
+       pixels** apart from that of a single building, the podium's footprint at 3 m;
+     - B on the ground **0**; B **1,008**; B cut: **0** (the lid at 3 m, OQ-17's (a));
+     - A's mesh has 40 vertices and 60 indices, and its tower's wall bottoms are at z 12;
+       B's has 20 and 30, with its wall bottoms at z 8.
+
+     A reader or a mesh that ignores the parts or the base gives 0 for A and for B: the
+     test fails without them.
+  9. **Midtown with parts, deterministic.** `scripts/gates-parts.sh` renders, with
+     `--buildings scratch/midtown/buildings-parts.geojson` and `--from 300 --to 360
+     --speedup 1`: `--camera tests/city-flight.toml` twice and
+     `--camera tests/see-through-flight.toml` twice, cut (the default); each `ffprobe`
+     `1920,1080,30/1,1800`, and each pair **1800 of 1800**. It also renders, once each,
+     both flights with `--no-see-through`, for gate 15. Each
+     cut render's frames that differ from today's (`ref-p4-city-on`, `ref-p4-orbit-on`)
+     are counted and recorded.
+  10. **Continuity, and buildings the cut leaves alone** (`tests/parts.rs`, ignored,
+      headless; Phase 3 gate 9's method with `buildings-parts.geojson`).
+      - At every 30th frame of both flights, every building with `δ ≥ e` keeps `h′ ==
+        top()`, and its vertices in `BuildingsCut::mesh` equal its range of
+        `draw::buildings_mesh(&mesh_data(&b), fx, fy)`, bit for bit.
+      - Over all 1800 frames of each flight, no building in frame changes its `h′` by
+        more than **10 m** between consecutive frames. The probe's largest are **9.39 m**
+        (city, as today) and **3.10 m** (orbit; 3.16 m today), and both are recorded.
+      - The buildings lowered a frame are recorded. The probe gave 33.3 (city) and 33.4
+        (orbit), as today.
+  11. **The credit** (`tests/parts.rs`, ignored, and `scripts/gates-parts.sh`).
+      `Job::prepare_with` on Midtown with `buildings-parts.geojson` and with
+      `buildings.geojson` both give `credit()` exactly `© OpenStreetMap contributors
+      (ODbL) · Overture Maps Foundation, release 2026-09-23.1 · Microsoft ML Buildings
+      (ODbL) · USGS Lidar`. Gate 9's renders exit 0.
+  12. **The traffic** (`tests/parts.rs`, ignored), Phase 3 gate 8's count with
+      `buildings-parts.geojson`: box pixels in the centre, the middle and the frame,
+      every 15th frame, see-through off and on. The probe's counts, each predicted within
+      1 %, off → on:
+      - orbit: **62,082 → 159,502**, **92,016 → 259,247** and **147,200 → 387,679**;
+      - city flight: **4,033 → 4,886**, **55,729 → 57,610** and **111,115 → 123,130**.
+
+      Beside Phase 3's gate 8 on today's cache, the city flight shows 23 % more box
+      pixels over the frame with see-through on (99,748 → 123,130), and 22 % more off
+      (90,710 → 111,115). The orbit with see-through on is within 0.3 % of today's in
+      each region. Recorded, not gated.
+  - **Recorded, with one bar:**
+  13. **Render time.** Record the wall time of gate 9's renders beside gate 2's. The
+      probe's interleaved cost (§2.16.11) adds 2.6–2.8 ms a frame with the mesh rebuilt,
+      about 5 s over 1800 frames.
+  14. **`view --bench 20`** on Midtown at the default window, with `--buildings
+      scratch/midtown/buildings-parts.geojson` (see-through on, rebuilding every frame)
+      and with `--no-see-through`. Record its JSON and the load average.
+      - **A `mean_fps` below 30 with see-through on stops the build.** §2.15.5's
+        fallback, the vertex shader, is then a scope change, and the phase goes back to
+        review.
+      - Prediction: at least 30, and likely 60 (vsync). Phase 3's bench gave 59.43 fps
+        rebuilding every frame, and the parts add about 2.8 ms to a frame (§2.16.11).
+  - **The user's check:**
+  15. **The user watches** gate 9's renders against gate 2's, each pair the same flight
+      with today's cache and with parts: the city flight cut (the default), the orbit
+      cut, and the city flight with `--no-see-through`. Times are the video's, from 0:00.
+      What the probe's frames showed (§2.16.10) is given with each.
+      - **City flight, 0:00 to 0:10**, high and nearly straight down. The roofs of the
+        tall buildings show steps, where today each is one flat top. Just above and left
+        of the middle of the frame, a traffic circle shows its whole ring road, where today
+        a flat block shaped like an X covers half of it. 12–16 % of the frame's pixels
+        differ, most in its lower half.
+      - **City flight, around 0:30.** Left of the middle, a little above it, the circle's
+        ring road shows with the boxes queued on it; today the X-shaped block hides its
+        west half and the queue. In the left and right thirds, towers stand narrower on
+        lower podiums, where today broad slabs stand as tall as the towers. About a
+        third of the frame differs.
+      - **City flight, around 0:40.** The left third: a narrower tower with lower
+        buildings beside it, where today one broad slab fills it. The circle's ring road
+        shows at the lower left.
+      - **City flight, from 0:50 to the end**, over the park: almost nothing changes
+        (1–2 % of pixels, at the top left).
+      - **The `--no-see-through` pair** shows the same changes, with every building at
+        full height.
+      - **Orbit, throughout.** The crossing in the middle of the frame and its traffic
+        look as today: the middle ninth of the frame differs in at most 3 % of its pixels
+        at every sampled second, and gate 12's centre counts are equal. The changes are in
+        the top third and at the sides. At 0:00, behind the crossing at the top middle, a
+        tower rises from a lower base where today a wide slab stands. Around 0:20, a
+        tower about 230 m tall stands in the top left third, where today a block about
+        45 m tall stands among taller ones.
+      - **The cut, with parts.** As in Phase 3, the buildings between the camera and the
+        middle sink to slabs and rise again over a second or more. A tower on a podium
+        sinks to one flat slab: nothing of the tower hangs above it. Where a building
+        overhangs a street and is cut, the overhang lies at the slab's height over the
+        street (OQ-17's (a)).
+      - **In `view`** with `--buildings scratch/midtown/buildings-parts.geojson`: tilt to
+        30–40° over a block of towers; they stand on their podiums. `X` and `B` work as
+        in Phase 3.
+
+      Then answer OQ-16 and OQ-17 if they are still open, and say whether anything drawn
+      from the parts should change.
+- **Predictions at a glance:**
+
+  | What | Prediction | Gate |
+  |---|---|---|
+  | urban_grid: default and `--camera` | 8700 of 8700 against `ref-8eb9052` and `ref-camera-ef741d8` | 1 |
+  | Midtown with today's cache: ortho, both flights cut and `--no-see-through` | 1800 of 1800 against each `ref-p4-…-fb53d7f`, five renders | 2 |
+  | Other test files and scripts | baseline numbers; `tests/` diff is four added lines and `tests/parts.rs` | 3 |
+  | Packages; `Cargo.toml` | 0; unchanged | 4 |
+  | The fetch from the saved data | the report line above; 4,944,032 bytes, `714e2f3a…`, twice | 5 |
+  | Midtown with parts: buildings, with parts, parts; mesh | 4,336, 487, 4,209; 336,835 vertices, 558,147 indices | 6 |
+  | Today's cache, read by Phase 4 | 213,880 vertices, 359,190 indices | 6 |
+  | New reader errors | as listed | 7 |
+  | Synthetic box pixels: none; A without / with parts / cut; B ground / raised / cut | 1,564; 0 / 1,564 / 1,564; 0 / 1,008 / 0 | 8 |
+  | Midtown flights with parts, twice each | 1800 of 1800 | 9 |
+  | Largest in-frame step | ≤ 10 m (probe 9.39 and 3.10 m) | 10 |
+  | The credit line, either cache | unchanged, as above | 11 |
+  | Box pixels with parts, off → on, centre / middle / frame | orbit 62,082 → 159,502 / 92,016 → 259,247 / 147,200 → 387,679; city 4,033 → 4,886 / 55,729 → 57,610 / 111,115 → 123,130; each ± 1 % | 12 |
+  | `view --bench` with parts, see-through on | ≥ 30 fps | 14 |
+- **Not predicted, and so not gated:**
+  - the look of what the parts leave uncovered (OQ-16) and of overhang lids (OQ-17), for
+    the user at gate 15;
+  - render times (gate 13) and `view`'s frame rate above 30 (gate 14);
+  - the S3 fetch's bytes (gate 5's note).
+- **Close-out (standing plan steps, the methodology's §3):**
+  - **Commit plan:** one branch (`vis-002-phase-4`), one push. The commits:
+    - the fetch, `--source`, the fixture's step 6, the reader and the mesh, with
+      `tests/parts.rs`'s headless gates (6 and 7) and `tests/see_through.rs`'s four
+      lines;
+    - see-through's `top()`, `render` and `view`, the GPU and Midtown tests, and
+      `scripts/gates-parts.sh` (gates 2, 5 and 8–12);
+    - the gate run and its record;
+    - the close-out.
+  - **Reconciliation:**
+    - **a new `rules/parts.md`** (`max_lines: 40`) covering the cache's parts and bases,
+      the query by `building_id`, `--source`, the report's new keys, the reader's checks,
+      the volumes and their mesh, `top()` and the cut. Its `sources` are
+      `scripts/fetch-buildings.sh`, `src/buildings.rs`, `src/see_through.rs`,
+      `src/render.rs` and `src/view/mod.rs`;
+    - **two rules at their caps gain a pointer to it**, reworded to fit, with no
+      `max_lines` raised: `rules/buildings.md` (60/60), whose fetch, cache and mesh lines
+      now hold for buildings without parts; and `rules/see-through.md` (40/40), whose `h`
+      is `top()`;
+    - `rules/credit.md`, `rules/render.md`, `rules/view.md` and `rules/camera.md`: none
+      needed, since neither the line, the CLI, the keys nor the camera change;
+    - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
+    - **the README** says that a cache fetched from Phase 4 on carries the parts, that an
+      older one draws as before until fetched again, and what `--source` does and does
+      not check; and gains the new gate commands: `scripts/gates-parts.sh` and `cargo
+      test --release --test parts -- --include-ignored --test-threads=1`;
     - `CLAUDE.md`: none needed, since no stanza changes;
     - status artifact: none needed, since this repo has none.
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and
