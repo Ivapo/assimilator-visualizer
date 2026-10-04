@@ -20,10 +20,16 @@
 # 3. Halves the demand: each `rate: r` becomes r/2 rounded to a multiple of 10, ties to
 #    even; the 65 rates must sum to 2,850.
 # 4. Runs the engine there with FCD on.
-# 5. Fetches buildings.geojson with scripts/fetch-buildings.sh, only if it is absent or
-#    REFETCH=1: the fixture's one use of the network. The report line goes to fetch.log.
-# FORCE=1 redoes steps 1–4 and keeps buildings.geojson and fetch.log: the release they
-# came from may be gone (vis-002 §2.3.3). Every gate after step 5 runs offline.
+# 5. Fetches buildings.geojson with scripts/fetch-buildings.sh --no-parts, the form before
+#    building parts that every gate of vis-002 Phases 1–3 reads, only if it is absent or
+#    REFETCH=1. The report line goes to fetch.log.
+# 6. Fetches buildings-parts.geojson, the form with building parts (vis-002 §2.16.3), only
+#    if it is absent or REFETCH=1. The report line goes to fetch-parts.log.
+# Steps 5 and 6 read scratch/overture-2026-09-23.1/theme=buildings with --source when that
+# directory exists (the release saved while drafting vis-002 Phase 4, laid out as a
+# mirror); otherwise S3: the fixture's one use of the network.
+# FORCE=1 redoes steps 1–4 and keeps both caches and both logs: the release they came
+# from may be gone (vis-002 §2.3.3). Every gate after step 6 runs offline.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -61,7 +67,7 @@ midtown() {
     # 2–3. The project at e2de274, with the demand halved.
     if [ "${FORCE:-0}" = 1 ] || [ ! -f "$proj/project.yaml" ]; then
         find "$proj" -mindepth 1 -maxdepth 1 ! -name buildings.geojson ! -name fetch.log \
-            -exec rm -rf {} +
+            ! -name buildings-parts.geojson ! -name fetch-parts.log -exec rm -rf {} +
         git -C "$src" archive e2de274 | tar -x -C "$proj"
         python3 - "$proj/demand.yaml" <<'PY'
 import re, sys
@@ -94,12 +100,26 @@ PY
     fi
     [ -f "$fcd" ] || { echo "fixture: engine run wrote no $fcd" >&2; exit 1; }
 
-    # 5. The buildings, once.
+    # 5–6. The buildings, once each: from the saved release's mirror when it is laid out.
+    local src=() mirror="$SCRATCH/overture-2026-09-23.1/theme=buildings"
+    if [ -d "$mirror" ]; then
+        src=(--source "$mirror")
+    fi
+    # 5. Without parts.
     if [ "${REFETCH:-0}" = 1 ] || [ ! -f "$proj/buildings.geojson" ]; then
         "$ROOT/scripts/fetch-buildings.sh" --project "$proj" --out "$proj/buildings.geojson" \
-            > "$proj/fetch.log.new" || { rm -f "$proj/fetch.log.new"; exit 1; }
+            --no-parts ${src[@]+"${src[@]}"} > "$proj/fetch.log.new" \
+            || { rm -f "$proj/fetch.log.new"; exit 1; }
         mv "$proj/fetch.log.new" "$proj/fetch.log"
         cat "$proj/fetch.log"
+    fi
+    # 6. With parts.
+    if [ "${REFETCH:-0}" = 1 ] || [ ! -f "$proj/buildings-parts.geojson" ]; then
+        "$ROOT/scripts/fetch-buildings.sh" --project "$proj" --out "$proj/buildings-parts.geojson" \
+            ${src[@]+"${src[@]}"} > "$proj/fetch-parts.log.new" \
+            || { rm -f "$proj/fetch-parts.log.new"; exit 1; }
+        mv "$proj/fetch-parts.log.new" "$proj/fetch-parts.log"
+        cat "$proj/fetch-parts.log"
     fi
     echo "fixture: ready in $proj"
 }

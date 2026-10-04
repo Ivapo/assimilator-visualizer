@@ -42,6 +42,8 @@ fn rect(id: &str, x0: f64, y0: f64, x1: f64, y1: f64, h: f64) -> Building {
         }],
         height: h,
         rule: HeightRule::Height,
+        base: 0.0,
+        parts: vec![],
     }
 }
 
@@ -156,6 +158,8 @@ fn gate5_courtyard() {
         }],
         height: 30.0,
         rule: HeightRule::Height,
+        base: 0.0,
+        parts: vec![],
     };
     let d = see_through::distance(&w, &b);
     let h = see_through::height(&w, &b);
