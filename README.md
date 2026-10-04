@@ -74,30 +74,46 @@ keyframes = [
 
 ### Buildings
 
-The buildings come from Overture Maps' `building` type, fetched once per network with
-network access into a GeoJSON cache, then read offline by `render` and `view`:
+The buildings come from Overture Maps' `building` and `building_part` types, fetched once
+per network with network access into a GeoJSON cache, then read offline by `render` and
+`view`:
 
 ```
 scripts/fetch-buildings.sh --project <dir> --out <dir>/buildings.geojson
                            [--scenario baseline] [--margin 250] [--release 2026-09-23.1]
+                           [--source <dir>] [--no-parts]
 ```
 
 - **What it fetches.** Every building that meets the scenario's network extent plus
   `--margin` metres, whole, from the pinned Overture release, in lng/lat with its `id`,
-  `height`, `num_floors` and `sources` (the datasets it came from). The file records its
+  `height`, `num_floors`, `min_height`, `min_floor` and `sources` (the datasets it came
+  from); then every part of those buildings (`building_part`, by `building_id`, even a part
+  outside the box) with the same columns and its `building_id`. The file records its
   release in its `description`. It prints one JSON line: the release, the box, the number
-  of buildings by height rule, by dataset (`sources`) and with none (`no_sources`), and the
-  file's size. The same release gives the same bytes. Overture keeps only recent releases
-  on S3, so keep the cache.
+  of buildings by height rule, by dataset (`sources`) and with none (`no_sources`), those
+  with a raised base (`raised`), the same counts for the parts (`parts`), and the file's
+  size. The same release gives the same bytes. Overture keeps only recent releases on S3,
+  so keep the cache.
+- **`--no-parts`** writes the form before parts: the buildings only, with `id`, `height`,
+  `num_floors` and `sources`, and the report without `raised` and `parts`.
+- **`--source <dir>`** reads a local directory laid out like the release's
+  `theme=buildings/` (`type=building/*.parquet`, `type=building_part/*.parquet`) instead of
+  S3, for instance a copy saved before the release left S3. `--release` still names the
+  release in the file; the script cannot check that the files are that release.
 - **Older caches.** A cache fetched before vis-002 Phase 2 has no release or sources, so
-  `render --buildings` rejects it (`view` still reads it). Fetch it again: for the Midtown
-  fixture, `REFETCH=1 scripts/fixture.sh midtown`.
+  `render --buildings` rejects it (`view` still reads it). A cache fetched before Phase 4,
+  or with `--no-parts`, has no parts or bases: it draws exactly as before, every building
+  one block from the ground. Fetch it again for parts: for the Midtown fixture,
+  `REFETCH=1 scripts/fixture.sh midtown`.
 - **Which networks.** Only a georeferenced one, with `metadata.map_origin`, as an import
   writes. A drawn network such as `urban_grid` has no buildings, and `--buildings` on it
   is an error.
 - **How they look.** Opaque grey blocks lit by one sun, roofs lighter than walls. A
-  building's height is its `height`, else `num_floors` × 3.5 m, else 10 m. The camera may
-  pass into a building; nothing collides.
+  building's height is its `height`, else `num_floors` × 3.5 m, else 10 m, and it stands
+  from its base: `min_height`, else `min_floor` × 3.5 m, else the ground. A building with
+  parts is drawn from its parts only, each from its own base to its own height, so a
+  tower stands on its podium; the rest of its footprint is not drawn. Roofs are flat. The
+  camera may pass into a building; nothing collides.
 - **Errors.** A file that is missing, malformed, in metres or fetched for another network
   is one `error: --buildings <file>: …` line before the first frame or the window.
 
@@ -203,7 +219,7 @@ vis-002's gates run on a second fixture, Midtown, built from the user's own proj
 `git archive`), so only a machine with that project can run them:
 
 ```
-scripts/fixture.sh midtown        # once: the project with its demand halved, the run, the one fetch
+scripts/fixture.sh midtown        # once: the project with its demand halved, the run, the fetches
 scripts/gates-city.sh             # gates 3, 4, 5, 7 (CLI) and 13, offline
 REFETCH=1 scripts/gates-city.sh   # adds gate 5's second fetch and missing release (network)
 cargo test --release --test buildings -- --include-ignored --test-threads=1 --nocapture   # gates 6–12, 14
@@ -213,10 +229,20 @@ cargo test --release --test credit -- --include-ignored --test-threads=1 --nocap
 scripts/gates-ties.sh             # vis-001 Phase 6 gates 2 and 9, offline
 scripts/gates-see-through.sh      # Phase 3 gates 2, 7, 10 (CLI) and the gate 14 renders, offline
 cargo test --release --test see_through -- --include-ignored --test-threads=1   # Phase 3 gates 5, 6, 8, 9, 11
+scripts/gates-parts.sh            # Phase 4 gates 2, 5, 9, 11 (CLI) and the gate 15 renders, offline
+cargo test --release --test parts -- --include-ignored --test-threads=1 --nocapture       # Phase 4 gates 6–8, 10–12
 ```
 
-`FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps the fetched
-`buildings.geojson`. The engine at the pin does not give the same Midtown traffic twice,
+`scripts/fixture.sh midtown` fetches two caches: `buildings.geojson` with `--no-parts`,
+which the gates of Phases 1–3 read, and `buildings-parts.geojson` with parts. Both are
+read through `--source scratch/overture-2026-09-23.1/theme=buildings` when that mirror of
+the release saved on 2026-10-03 is laid out, and `scripts/gates-parts.sh` needs it. The
+mirror is a copy of `scratch/overture-2026-09-23.1/building.parquet` under
+`theme=buildings/type=building/` and of `building_part-of-buildings.parquet` under
+`theme=buildings/type=building_part/`.
+
+`FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps both fetched
+caches. The engine at the pin does not give the same Midtown traffic twice,
 so the run in `scratch/midtown` is the fixture. One check of `gates-city.sh` is a known
 miss until its cause is fixed, and prints `FAIL`: gate 3's comparison with the 2026-09-30
 run (the engine, vis-002 OQ-4).
