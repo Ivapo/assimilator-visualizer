@@ -1532,8 +1532,24 @@ Given by the user with the brief, 2026-10-03:
   stops the build below 30 fps; 0 crates, or the reason; and the user's visual gate,
   written as what shows on screen.
 
-The rest of this section is the draft's proposal. It settles, each with one
-recommendation:
+Decided by the user, 2026-10-04, on the draft, before review (the answers to OQ-16 and
+OQ-17, and the draft's two additions to the brief):
+1. **A building with parts is drawn from its parts only** (OQ-16's (a)). The part of its
+   footprint no part covers is not drawn.
+2. **A part, or a raised base, wholly above its building's cut height lies as a lid at
+   that height** (OQ-17's (a)): §2.15.7's clamp, as built.
+3. **The third raw file is kept**:
+   `scratch/overture-2026-09-23.1/building_part-of-buildings.parquet`, every part of the
+   487 buildings with parts, selected by `building_id` (§2.16.2, §2.16.10).
+4. **`scripts/fetch-buildings.sh` gains `--source <dir>`**, which reads a directory laid
+   out like the release's `theme=buildings/` instead of S3 (§2.16.3).
+
+The draft's third addition, `tests/see_through.rs` gaining `base: 0.0,` and `parts:
+vec![],` in its two `Building` literals, was accepted the same day; Phase 4's gate 3
+checks that nothing else in it changes.
+
+The rest of this section is the draft's proposal, with OQ-16 and OQ-17 now decided. It
+settles, each with one recommendation:
 - the fetch and the cache (§2.16.3);
 - what is drawn for a building with parts (§2.16.4, OQ-16);
 - heights and bases (§2.16.5);
@@ -1681,6 +1697,8 @@ of its own, and the largest part of it is underground. (b) puts back the slab th
 removes, and (c) invents a height. The user judges what (a) leaves at Phase 4's gate 15,
 which describes the largest of these changes on screen.
 
+*(2026-10-04)* **Decided by the user: (a), the parts only** (§2.16.1, decision 1).
+
 #### 2.16.5 Heights and bases
 
 Each feature drawn is a **volume** with a base and a top:
@@ -1776,6 +1794,8 @@ no ground part of their building, in 103 parts of 41 buildings: 11 % of the rais
 **The recommendation: (a), the lid.** It is §2.15.7's rule as written, it never pops, and
 where it covers a street, Phase 3 covers it too today. (b) shows a little more street on
 the city flight, at the cost of a pop where §2.15.3 promised none.
+
+*(2026-10-04)* **Decided by the user: (a), the lid** (§2.16.1, decision 2).
 
 #### 2.16.8 The credit line
 
@@ -2191,7 +2211,7 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
     are aimed at the traffic. Neither (b) nor (c) is taken: `WIDTH` stays 0.15, the ease
     band `max(r, 10 m)` and the stub 3 m.
 - **OQ-16** — A building with parts: draw its parts only, or also the rest of its
-  footprint (§2.16.4)?
+  footprint (§2.16.4)? **RESOLVED.**
   - *The facts:* the parts of 414 of Midtown's 487 buildings with parts cover their
     footprint to within 1 m². 196,624 m² is uncovered in all, 16 % of their footprint, and
     160,808 m² of that is three underground buildings (`is_underground`, 10 m blocks
@@ -2202,10 +2222,13 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
     polygon difference (a crate, or a column in the fetch); (c) the rest at a fixed low
     height, which invents one.
   - *Recommendation:* (a). The user sees what it leaves at Phase 4's gate 15.
-  - *(design call: the user; blocks Phase 4's mesh counts (gate 6) and the predictions of
-    gates 12 and 15, not the fetch or the reader.)*
+  - ~~*(design call: the user; blocks Phase 4's mesh counts (gate 6) and the predictions of
+    gates 12 and 15, not the fetch or the reader.)*~~
+  - *(answered 2026-10-04, user, before review)* **(a): the parts only.** The footprint no
+    part covers is not drawn. Recorded as §2.16.1 decision 1 and §2.16.4. Gates 6, 12 and
+    15 were predicted with (a) and do not change.
 - **OQ-17** — A part, or a raised base, wholly above its building's cut height `h′`: a lid
-  at `h′`, or removed (§2.16.7)?
+  at `h′`, or removed (§2.16.7)? **RESOLVED.**
   - *The facts:* §2.15.7's clamp puts it at `h′` with no walls: a lid. Over a lower part of
     the same building, it is in that part's roof plane and changes no pixel. Over nothing,
     an overhang, it covers the street at `h′`, down to 3 m. 19,841 m² of Midtown's raised
@@ -2217,8 +2240,11 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
     base: the street under an overhang shows, but its roof vanishes in one frame, a pop
     §2.15.3 does not have, and each vertex must carry its volume's base.
   - *Recommendation:* (a).
-  - *(design call: the user; blocks Phase 4's gate 8 case "B cut" and gate 12's counts
-    with see-through on, which are (a)'s; not the fetch, the reader or the mesh.)*
+  - ~~*(design call: the user; blocks Phase 4's gate 8 case "B cut" and gate 12's counts
+    with see-through on, which are (a)'s; not the fetch, the reader or the mesh.)*~~
+  - *(answered 2026-10-04, user, before review)* **(a): the lid at the cut height**,
+    §2.15.7's clamp as built. Recorded as §2.16.1 decision 2 and §2.16.7. Gates 8 and 12
+    were predicted with (a) and do not change.
 
 ## 4. Implementation phases
 
@@ -3268,10 +3294,10 @@ With today's cache every frame is byte-identical to today's (gate 2).*
 
 Drafted 2026-10-03; the design is §2.16, and the user's decisions are §2.16.1 (§2.15.1
 decision 4). It builds on Phase 3 and changes nothing a cache without parts draws: not the
-mesh, the cut, the credit or `view`. The plan, as proposed: one cache file with the parts
-after the buildings (§2.16.3), the parts only (OQ-16's (a)), §2.4.2's rule for tops and
-the same pattern for bases (§2.16.5), no underside (§2.16.6), the lid for a part above the
-cut (OQ-17's (a)), and no new credit item (§2.16.8).
+mesh, the cut, the credit or `view`. The plan: one cache file with the parts after the
+buildings and `--source` (§2.16.3, decision 4), the parts only (decision 1, OQ-16),
+§2.4.2's rule for tops and the same pattern for bases (§2.16.5), no underside (§2.16.6),
+the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§2.16.8).
 
 **No deadline.** The data was saved while drafting (§2.16.1). Every gate reads it through
 `--source`, offline, after `2026-09-23.1` has left S3 too.
@@ -3538,8 +3564,9 @@ cut (OQ-17's (a)), and no new credit item (§2.16.8).
         30–40° over a block of towers; they stand on their podiums. `X` and `B` work as
         in Phase 3.
 
-      Then answer OQ-16 and OQ-17 if they are still open, and say whether anything drawn
-      from the parts should change.
+      Then say whether anything drawn from the parts should change. OQ-16 and OQ-17 were
+      answered before review (§2.16.1); what (a) leaves on screen is the user's to judge
+      here, and a change to either is a scope change that goes back to review.
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
