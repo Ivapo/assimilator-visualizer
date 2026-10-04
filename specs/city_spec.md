@@ -31,7 +31,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 4 — Building parts: towers on podiums and raised bases, from Overture's parts"
-    reviewed: null
+    reviewed: 2026-10-04
     shipped: null
     cut: null
     by: null
@@ -86,7 +86,10 @@ is one line; it is wrapped here.) *(2026-10-02)* From Phase 2, the report also h
 `sources` and `no_sources`, the file is 2,284,830 bytes, and the video carries the credit
 line (§2.14). *(2026-10-03)* From Phase 3, the `render … --buildings … --camera` above cuts
 the buildings between the camera and the point it looks at down to stubs, by default;
-`--no-see-through` gives the video as before (§2.15).
+`--no-see-through` gives the video as before (§2.15). *(2026-10-04)* From Phase 4, the
+fetch also writes each building's `building_part`s into the same file, and `render` and
+`view` draw a building that has them from its parts; the report gains `raised` and `parts`,
+and `--no-parts` writes the file as before (§2.16).
 
 Rejected candidates for the observable:
 - *`buildings.geojson`.* It is an input to a video, as vis-001 §1 says of the scene bundle.
@@ -97,7 +100,8 @@ Rejected candidates for the observable:
 - **No generated buildings, ever** (§2.2 a). A synthetic network (urban_grid) gets none: it
   has no `metadata.map_origin`, so `--buildings` on it is an error (§2.4.3).
 - **No other source** than Overture's `building` type: no OSM directly, NYC Open Data or
-  photogrammetry (roadmap, §2.13).
+  photogrammetry (roadmap, §2.13). *(2026-10-04)* From Phase 4, its `building_part` type
+  too (§2.16).
 - **Not in Phase 1:**
   - building parts (towers on podiums), raised bases (`min_height`), roof shapes and
     textures;
@@ -307,6 +311,11 @@ The file is GeoJSON, read with `serde_json`, which is already a dependency.
 
 Every feature is drawn: none is skipped, clipped or merged. Overlapping footprints are drawn
 as they are.
+
+*(2026-10-04)* From Phase 4, a feature with a string `building_id` is a part of that
+building, a building that has parts is drawn from them and not from its own polygons, and
+every volume has a base (§2.16.5). The checks of §2.4.3, the walls of §2.6 and `tallest` of
+§2.8 change with it as §2.16.5–§2.16.6 say; a file without parts reads and draws as above.
 
 #### 2.4.2 Height
 
@@ -560,6 +569,10 @@ urban_grid. With `midtown` it:
 
 `FORCE=1` redoes steps 1–4 and **keeps `buildings.geojson`**, because the release may be
 gone (§2.3.3). After step 5 every gate runs offline.
+
+*(2026-10-04)* From Phase 4, step 5 passes `--no-parts` (and `--source` when the saved
+mirror exists), a step 6 writes `buildings-parts.geojson`, and `FORCE=1` keeps both caches
+and both logs (§2.16.3).
 
 *(Note, 2026-10-01, Phase 1's gate run.)* The fixture's traffic cannot be reproduced at
 the pin: four runs of the same Midtown inputs at `df8aec0` gave four FCDs (OQ-4). So the
@@ -1548,6 +1561,14 @@ The draft's third addition, `tests/see_through.rs` gaining `base: 0.0,` and `par
 vec![],` in its two `Building` literals, was accepted the same day; Phase 4's gate 3
 checks that nothing else in it changes.
 
+Decided by the user, 2026-10-04, at review round 1's blocker (the fetch could no longer
+write today's form, so `REFETCH=1` would have overwritten the cache every Phase 1–3 gate
+reads):
+5. **`scripts/fetch-buildings.sh` gains `--no-parts`**, which writes today's form: Phase
+   2's query, byte for byte. The parts form stays the default. `scripts/fixture.sh
+   midtown`'s step 5 and the `REFETCH=1` legs of `scripts/gates-city.sh` and
+   `scripts/gates-credit.sh` pass it (§2.16.3).
+
 The rest of this section is the draft's proposal, with OQ-16 and OQ-17 now decided. It
 settles, each with one recommendation:
 - the fetch and the cache (§2.16.3);
@@ -1563,16 +1584,18 @@ settles, each with one recommendation:
 
 From the saved data (§2.16.10). Midtown's box is §2.3.1's.
 - **4,336 buildings**, as the cache. 487 have `has_parts`, and every one of the 487 has at
-  least one part; no building without `has_parts` has a part.
+  least one part; of the 4,087 parts that meet the box, none belongs to a building without
+  `has_parts`. (Parts beyond the box were saved only for the 487, §2.16.3's `--source`.)
 - **4,209 parts** belong to those 487 buildings: 1 to 69 a building, median 5.
   - **A part need not meet the box.** The box gives 4,087 parts. The other 122 belong to
     buildings that straddle the box's edge, and lie wholly outside it. A query by
     `building_id`, over the fetched buildings' own extent, gives all 4,209. The same query
     over that extent widened by 0.01° on every side gives the same 4,209, byte for byte.
-  - Every part is a `POLYGON` (no `MULTIPOLYGON`), valid (`ST_IsValid`), 28 with holes
-    (32 holes).
-  - **Heights:** `height` on 4,152, `num_floors` only on 17, neither on 40. 1.0 to 472.0 m,
-    median 66.0 m.
+  - Every part is a `POLYGON` (no `MULTIPOLYGON`), valid (`ST_IsValid`), 2 with holes
+    (2 holes). *(Corrected at review round 1: the draft's 28 and 32 were over all 8,058
+    volumes, §2.16.11.)*
+  - **Heights:** `height` on 4,152, `num_floors` only on 17, neither on 40. 1.0 to 472.0 m;
+    the median drawn top (§2.16.5) is 66.0 m, and the median `height` 67.0 m.
   - **Bases:** `min_height` on 695, from 3.0 to 245.0 m (10th, 50th and 90th percentiles
     10, 70 and 148 m), 694 of them above 3 m. `min_floor` is never the only one given.
     No part has its base at or above its top.
@@ -1611,14 +1634,29 @@ and `view` take with the same `--buildings`.
 
 **The query.** The buildings' query is §2.14.3's, with two columns more. The parts are
 selected by `building_id`, not by the box (§2.16.2), over a box that is the fetched
-buildings' own extent (`min(bbox.xmin)`, … of the buildings selected), which the script
-computes in a first DuckDB statement and writes into the second as literals:
+buildings' own extent (`min(bbox.xmin)`, … of the buildings selected). The script runs
+DuckDB twice, so that the extent reaches the parts' filter as literals, which DuckDB pushes
+down into the parquet scan:
+1. the first run writes the selected buildings, every column, to `$TMP/b.parquet`, and
+   prints their extent, `<W2> <S2> <E2> <N2>`;
+2. the second reads them back as `b` and writes the file.
+
+The buildings are read from `<source>` once. (A DuckDB database file in `$TMP` cannot carry
+them: DuckDB 1.5.1 refuses a geometry column with a CRS in its default storage version,
+measured at review round 1.) The extent is passed as DuckDB prints it, shortest round-trip
+doubles (`-73.9946517944336`, …), unrounded. When run 1 selects no building, its extent is
+`NULL`, and run 2 leaves out the parts' `SELECT`: the file holds no feature, and
+`--buildings` on it fails as §2.4.3 says of an empty `features`.
 
 ```sql
-CREATE TEMP TABLE b AS
-  SELECT * FROM read_parquet('<source>/type=building/*.parquet')
-  WHERE bbox.xmin <= <E> AND bbox.xmax >= <W> AND bbox.ymin <= <N> AND bbox.ymax >= <S>;
--- <W2> <S2> <E2> <N2>: SELECT min(bbox.xmin), min(bbox.ymin), max(bbox.xmax), max(bbox.ymax) FROM b
+-- run 1
+COPY (SELECT * FROM read_parquet('<source>/type=building/*.parquet')
+      WHERE bbox.xmin <= <E> AND bbox.xmax >= <W> AND bbox.ymin <= <N> AND bbox.ymax >= <S>)
+  TO '<tmp>/b.parquet';
+SELECT min(bbox.xmin), min(bbox.ymin), max(bbox.xmax), max(bbox.ymax)
+  FROM read_parquet('<tmp>/b.parquet');
+-- run 2, with <W2> <S2> <E2> <N2> from run 1
+CREATE TEMP TABLE b AS SELECT * FROM read_parquet('<tmp>/b.parquet');
 COPY (
   SELECT id, NULL::VARCHAR AS building_id, height, num_floors, min_height, min_floor,
          list_sort(list_distinct([s.dataset FOR s IN sources])) AS sources, geometry
@@ -1650,17 +1688,30 @@ COPY (
   check reads either form.
 
 **`--source <dir>`** (new, optional). It replaces the default
-`s3://overturemaps-us-west-2/release/<release>/theme=buildings` with a directory laid out
-the same way: `<dir>/type=building/*.parquet` and `<dir>/type=building_part/*.parquet`.
+`s3://overturemaps-us-west-2/release/<release>/theme=buildings` with a local directory laid
+out the same way: `<dir>/type=building/*.parquet` and `<dir>/type=building_part/*.parquet`.
+Given, its value must be a directory (`error: --source: no directory <dir>`, and nothing at
+`--out`); an `s3://` value is not accepted. Not given, the script reads S3 as today.
 - It makes the fixture's cache reproducible after `2026-09-23.1` leaves S3, from the data
   saved while drafting, and lets the Phase 4 gates fetch offline.
 - `--release` still names the release in `description`. With `--source`, the script cannot
   check that the files are that release; the README says so.
-- Midtown through `--source` and through S3 gives the same rows: the saved parquet was read
-  from S3 with the same filters (§2.16.10). The saved `building.parquet` rebuilds today's
-  cache through Phase 2's query byte for byte (`f241ccbd…`).
+- Midtown through `--source` and through S3 is predicted to give the same rows: the saved
+  parquet was read from S3 with the same filters (§2.16.10). The one difference S3 could
+  show is a part, beyond the box, of a building without `has_parts`, which the saved third
+  file would not hold (§2.16.2); none meets the box. Through the mirror, the saved
+  `building.parquet` rebuilds today's cache with `--no-parts` byte for byte (`f241ccbd…`),
+  and the parts form is `714e2f3a…` twice (§2.16.10).
 
-**The report** (§2.3.4) keeps every key and its meaning, and gains two:
+**`--no-parts`** (new, optional; §2.16.1 decision 5). It writes today's form: Phase 2's
+query, one DuckDB run, no parts and no `building_id`, `min_height` or `min_floor`, and the
+report of today, without `raised` or `parts`. It combines with `--source`. It exists so
+that the fixture's `buildings.geojson`, which every gate of Phases 1–3 reads, can still be
+fetched, and so that those phases' network gates keep their meaning.
+
+**The report** (§2.3.4) keeps every key and its meaning, and gains two. The existing keys
+(`buildings`, `height`, `num_floors`, `default`, `sources`, `no_sources`) count the
+features without a `building_id` only, as today; the parts are counted apart:
 - `"raised"`: the buildings with a base above 0 (§2.16.5), 3 for Midtown;
 - `"parts"`: an object, `{"count": 4209, "buildings": 487, "height": 4152, "num_floors":
   17, "default": 40, "raised": 695, "sources": {"OpenStreetMap": 4209}, "no_sources": 0}`
@@ -1668,10 +1719,18 @@ the same way: `<dir>/type=building/*.parquet` and `<dir>/type=building_part/*.pa
   one part.
 
 The fixture (§2.9) keeps `scratch/midtown/buildings.geojson`, today's form, which every
-gate of Phases 1–3 reads. Phase 4 adds `scratch/midtown/buildings-parts.geojson`, written
-by step 6 of `scripts/fixture.sh midtown` only if absent or `REFETCH=1`, with `--source
-scratch/overture-2026-09-23.1/theme=buildings` when that directory exists, else from S3.
-Its report line goes to `scratch/midtown/fetch-parts.log`.
+gate of Phases 1–3 reads. `scripts/fixture.sh midtown` changes in three places:
+- **step 5** passes `--no-parts`, so that `REFETCH=1` writes today's form again, and
+  `--source scratch/overture-2026-09-23.1/theme=buildings` when that directory exists;
+- **step 6** (new) writes `scratch/midtown/buildings-parts.geojson`, the parts form, only
+  if absent or `REFETCH=1`, with the same `--source` rule; its report line goes to
+  `scratch/midtown/fetch-parts.log`;
+- **`FORCE=1`** keeps both caches and both logs: step 2's `find … ! -name buildings.geojson
+  ! -name fetch.log` gains `! -name buildings-parts.geojson ! -name fetch-parts.log`.
+
+The `REFETCH=1` legs of `scripts/gates-city.sh` (gate 5) and `scripts/gates-credit.sh` (gate
+4) each pass `--no-parts` to their second fetch, and nothing else in them changes. Gate 5's
+missing-release case keeps its meaning with or without it.
 
 #### 2.16.4 What is drawn for a building with parts: its parts only (OQ-16)
 
@@ -1723,12 +1782,21 @@ so its orthographic eye does not move.
 
 **The checks** (§2.4.3) gain these, each `error: --buildings <file>: feature <id>: …`, in
 each feature's own order after today's:
-- a `building_id` that is neither absent, `null` nor a string;
-- a `min_height` that is used and is not a finite number ≥ 0, or a `min_floor` that is used
-  and is not an integer ≥ 0;
+- a `building_id` that is neither absent, `null` nor a string: `building_id 7 is not a
+  string`;
+- a `min_height` that is used and is not a finite number ≥ 0: `min_height -1 is not a
+  finite number of at least 0`; or a `min_floor` that is used and is not an integer ≥ 0:
+  `min_floor 1.5 is not an integer of at least 0`. "Used" is the base rule's: `min_height`
+  when it is not null, else `min_floor` when it is not null. A building with parts has its
+  base read and checked like any other, though it is not drawn;
 - a volume whose base is not below its top: `base 30 m is not below its top 20 m`. It is
   checked on a building only when the building has no parts, since otherwise it is not
   drawn.
+
+Whether a building has parts is known before any feature is checked: `read` already parses
+the whole file first (`src/buildings.rs:read`), and the set of buildings with parts is every
+string `building_id` of the file. A `building_id` that is not a string adds nothing to it,
+and fails at its own feature's check.
 
 Then, after every feature and before `map_origin`, in file order: a part whose
 `building_id` names no building of the file, `part of <bid>, which is not a building of
@@ -1851,6 +1919,14 @@ against S3 and the Midtown fixture; output only under gitignored `scratch/`; not
   - Its mesh for today's cache equals `buildings::mesh_data`'s, position for position.
 - The counts, the flights, the synthetic scenes and the costs are in §2.16.11 and in
   Phase 4's gates.
+- *(2026-10-04, review round 1)* **Through a mirror** laid out as `--source` reads it (the
+  saved `building.parquet` under `theme=buildings/type=building/` and
+  `building_part-of-buildings.parquet` under `theme=buildings/type=building_part/`, in the
+  session's scratch, DuckDB 1.5.1), so with hive partitions detected:
+  - Phase 2's query (`--no-parts`) gives `f241ccbd…`, today's cache;
+  - §2.16.3's two runs, with `b` handed over as `$TMP/b.parquet`, give 4,944,032 bytes,
+    `714e2f3a…`, twice. The extent run 1 prints is `-73.9946517944336 40.75189208984375
+    -73.96367645263672 40.774688720703125`, the probe's literals.
 
 #### 2.16.11 The mesh, its cost, and the build cost
 
@@ -1863,7 +1939,8 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
 | With parts and undersides (not drawn, §2.16.6) | 8,058 | 697 | 67,367 | 51,315 + 4,093 | 190,142 | 342,322 | 570,426 |
 
 - 8,058 volumes = 4,336 − 487 + 4,209. The roofs follow §2.6's Σ (n + 2h − 2): 67,367
-  ring vertices, 32 holes and 8,058 polygons give 51,315, and `earcut` 0.4.11 gives
+  ring vertices, 32 holes (30 in the buildings without parts, 2 in parts) and 8,058
+  polygons give 51,315, and `earcut` 0.4.11 gives
   exactly that.
 - **The mesh grows by 57 %.** It is still one mesh, one draw, opaque (§2.15.5).
 - **Cost.** With see-through on, the mesh is rebuilt on most frames (§2.15.5): 1,653 of
@@ -1991,6 +2068,7 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
     yes, it is the next phase.)*~~
   - *(answered 2026-10-02, user, at gate 16)* **Not sooner.** Building parts wait for the
     "nicer buildings" work on the roadmap (§2.13).
+  - *(2026-10-03)* They are Phase 4 (§2.15.1 decision 4, §2.16).
 - **OQ-6** — Where should a copy of the cache live once its release leaves S3?
   **RESOLVED.**
   - *Why it matters:* Overture keeps only recent releases (§2.3.3). If
@@ -3306,16 +3384,26 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
   - **The fetch (`scripts/fetch-buildings.sh`), §2.16.3.**
     - The query: the buildings with `min_height` and `min_floor` and a `null`
       `building_id`, then their parts by `building_id` over the buildings' own extent,
-      ordered by `building_id` (nulls first) and `id`.
-    - `--source <dir>`, default `s3://overturemaps-us-west-2/release/<release>/theme=buildings`.
-      A `--source` that is not a directory is an error, `error: --source: no directory
-      <dir>`, with nothing at `--out`.
-    - The report's `raised` and `parts` (§2.16.3); every other key as today.
-  - **The fixture (`scripts/fixture.sh midtown`).** Step 6 (new) writes
-    `scratch/midtown/buildings-parts.geojson` only if it is absent or `REFETCH=1`, with
-    `--source scratch/overture-2026-09-23.1/theme=buildings` when that directory exists,
-    else from S3; its report line goes to `scratch/midtown/fetch-parts.log`. `FORCE=1`
-    keeps it, as it keeps `buildings.geojson`. Steps 1–5 are unchanged.
+      ordered by `building_id` (nulls first) and `id`; two DuckDB runs, the buildings
+      handed over as `$TMP/b.parquet` (§2.16.3). A failed run is today's error, `release
+      <r>: …`, with nothing at `--out`.
+    - `--source <dir>`, a local directory; not given, S3 as today. A `--source` that is not
+      a directory is an error, `error: --source: no directory <dir>`, with nothing at
+      `--out`.
+    - `--no-parts` (§2.16.1 decision 5): Phase 2's query and report, unchanged; it combines
+      with `--source`.
+    - The report's `raised` and `parts` (§2.16.3); every other key as today, counted over
+      the features without a `building_id`.
+  - **The fixture (`scripts/fixture.sh midtown`)**, §2.16.3. Step 5 passes `--no-parts`,
+    and `--source scratch/overture-2026-09-23.1/theme=buildings` when that directory
+    exists. Step 6 (new) writes `scratch/midtown/buildings-parts.geojson` only if it is
+    absent or `REFETCH=1`, with the same `--source` rule; its report line goes to
+    `scratch/midtown/fetch-parts.log`. Step 2's `find` also keeps
+    `buildings-parts.geojson` and `fetch-parts.log`, so `FORCE=1` keeps them. The header
+    comment says so. Nothing else changes.
+  - **The Phase 1 and 2 network gates.** The second fetch in the `REFETCH=1` leg of
+    `scripts/gates-city.sh` and of `scripts/gates-credit.sh` gains `--no-parts`: one
+    changed line each, and their header comments unchanged.
   - **The mirror, once, by hand** (a build step, not a gate): in
     `scratch/overture-2026-09-23.1/`, `theme=buildings/type=building/` gets a copy of
     `building.parquet`, and `theme=buildings/type=building_part/` a copy of
@@ -3329,8 +3417,9 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
       highest `top()`. `Counts` stays the buildings' height rules.
     - `building_mesh(b)`: without parts, today's walls with their lower edge at `b.base`
       and its roof at `b.height`; with parts, each part the same way, from its base to its
-      `height`, in order. No floor and no underside (§2.16.6). With base 0 and no parts it
-      is today's `building_mesh`, vertex for vertex.
+      `height`, in order: each part's walls, then its roof. No floor and no underside
+      (§2.16.6). With base 0 and no parts it is today's `building_mesh`, vertex for vertex.
+      `MeshData`'s doc comment, which says one building's walls come first, says this.
     - `mesh_data`, `lnglat_to_xy` and the rest are unchanged.
   - **See-through (`src/see_through.rs`).** `height` and `heights` take `b.top()` for `h`
     (§2.16.7). `wedge` and `distance` are unchanged.
@@ -3340,15 +3429,16 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
     Nothing else changes: `draw::BuildingsCut`, `draw::spawn_buildings`, the credit, the
     CLI and every key.
   - **Tests.**
-    - `tests/parts.rs` (new): gates 6, 7 and 8, and gate 10's continuity half; the
-      Midtown and GPU ones ignored, as in `tests/see_through.rs`.
+    - `tests/parts.rs` (new): gates 6, 7, 8, 10, 11's test half and 12; the Midtown and
+      GPU ones ignored, as in `tests/see_through.rs`.
     - `scripts/gates-parts.sh` (new, offline): gates 2, 5, 9 and 11's CLI half, and the
       renders for gate 15, into `scratch/out/parts/`.
     - **Edited:** `tests/see_through.rs`, only to add `base: 0.0,` and `parts: vec![],` to
       its two `Building` literals (`rect` and gate 5's courtyard), since `Building` gains
       two fields: four added lines. Gate 3 checks that the diff is those four lines and
       that every printed number is the baseline's.
-    - **Not edited:** every other test file, every other script, `src/draw.rs`,
+    - **Not edited:** every other test file, every other script (apart from the one line
+      each in `gates-city.sh` and `gates-credit.sh`, above), `src/draw.rs`,
       `src/credit.rs`, `src/camera.rs`, `src/keyframes.rs`, `src/main.rs`, `Cargo.toml`
       and `Cargo.lock`.
 - **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
@@ -3393,12 +3483,18 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
   3. **The shared tests and scripts.**
      - Re-run with `--include-ignored --test-threads=1`: `--test view` 10 of 10, `slider`
        8 of 8, `camera` 19 of 19, `buildings` 13 of 13, `credit` 6 of 6, `ties` 2 of 2 and
-       `see_through` 7 of 7. Every printed number equals the baseline's.
+       `see_through` 7 of 7, and `--lib` 4 of 4 (one, `place::turn_point_wiring`, is
+       `#[ignore]`d without `--include-ignored`), as at baseline. Every printed
+       number equals the baseline's, apart from build lines and times.
      - `git diff <baseline> -- tests/` shows only the four added lines of
        `tests/see_through.rs` named in the scope, and the new `tests/parts.rs`.
+       `git diff <baseline> -- scripts/` shows `fetch-buildings.sh` and `fixture.sh`, the
+       new `gates-parts.sh`, and in `gates-city.sh` and `gates-credit.sh` only the
+       `--no-parts` of their second fetch.
      - `scripts/gates-ties.sh`, `gates-credit.sh`, `gates-city.sh` and
-       `gates-see-through.sh` run unedited, on today's cache, and print what they printed
-       at baseline. gates-city's only `FAIL` lines stay gate 3's FCD comparison (OQ-4).
+       `gates-see-through.sh` run on today's cache, offline, and print what they printed at
+       baseline, apart from times. gates-city's only `FAIL` lines stay gate 3's FCD
+       comparison (OQ-4).
   4. **Build cost** (§2.16.11). `git diff <baseline> -- Cargo.toml Cargo.lock` is empty:
      **0 packages**, no feature.
   - **The fetch and the cache — offline:**
@@ -3420,18 +3516,28 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
      - `scratch/midtown/buildings-parts.geojson`, from the fixture's step 6, has the same
        SHA-256;
      - `--source scratch/no-such-dir` is one error line, a non-zero exit and nothing at
-       `--out`.
+       `--out`;
+     - **today's form, offline:** the same command with `--no-parts`, twice, gives
+       **2,284,830 bytes, SHA-256 `f241ccbd…`**, today's cache, and the report line of
+       `scratch/midtown/fetch.log` apart from `seconds` and `out` (no `raised`, no
+       `parts`); `scratch/midtown/buildings.geojson`, after `REFETCH=1 scripts/fixture.sh
+       midtown` with the mirror laid out, still has that SHA-256. That fixture run comes
+       last in gate 5, after its reads of `fetch.log`; it rewrites `fetch.log` and
+       `fetch-parts.log`, whose lines change only in `seconds`.
 
      While S3 still lists `2026-09-23.1` (until about 2026-11-22), the same command
      without `--source` is run once and its SHA-256 recorded. It is predicted equal, and
-     it is not a gate, since it needs the network.
+     it is not a gate, since it needs the network. So is `REFETCH=1
+     scripts/gates-city.sh` and `REFETCH=1 scripts/gates-credit.sh`, whose second fetch
+     with `--no-parts` is predicted `f241ccbd…`, as at Phases 1 and 2.
   6. **Reading and the mesh** (`tests/parts.rs`).
      - **Midtown with parts** (ignored, headless): `buildings::read` of
        `buildings-parts.geojson` gives **4,336 buildings, 487 with parts, 4,209 parts**.
        The parts' tops: 4,152 by `height`, 17 by `num_floors`, 40 at 10 m. Their bases:
        695 above 0, all by `min_height`. Three buildings have a base: 7.5 m
        (`2bd09890-…`), 7.0 m (`c92d28b5-…`, by `min_floor`) and 3.7 m (`de4ad6d6-…`, which
-       has parts). `tallest` is 472.0.
+       has parts). `tallest` is 472.0. (`Part` and `Building` keep a base's value, not its
+       rule; the test reads which rule gave each base from the file's properties.)
      - Its `mesh_data`: **336,835 vertices, 558,147 indices, 67,367 wall quads and 51,315
        roof triangles**.
      - Every one of the 3,847 buildings with no parts and base 0 has the same
@@ -3443,9 +3549,12 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
   7. **The reader's new checks** (headless, hand-written cases in the test, on
      `tests/buildings.rs`'s made-up network with Midtown's `map_origin`). Each is one
      `buildings::read` error naming the feature, and the first in file order wins:
-     - `"building_id": 7`: the `building_id` error;
-     - `"min_height": -1` on a building without parts, and `"min_floor": 1.5`: the base
-       errors;
+     - `"building_id": 7`: `building_id 7 is not a string`;
+     - `"min_height": -1` on a building without parts, and `"min_floor": 1.5`: `min_height
+       -1 is not a finite number of at least 0` and `min_floor 1.5 is not an integer of at
+       least 0`;
+     - `"min_height": -1` on a building with parts: the same error (§2.16.5: its base is
+       checked, though not drawn);
      - a building of `height` 20 with `min_height` 20: `base 20 m is not below its top 20
        m`; a part of `height` 10 with `min_height` 12, likewise;
      - a part whose `building_id` is `"nobody"`: `part of nobody, which is not a building
@@ -3550,7 +3659,8 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
         full height.
       - **Orbit, throughout.** The crossing in the middle of the frame and its traffic
         look as today: the middle ninth of the frame differs in at most 3 % of its pixels
-        at every sampled second, and gate 12's centre counts are equal. The changes are in
+        at every sampled second, and gate 12's centre count with see-through on is
+        today's (159,502). The changes are in
         the top third and at the sides. At 0:00, behind the crossing at the top middle, a
         tower rises from a lower base where today a wide slab stands. Around 0:20, a
         tower about 230 m tall stands in the top left third, where today a block about
@@ -3592,7 +3702,8 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
   - the S3 fetch's bytes (gate 5's note).
 - **Close-out (standing plan steps, the methodology's §3):**
   - **Commit plan:** one branch (`vis-002-phase-4`), one push. The commits:
-    - the fetch, `--source`, the fixture's step 6, the reader and the mesh, with
+    - the fetch, `--source`, `--no-parts`, the fixture's steps 5 and 6, the one line each
+      in `gates-city.sh` and `gates-credit.sh`, the reader and the mesh, with
       `tests/parts.rs`'s headless gates (6 and 7) and `tests/see_through.rs`'s four
       lines;
     - see-through's `top()`, `render` and `view`, the GPU and Midtown tests, and
@@ -3601,20 +3712,27 @@ the lid for a part above the cut (decision 2, OQ-17), and no new credit item (§
     - the close-out.
   - **Reconciliation:**
     - **a new `rules/parts.md`** (`max_lines: 40`) covering the cache's parts and bases,
-      the query by `building_id`, `--source`, the report's new keys, the reader's checks,
-      the volumes and their mesh, `top()` and the cut. Its `sources` are
-      `scripts/fetch-buildings.sh`, `src/buildings.rs`, `src/see_through.rs`,
-      `src/render.rs` and `src/view/mod.rs`;
-    - **two rules at their caps gain a pointer to it**, reworded to fit, with no
-      `max_lines` raised: `rules/buildings.md` (60/60), whose fetch, cache and mesh lines
-      now hold for buildings without parts; and `rules/see-through.md` (40/40), whose `h`
-      is `top()`;
-    - `rules/credit.md`, `rules/render.md`, `rules/view.md` and `rules/camera.md`: none
-      needed, since neither the line, the CLI, the keys nor the camera change;
+      the query by `building_id`, `--source`, `--no-parts`, the report's new keys, the
+      reader's checks, the volumes and their mesh, `top()` and the cut. Its `sources` are
+      `scripts/fetch-buildings.sh`, `scripts/fixture.sh`, `src/buildings.rs`,
+      `src/see_through.rs`, `src/render.rs` and `src/view/mod.rs`;
+    - **two rules at their caps are corrected and gain a pointer to it**, reworded to fit,
+      with no `max_lines` raised:
+      - `rules/buildings.md` (60/60): its fetch lines (the columns kept, the usage line,
+        the report's keys) and "a feature is one building" are now true of the
+        `--no-parts` form and of the buildings of either form, and say so; its mesh lines
+        hold for a building without parts;
+      - `rules/see-through.md` (40/40), whose `h` is `top()`;
+    - `rules/credit.md`: its "each building dataset" becomes each feature's, parts
+      included, one line, no new item;
+    - `rules/render.md`, `rules/view.md` and `rules/camera.md`: none needed, since neither
+      the CLI, the keys nor the camera change;
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
-    - **the README** says that a cache fetched from Phase 4 on carries the parts, that an
-      older one draws as before until fetched again, and what `--source` does and does
-      not check; and gains the new gate commands: `scripts/gates-parts.sh` and `cargo
+    - **the README**: "What it fetches" names the parts and their columns, the report's
+      new keys and `--no-parts`; "Older caches" says a cache fetched before Phase 4 draws
+      as before until fetched again; "How they look" says a building with parts is drawn
+      from them, each from its base; and it says what `--source` does and does not check.
+      It gains the new gate commands: `scripts/gates-parts.sh` and `cargo
       test --release --test parts -- --include-ignored --test-threads=1`;
     - `CLAUDE.md`: none needed, since no stanza changes;
     - status artifact: none needed, since this repo has none.
