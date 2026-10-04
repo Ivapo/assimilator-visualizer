@@ -134,7 +134,7 @@ echo "gate5 cache: $bytes bytes, sha256 $sha"
 [ "$sha" = "$CACHE_SHA" ] || fail "gate5 cache hash"
 if [ "${REFETCH:-0}" = 1 ]; then
     rm -rf "$OUT/refetch" "$OUT/missing" && mkdir -p "$OUT/refetch" "$OUT/missing"
-    scripts/fetch-buildings.sh --project "$MID" --out "$OUT/refetch/buildings.geojson" \
+    scripts/fetch-buildings.sh --project "$MID" --out "$OUT/refetch/buildings.geojson" --no-parts \
         > "$OUT/refetch/fetch.log" 2> "$OUT/refetch/fetch.stderr" || fail "gate5 second fetch exited $?"
     echo "gate5 second fetch: $(cat "$OUT/refetch/fetch.log")"
     sha2=$(shasum -a 256 "$OUT/refetch/buildings.geojson" 2> /dev/null | cut -d' ' -f1)

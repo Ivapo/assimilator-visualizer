@@ -32,7 +32,7 @@ phases:
     by: null
   - name: "Phase 4 — Building parts: towers on podiums and raised bases, from Overture's parts"
     reviewed: 2026-10-04
-    shipped: null
+    shipped: 2026-10-04
     cut: null
     by: null
 
@@ -2305,6 +2305,8 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
   - *(answered 2026-10-04, user, before review)* **(a): the parts only.** The footprint no
     part covers is not drawn. Recorded as §2.16.1 decision 1 and §2.16.4. Gates 6, 12 and
     15 were predicted with (a) and do not change.
+  - *(2026-10-04, user, at Phase 4's gate 15)* Stands: gate 15 passed, and nothing drawn
+    from the parts changes.
 - **OQ-17** — A part, or a raised base, wholly above its building's cut height `h′`: a lid
   at `h′`, or removed (§2.16.7)? **RESOLVED.**
   - *The facts:* §2.15.7's clamp puts it at `h′` with no walls: a lid. Over a lower part of
@@ -2323,6 +2325,8 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
   - *(answered 2026-10-04, user, before review)* **(a): the lid at the cut height**,
     §2.15.7's clamp as built. Recorded as §2.16.1 decision 2 and §2.16.7. Gates 8 and 12
     were predicted with (a) and do not change.
+  - *(2026-10-04, user, at Phase 4's gate 15)* Stands: gate 15 passed, and nothing drawn
+    from the parts changes.
 
 ## 4. Implementation phases
 

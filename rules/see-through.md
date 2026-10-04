@@ -13,7 +13,7 @@ covers: >
   heights they are drawn at, how the building mesh is rebuilt, where it is on by default,
   `--no-see-through` and `view`'s `X`.
 max_lines: 40
-generated: 2026-10-03
+generated: 2026-10-04
 ---
 
 # See-through
@@ -31,15 +31,15 @@ generated: 2026-10-03
   its distance to `l` less `r`, at least 0.
 
 ## The heights (`see_through::height`, `heights` in file order)
-- `δ ≥ e`: the building's own `height`, the same `f64`.
-- `δ < e`: `min(h, STUB_M + (h − STUB_M)·smoothstep(δ/e))`, `STUB_M` 3 m and
-  `smoothstep(x) = x·x·(3 − 2x)`. A building under 3 m keeps its height.
-- Continuous in the pose, so a flight never pops a building; only heights change.
+- `h` is `Building::top()` (`rules/parts.md`). `δ ≥ e`: `h`, the same `f64`.
+- `δ < e`: `min(h, STUB_M + (h − STUB_M)·smoothstep(δ/e))`, `STUB_M` 3 m, `smoothstep(x) =
+  x·x·(3 − 2x)`; under 3 m it keeps `h`. `δ` is the building's footprint's, never a part's.
+- Continuous in the pose: no pop. A part wholly above `h′` lies as a lid at `h′`.
 
 ## Drawing (`draw::BuildingsCut`, `draw::set_building_heights`)
 - `BuildingsCut::new` keeps each `building_mesh`'s `f64` positions in file order, each
-  vertex's building, and the Bevy normals and indices. `mesh(heights)` gives every vertex
-  `z′ = min(z, heights[b])`, baked like `draw::buildings_mesh`; with own heights it equals it.
+  vertex's building (its parts' too), and normals and indices. `mesh(heights)` gives every
+  vertex `z′ = min(z, heights[b])`, baked like `draw::buildings_mesh`; with tops it equals it.
 - `set_building_heights` replaces the asset behind the buildings' `Mesh3d` (`Assets::insert`).
   Still one mesh, one draw, opaque; the boxes are never touched.
 
@@ -53,5 +53,5 @@ generated: 2026-10-03
   so every frame is today's. Accepted with no effect where nothing could be cut.
 - `view --buildings` starts with `ViewState::see_through` on; `X` (by position) flips it at
   any moment and changes nothing else. The cut is built the first time it is on. Heights
-  follow the state's pose when it and `buildings_shown` are on, else each building's own;
+  follow the state's pose when it and `buildings_shown` are on, else each `top()`;
   the mesh is replaced on a change, and every frame of `--bench` while it is on.

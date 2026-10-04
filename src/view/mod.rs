@@ -152,7 +152,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     let boxes = draw::spawn_boxes(world);
     let buildings = buildings.map(|b| ViewBuildings {
         entities: draw::spawn_buildings(world, &b, (fit.cx, fit.cy)),
-        drawn: b.buildings.iter().map(|x| x.height).collect(),
+        drawn: b.buildings.iter().map(|x| x.top()).collect(),
         buildings: b,
         cut: None,
     });
@@ -313,7 +313,7 @@ fn frame(world: &mut World) {
             let heights = if s.see_through && s.buildings_shown {
                 see_through::heights(&b.buildings, &s.pose())
             } else {
-                b.buildings.buildings.iter().map(|x| x.height).collect()
+                b.buildings.buildings.iter().map(|x| x.top()).collect()
             };
             if let Some(cut) = &b.cut
                 && (heights != b.drawn || (v.bench.is_some() && s.see_through))

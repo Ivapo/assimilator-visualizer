@@ -1,8 +1,10 @@
 //! Buildings around a georeferenced network (vis-002): the `buildings.geojson` cache of
 //! `scripts/fetch-buildings.sh`, read and checked (§2.4), projected with the engine's
 //! import formula (§2.5), and the walls and roofs of each building as mesh data in world
-//! metres (§2.6). No Bevy: `src/draw.rs` bakes the mesh.
+//! metres (§2.6). A building with Overture `building_part`s is drawn from its parts, each
+//! from its own base (§2.16). No Bevy: `src/draw.rs` bakes the mesh.
 
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 use std::path::Path;
 
@@ -85,7 +87,7 @@ pub fn format_e7(v: i64) -> String {
     format!("{sign}{}.{:07}", a / 10_000_000, a % 10_000_000)
 }
 
-/// Which rule gave a building its height (§2.4.2).
+/// Which rule gave a building or a part its height (§2.4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeightRule {
     Height,
@@ -108,16 +110,47 @@ impl Polygon {
     }
 }
 
-/// One feature of the file: a `Polygon` is one polygon, a `MultiPolygon` several.
+/// One building of the file, a feature without a `building_id`: a `Polygon` is one
+/// polygon, a `MultiPolygon` several.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Building {
     pub id: String,
     pub polygons: Vec<Polygon>,
     pub height: f64,
     pub rule: HeightRule,
+    /// The base, metres: `min_height`, else `min_floor` × [`FLOOR_HEIGHT_M`], else 0
+    /// (§2.16.5). Not drawn when the building has parts.
+    pub base: f64,
+    /// Its `building_part`s, in file order. With any, the building is drawn from them only.
+    pub parts: Vec<Part>,
 }
 
-/// How many buildings took each height rule.
+impl Building {
+    /// The drawn top (§2.16.5): its highest part's `height`, else its own `height`.
+    pub fn top(&self) -> f64 {
+        if self.parts.is_empty() {
+            self.height
+        } else {
+            self.parts
+                .iter()
+                .map(|p| p.height)
+                .fold(f64::NEG_INFINITY, f64::max)
+        }
+    }
+}
+
+/// One `building_part` of a building: a feature whose `building_id` names it. Its top and
+/// base follow the building's rules (§2.16.5); the building's own are not used for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Part {
+    pub id: String,
+    pub polygons: Vec<Polygon>,
+    pub base: f64,
+    pub height: f64,
+    pub rule: HeightRule,
+}
+
+/// How many buildings (not parts) took each height rule.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Counts {
     pub height: usize,
@@ -130,7 +163,7 @@ pub struct Counts {
 pub struct Buildings {
     pub buildings: Vec<Building>,
     pub counts: Counts,
-    /// The tallest height, metres.
+    /// The highest drawn top ([`Building::top`]), metres.
     pub tallest: f64,
 }
 
@@ -149,9 +182,20 @@ pub fn ring_area2(ring: &[[f64; 2]]) -> f64 {
 /// closing position.
 type RawPolygons = Vec<Vec<Vec<[f64; 2]>>>;
 
-/// Read and check `path` against `network` (§2.4.3), in order: the file, then each
-/// feature in file order with its own checks in order, then `map_origin`, then the
-/// extent. The first failure is the error.
+/// One feature, checked, still in lng/lat.
+struct RawFeature {
+    id: String,
+    polygons: RawPolygons,
+    height: f64,
+    rule: HeightRule,
+    building_id: Option<String>,
+    base: f64,
+}
+
+/// Read and check `path` against `network` (§2.4.3, §2.16.5), in order: the file, then
+/// each feature in file order with its own checks in order, then that every part's
+/// `building_id` names a building of the file, then `map_origin`, then the extent. The
+/// first failure is the error.
 pub fn read(path: &Path, network: &NetworkConfig) -> Result<Buildings, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read the file: {e}"))?;
     let doc: Value = serde_json::from_str(&text).map_err(|e| format!("not JSON: {e}"))?;
@@ -160,7 +204,13 @@ pub fn read(path: &Path, network: &NetworkConfig) -> Result<Buildings, String> {
         _ => return Err("not a GeoJSON FeatureCollection with a `features` array".into()),
     };
 
-    let mut raw: Vec<(String, RawPolygons, f64, HeightRule)> = Vec::with_capacity(features.len());
+    // The buildings with parts: every string `building_id` of the file.
+    let with_parts: HashSet<&str> = features
+        .iter()
+        .filter_map(|f| f.get("properties")?.get("building_id")?.as_str())
+        .collect();
+
+    let mut raw: Vec<RawFeature> = Vec::with_capacity(features.len());
     for (i, f) in features.iter().enumerate() {
         let id = match f.get("properties").and_then(|p| p.get("id")) {
             Some(Value::String(id)) => id.clone(),
@@ -180,34 +230,90 @@ pub fn read(path: &Path, network: &NetworkConfig) -> Result<Buildings, String> {
                 }
             }
         }
-        let (height, rule) = height(f.get("properties")).map_err(err)?;
-        raw.push((id, polygons, height, rule));
+        let props = f.get("properties");
+        let (height, rule) = height(props).map_err(err)?;
+        let building_id = match props.and_then(|p| p.get("building_id")) {
+            None | Some(Value::Null) => None,
+            Some(Value::String(b)) => Some(b.clone()),
+            Some(v) => return Err(err(format!("building_id {v} is not a string"))),
+        };
+        let base = base(props).map_err(err)?;
+        // A building with parts is not drawn, so its own base and top are not compared.
+        if (building_id.is_some() || !with_parts.contains(id.as_str())) && base >= height {
+            return Err(err(format!(
+                "base {base} m is not below its top {height} m"
+            )));
+        }
+        raw.push(RawFeature {
+            id,
+            polygons,
+            height,
+            rule,
+            building_id,
+            base,
+        });
+    }
+
+    let is_building: HashSet<&str> = raw
+        .iter()
+        .filter(|r| r.building_id.is_none())
+        .map(|r| r.id.as_str())
+        .collect();
+    for r in &raw {
+        if let Some(b) = &r.building_id
+            && !is_building.contains(b.as_str())
+        {
+            return Err(format!(
+                "feature {}: part of {b}, which is not a building of the file",
+                r.id
+            ));
+        }
     }
 
     let origin = map_origin(network)?;
     let mut counts = Counts::default();
-    let mut tallest: f64 = 0.0;
-    let buildings: Vec<Building> = raw
-        .into_iter()
-        .map(|(id, polygons, height, rule)| {
-            match rule {
-                HeightRule::Height => counts.height += 1,
-                HeightRule::NumFloors => counts.num_floors += 1,
-                HeightRule::Default => counts.default += 1,
+    let mut buildings: Vec<Building> = Vec::with_capacity(is_building.len());
+    let mut index: HashMap<String, usize> = HashMap::with_capacity(is_building.len());
+    let mut parts: Vec<(String, Part)> = Vec::new();
+    for r in raw {
+        let polygons = r
+            .polygons
+            .into_iter()
+            .map(|rings| project(origin, rings))
+            .collect();
+        match r.building_id {
+            None => {
+                match r.rule {
+                    HeightRule::Height => counts.height += 1,
+                    HeightRule::NumFloors => counts.num_floors += 1,
+                    HeightRule::Default => counts.default += 1,
+                }
+                index.entry(r.id.clone()).or_insert(buildings.len());
+                buildings.push(Building {
+                    id: r.id,
+                    polygons,
+                    height: r.height,
+                    rule: r.rule,
+                    base: r.base,
+                    parts: Vec::new(),
+                });
             }
-            tallest = tallest.max(height);
-            let polygons = polygons
-                .into_iter()
-                .map(|rings| project(origin, rings))
-                .collect();
-            Building {
-                id,
-                polygons,
-                height,
-                rule,
-            }
-        })
-        .collect();
+            Some(b) => parts.push((
+                b,
+                Part {
+                    id: r.id,
+                    polygons,
+                    base: r.base,
+                    height: r.height,
+                    rule: r.rule,
+                },
+            )),
+        }
+    }
+    for (b, part) in parts {
+        buildings[index[&b]].parts.push(part);
+    }
+    let tallest = buildings.iter().map(Building::top).fold(0.0, f64::max);
 
     let [x0, y0, x1, y1] = network_extent(network);
     let meets = |b: &Building| {
@@ -308,6 +414,27 @@ fn height(props: Option<&Value>) -> Result<(f64, HeightRule), String> {
     Ok((DEFAULT_HEIGHT_M, HeightRule::Default))
 }
 
+/// §2.16.5: `min_height` if present and not null, else `min_floor` × [`FLOOR_HEIGHT_M`],
+/// else 0. A value that is used must be valid.
+fn base(props: Option<&Value>) -> Result<f64, String> {
+    let get = |k: &str| props.and_then(|p| p.get(k)).filter(|v| !v.is_null());
+    if let Some(h) = get("min_height") {
+        return match h.as_f64() {
+            Some(v) if v.is_finite() && v >= 0.0 => Ok(v),
+            _ => Err(format!(
+                "min_height {h} is not a finite number of at least 0"
+            )),
+        };
+    }
+    if let Some(n) = get("min_floor") {
+        return match n.as_f64() {
+            Some(v) if v >= 0.0 && v.fract() == 0.0 => Ok(v * FLOOR_HEIGHT_M),
+            _ => Err(format!("min_floor {n} is not an integer of at least 0")),
+        };
+    }
+    Ok(0.0)
+}
+
 /// Project a polygon's rings, drop each closing position, and orient them: the exterior
 /// counter-clockwise, the holes clockwise.
 fn project(origin: [f64; 2], rings: Vec<Vec<[f64; 2]>>) -> Polygon {
@@ -335,9 +462,9 @@ fn project(origin: [f64; 2], rings: Vec<Vec<[f64; 2]>>) -> Polygon {
 }
 
 /// Mesh data in world metres (`x` east, `y` north, `z` up), triangles counter-clockwise
-/// seen from outside the solid. One building's walls come first, `4 · wall_quads`
-/// vertices: a quad per ring edge `a → b` as `a0 b0 b1 a1`, with one normal. Its roofs
-/// follow.
+/// seen from outside the solid. A building is one volume, or one per part in file order;
+/// each volume's walls come first, a quad per ring edge `a → b` as `a0 b0 b1 a1` with one
+/// normal, and its roofs follow.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MeshData {
     pub positions: Vec<[f64; 3]>,
@@ -358,13 +485,27 @@ impl MeshData {
     }
 }
 
-/// One building's walls and roofs (§2.6). Walls stand from `z` = 0 to the height on every
-/// ring edge, holes included, each facing out: the right of the ring's direction. Each
-/// polygon's roof is triangulated with `earcut` at `z` = height, facing up. No floor.
+/// One building's walls and roofs (§2.6, §2.16.6): without parts, its own polygons from
+/// its base to its height; with parts, each part's from the part's base to its height, in
+/// file order, each part's walls then its roof. With base 0 and no parts, the walls of
+/// §2.6 from `z` = 0.
 pub fn building_mesh(b: &Building) -> MeshData {
     let mut m = MeshData::default();
-    let h = b.height;
-    for ring in b.polygons.iter().flat_map(Polygon::rings) {
+    if b.parts.is_empty() {
+        volume(&mut m, &b.polygons, b.base, b.height);
+    } else {
+        for p in &b.parts {
+            volume(&mut m, &p.polygons, p.base, p.height);
+        }
+    }
+    m
+}
+
+/// One volume's walls and roofs. Walls stand from `z` = `z0` to `h` on every ring edge,
+/// holes included, each facing out: the right of the ring's direction. Each polygon's roof
+/// is triangulated with `earcut` at `z` = `h`, facing up. No floor and no underside.
+fn volume(m: &mut MeshData, polygons: &[Polygon], z0: f64, h: f64) {
+    for ring in polygons.iter().flat_map(Polygon::rings) {
         let n = ring.len();
         for i in 0..n {
             let (a, c) = (ring[i], ring[(i + 1) % n]);
@@ -377,8 +518,8 @@ pub fn building_mesh(b: &Building) -> MeshData {
             };
             let base = m.positions.len() as u32;
             m.positions.extend([
-                [a[0], a[1], 0.0],
-                [c[0], c[1], 0.0],
+                [a[0], a[1], z0],
+                [c[0], c[1], z0],
                 [c[0], c[1], h],
                 [a[0], a[1], h],
             ]);
@@ -390,7 +531,7 @@ pub fn building_mesh(b: &Building) -> MeshData {
     }
     let mut earcut = Earcut::<f64>::new();
     let mut triangles: Vec<u32> = Vec::new();
-    for p in &b.polygons {
+    for p in polygons {
         let mut vertices = p.exterior.clone();
         let mut holes: Vec<u32> = Vec::with_capacity(p.holes.len());
         for hole in &p.holes {
@@ -405,7 +546,6 @@ pub fn building_mesh(b: &Building) -> MeshData {
         m.indices.extend(triangles.iter().map(|i| base + i));
         m.roof_triangles += triangles.len() / 3;
     }
-    m
 }
 
 /// Every building's [`building_mesh`], in file order.

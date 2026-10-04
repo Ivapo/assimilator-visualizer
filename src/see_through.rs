@@ -5,7 +5,8 @@
 //! The wedge (§2.15.2) is the convex hull of the eye's ground point `g` and the disc of
 //! radius `r` about the look-at point `l`. A building whose footprint lies less than the
 //! ease band `e` from it is lowered toward a [`STUB_M`] stub, eased by `smoothstep`
-//! (§2.15.3); every other building keeps its own height, bit for bit.
+//! (§2.15.3); every other building keeps its drawn top ([`Building::top`]), bit for bit.
+//! A building's parts are cut with it (§2.16.7).
 
 use crate::buildings::{Building, Buildings};
 use crate::camera::{Pose, cos_deg};
@@ -67,8 +68,8 @@ pub fn distance(w: &Wedge, b: &Building) -> f64 {
     delta(w, &w.triangle(), b, f64::INFINITY)
 }
 
-/// The height `b` is drawn at (§2.15.3): `min(h, s + (h − s)·smoothstep(δ/e))` for
-/// `δ < e`, and the building's own `height` for `δ ≥ e`.
+/// The height `b` is drawn at (§2.15.3, §2.16.7): `min(h, s + (h − s)·smoothstep(δ/e))`
+/// for `δ < e`, and `h` for `δ ≥ e`, with `h` the drawn top, [`Building::top`].
 pub fn height(w: &Wedge, b: &Building) -> f64 {
     height_with(w, &w.triangle(), b)
 }
@@ -85,7 +86,7 @@ pub fn heights(buildings: &Buildings, pose: &Pose) -> Vec<f64> {
 }
 
 fn height_with(w: &Wedge, tri: &Option<[P2; 3]>, b: &Building) -> f64 {
-    let (h, e) = (b.height, w.ease);
+    let (h, e) = (b.top(), w.ease);
     let d = delta(w, tri, b, e);
     let f = if d <= 0.0 {
         0.0

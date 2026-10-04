@@ -11,7 +11,7 @@ covers: >
   its inputs and checks, how it is drawn and fitted, the font and its licence, and `Job`'s
   credit accessors.
 max_lines: 40
-generated: 2026-10-02
+generated: 2026-10-04
 ---
 
 # Credit
@@ -23,10 +23,10 @@ generated: 2026-10-02
   otherwise nothing is read or spawned (urban_grid is unchanged). `view` draws none; no flag.
 - Items joined by ` · `, no full stop: (1) `© OpenStreetMap contributors (ODbL)`, always;
   (2) `Overture Maps Foundation, release <r>` with buildings (their release, which wins) or
-  when `<project>/import_report.json`'s `source.type` is `Overture` (its `release`); (3)
-  each building dataset but `OpenStreetMap`, once: `Esri Community Maps contributors (CC BY
-  4.0)`, `Google Open Buildings (CC BY 4.0)`, `Microsoft ML Buildings (ODbL)`, `USGS
-  Lidar` in that order, then unknown datasets verbatim, in byte order. TomTom is not named.
+  when `<project>/import_report.json`'s `source.type` is `Overture` (its `release`); (3) each
+  dataset a feature names (parts included) but `OpenStreetMap`, once: `Esri Community Maps
+  contributors (CC BY 4.0)`, `Google Open Buildings (CC BY 4.0)`, `Microsoft ML Buildings
+  (ODbL)`, `USGS Lidar` in that order, then unknown ones verbatim, in byte order. No TomTom.
 - Release and datasets come from the fetch (`rules/buildings.md`). No report, or a null or
   missing `source`, adds nothing for the roads.
 
