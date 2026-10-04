@@ -7,12 +7,25 @@
 //! Gates 2, 5, 9 and 11's CLI half are `scripts/gates-parts.sh`.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use assimilator_config::network::NetworkConfig;
 use assimilator_video::buildings::{
-    self, Buildings, HeightRule, building_mesh, mesh_data, xy_to_lnglat,
+    self, Building, Buildings, Counts, HeightRule, Part, Polygon, building_mesh, mesh_data,
+    xy_to_lnglat,
 };
+use assimilator_video::camera::{Pose, project};
+use assimilator_video::clock;
+use assimilator_video::draw::{self, BuildingsCut};
+use assimilator_video::keyframes::{self, Flight};
+use assimilator_video::motion::{Piece, TrackPos};
+use assimilator_video::place::Placed;
+use assimilator_video::render::{Renderer, VehicleBox};
+use assimilator_video::run::{self, LoadOptions};
+use assimilator_video::scene::{Camera, Strip};
+use assimilator_video::see_through;
+use assimilator_video::{Job, RenderOptions};
+use bevy::mesh::{Mesh, VertexAttributeValues};
 use serde_json::{Value, json};
 
 /// Midtown's `metadata.map_origin`, `[lng, lat]`.
@@ -389,4 +402,445 @@ fn gate7_parts_accepted() {
         (4, 1, 1)
     );
     assert_eq!(s.tallest, 30.0);
+}
+
+// ── Gate 8: the synthetic scenes, through the GPU ────────────────────────────
+
+fn rect_polygon(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Polygon> {
+    vec![Polygon {
+        exterior: vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+        holes: vec![],
+    }]
+}
+
+fn building(id: &str, poly: Vec<Polygon>, height: f64, base: f64, parts: Vec<Part>) -> Building {
+    Building {
+        id: id.into(),
+        polygons: poly,
+        height,
+        rule: HeightRule::Height,
+        base,
+        parts,
+    }
+}
+
+fn part(id: &str, poly: Vec<Polygon>, base: f64, height: f64) -> Part {
+    Part {
+        id: id.into(),
+        polygons: poly,
+        base,
+        height,
+        rule: HeightRule::Height,
+    }
+}
+
+fn city(bs: Vec<Building>) -> Buildings {
+    let tallest = bs.iter().map(Building::top).fold(0.0, f64::max);
+    Buildings {
+        counts: Counts {
+            height: bs.len(),
+            num_floors: 0,
+            default: 0,
+        },
+        buildings: bs,
+        tallest,
+    }
+}
+
+/// A, a tower on a podium: the building x −30…30, y −40…−20, `height` 80; the podium the
+/// same footprint, 0 to 12 m; the tower x 15…30, y −40…−30, 12 to 80 m. Without parts,
+/// as today's cache draws it.
+fn tower_on_podium(with_parts: bool) -> Building {
+    let parts = if with_parts {
+        vec![
+            part("podium", rect_polygon(-30.0, -40.0, 30.0, -20.0), 0.0, 12.0),
+            part("tower", rect_polygon(15.0, -40.0, 30.0, -30.0), 12.0, 80.0),
+        ]
+    } else {
+        vec![]
+    };
+    building(
+        "A",
+        rect_polygon(-30.0, -40.0, 30.0, -20.0),
+        80.0,
+        0.0,
+        parts,
+    )
+}
+
+/// B, over the box: x −8…8, y −10…10, `height` 20, standing from `base`.
+fn raised(base: f64) -> Building {
+    building(
+        "B",
+        rect_polygon(-8.0, -10.0, 8.0, 10.0),
+        20.0,
+        base,
+        vec![],
+    )
+}
+
+/// Phase 3 gate 6's pose.
+fn tilted() -> Pose {
+    Pose {
+        cx: 0.0,
+        cy: 0.0,
+        height_m: 60.0,
+        yaw_deg: 0.0,
+        pitch_deg: 35.0,
+    }
+}
+
+fn vbox(id: u64, x: f64, y: f64, heading: f64, length: f64, speed: f64) -> VehicleBox {
+    VehicleBox {
+        vehicle_id: id,
+        at: Placed { x, y, heading },
+        length,
+        speed,
+        track: TrackPos {
+            piece: Piece::Link(0),
+            along: 0.0,
+            lateral: 0.0,
+            odo: 0.0,
+        },
+    }
+}
+
+/// Pixels that differ between two RGBA frames.
+fn differ(a: &[u8], b: &[u8]) -> usize {
+    a.chunks(4).zip(b.chunks(4)).filter(|(x, y)| x != y).count()
+}
+
+#[test]
+fn gate8_meshes() {
+    let a = building_mesh(&tower_on_podium(true));
+    let b = building_mesh(&raised(8.0));
+    // Each volume: 4 wall quads (16 vertices, 24 indices) and a 2-triangle roof (4, 6).
+    let tower_bottoms: Vec<f64> = a.positions[20..36]
+        .chunks(4)
+        .flat_map(|q| [q[0][2], q[1][2]])
+        .collect();
+    let b_bottoms: Vec<f64> = b.positions[..16]
+        .chunks(4)
+        .flat_map(|q| [q[0][2], q[1][2]])
+        .collect();
+    println!(
+        "gate8 A: {} vertices, {} indices, tower wall bottoms {tower_bottoms:?}; B: {} vertices, {} indices, wall bottoms {b_bottoms:?}",
+        a.positions.len(),
+        a.indices.len(),
+        b.positions.len(),
+        b.indices.len()
+    );
+    assert_eq!((a.positions.len(), a.indices.len()), (40, 60));
+    assert!(tower_bottoms.iter().all(|&z| z == 12.0));
+    assert!(
+        a.positions[0..16]
+            .chunks(4)
+            .all(|q| q[0][2] == 0.0 && q[2][2] == 12.0),
+        "the podium"
+    );
+    assert!(
+        a.positions[16..20].iter().all(|p| p[2] == 12.0),
+        "the podium's roof"
+    );
+    assert!(
+        a.positions[36..40].iter().all(|p| p[2] == 80.0),
+        "the tower's roof"
+    );
+    assert_eq!((b.positions.len(), b.indices.len()), (20, 30));
+    assert!(b_bottoms.iter().all(|&z| z == 8.0));
+    assert_eq!(building_mesh(&tower_on_podium(true)).wall_quads, 8);
+}
+
+#[test]
+#[ignore = "needs the GPU"]
+fn gate8_synthetic() {
+    let strips = vec![Strip {
+        left: (0..=120).map(|i| [-60.0 + i as f64, 3.5]).collect(),
+        right: (0..=120).map(|i| [-60.0 + i as f64, -3.5]).collect(),
+    }];
+    let cam = Camera {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        width: 1280,
+        height: 720,
+    };
+    let pose = tilted();
+    let bx = [vbox(7, 0.0, 0.0, 90.0, 4.5, 10.0)];
+    let new = |bs: Option<&Buildings>| {
+        Renderer::new_perspective(&strips, cam, 4, &pose, bs, None).unwrap()
+    };
+    // Box pixels, and the frame without the box; cut with see-through on.
+    let shot = |bs: Option<&Buildings>, cut: bool| {
+        let mut r = new(bs);
+        if cut {
+            r.set_see_through(bs);
+            r.set_pose(&pose);
+        }
+        let with = r.render(&bx).unwrap();
+        let empty = r.render(&[]).unwrap();
+        (differ(&with, &empty), empty)
+    };
+
+    let a = city(vec![tower_on_podium(true)]);
+    let a_flat = city(vec![tower_on_podium(false)]);
+    let b = city(vec![raised(8.0)]);
+    let b_ground = city(vec![raised(0.0)]);
+    let slab = city(vec![building(
+        "slab",
+        rect_polygon(-30.0, -40.0, 30.0, -20.0),
+        3.0,
+        0.0,
+        vec![],
+    )]);
+
+    let (none, _) = shot(None, false);
+    let (a_flat_px, _) = shot(Some(&a_flat), false);
+    let (a_px, _) = shot(Some(&a), false);
+    let (a_cut_px, a_cut_empty) = shot(Some(&a), true);
+    let (_, slab_empty) = shot(Some(&slab), false);
+    let a_vs_slab = differ(&a_cut_empty, &slab_empty);
+    let (b_ground_px, _) = shot(Some(&b_ground), false);
+    let (b_px, _) = shot(Some(&b), false);
+    let (b_cut_px, _) = shot(Some(&b), true);
+    println!(
+        "gate8 box pixels: no buildings {none}; A without parts {a_flat_px}, A {a_px}, A cut {a_cut_px} \
+         (its empty frame {a_vs_slab} pixels apart from a 3 m slab of the podium); \
+         B on the ground {b_ground_px}, B {b_px}, B cut {b_cut_px}"
+    );
+    assert_eq!(none, 1564);
+    assert_eq!((a_flat_px, a_px, a_cut_px), (0, 1564, 1564));
+    assert_eq!(a_vs_slab, 0, "A cut is a 3 m slab of the podium");
+    assert_eq!((b_ground_px, b_px, b_cut_px), (0, 1008, 0));
+}
+
+// ── Gate 10: continuity, and buildings the cut leaves alone ──────────────────
+
+fn positions(m: &Mesh) -> Vec<[u32; 3]> {
+    match m.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(VertexAttributeValues::Float32x3(v)) => {
+            v.iter().map(|p| p.map(f32::to_bits)).collect()
+        }
+        _ => panic!("positions"),
+    }
+}
+
+/// One flight over Midtown with the parts cache, headless (Phase 3 gate 9's method):
+/// returns the largest in-frame step and the mean number of buildings lowered a frame.
+fn untouched(flight_file: &Path) -> (f64, f64) {
+    let run = run::load(&LoadOptions {
+        project: midtown(),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from: Some(300.0),
+        to: Some(360.0),
+    })
+    .unwrap();
+    let flight = Flight::new(keyframes::read(flight_file).unwrap(), &run.fcd);
+    let b = buildings::read(
+        &midtown().join("buildings-parts.geojson"),
+        &run.placement.network,
+    )
+    .unwrap();
+    let fit = Camera::fit(&run.strips, 1920, 1080);
+    let (fx, fy) = (fit.cx, fit.cy);
+
+    let cut = BuildingsCut::new(&b, (fx, fy));
+    let full = draw::buildings_mesh(&mesh_data(&b), fx, fy);
+    let own: Vec<f64> = b.buildings.iter().map(Building::top).collect();
+    assert!(
+        cut.mesh(&own) == full,
+        "drawn tops: the mesh, attribute for attribute"
+    );
+    let full_pos = positions(&full);
+    let mut ranges = Vec::with_capacity(b.buildings.len());
+    let mut at = 0;
+    for x in &b.buildings {
+        let n = building_mesh(x).positions.len();
+        ranges.push(at..at + n);
+        at += n;
+    }
+    assert_eq!(at, full_pos.len());
+
+    let centroids: Vec<[f64; 2]> = b
+        .buildings
+        .iter()
+        .map(|x| {
+            let pts: Vec<&[f64; 2]> = x.polygons.iter().flat_map(|p| p.exterior.iter()).collect();
+            let n = pts.len() as f64;
+            [
+                pts.iter().map(|p| p[0]).sum::<f64>() / n,
+                pts.iter().map(|p| p[1]).sum::<f64>() / n,
+            ]
+        })
+        .collect();
+    let in_frame = |pose: &Pose, c: [f64; 2]| {
+        let (a, _, _) = pose.axes();
+        let e = pose.eye();
+        let depth = (c[0] - e[0]) * a[0] + (c[1] - e[1]) * a[1] + (0.0 - e[2]) * a[2];
+        if depth <= 0.1 {
+            return false;
+        }
+        let (px, py) = project(pose, 1920.0, 1080.0, [c[0], c[1], 0.0]);
+        (0.0..1920.0).contains(&px) && (0.0..1080.0).contains(&py)
+    };
+
+    let mut prev: Option<Vec<f64>> = None;
+    let (mut worst, mut lowered) = (0.0f64, 0u64);
+    for n in 0..1800u64 {
+        let pose = flight.pose_at(
+            clock::frame_time(300.0, n, 1.0, 30),
+            &run.motion,
+            &run.fcd,
+            &run.placement,
+        );
+        let hs = see_through::heights(&b, &pose);
+        lowered += hs.iter().zip(&own).filter(|(a, b)| a < b).count() as u64;
+        if n % 30 == 0 {
+            let w = see_through::wedge(&pose);
+            let pos = positions(&cut.mesh(&hs));
+            for (i, x) in b.buildings.iter().enumerate() {
+                if see_through::distance(&w, x) >= w.ease {
+                    assert_eq!(
+                        hs[i].to_bits(),
+                        x.top().to_bits(),
+                        "frame {n} building {i}: h′ == top()"
+                    );
+                    let r = ranges[i].clone();
+                    assert_eq!(
+                        pos[r.clone()],
+                        full_pos[r],
+                        "frame {n} building {i}: vertices"
+                    );
+                }
+            }
+        }
+        if let Some(p) = &prev {
+            for i in 0..hs.len() {
+                if in_frame(&pose, centroids[i]) {
+                    worst = worst.max((hs[i] - p[i]).abs());
+                }
+            }
+        }
+        prev = Some(hs);
+    }
+    (worst, lowered as f64 / 1800.0)
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture"]
+fn gate10_untouched() {
+    for (name, file) in [
+        ("city", root().join("tests/city-flight.toml")),
+        ("orbit", root().join("tests/see-through-flight.toml")),
+    ] {
+        let (worst, mean) = untouched(&file);
+        println!("gate10 {name}: largest in-frame step {worst:.2} m; lowered a frame {mean:.1}");
+        assert!(
+            worst <= 10.0,
+            "{name}: a building in frame changed by {worst} m"
+        );
+    }
+}
+
+// ── Gate 11: the credit, either cache ────────────────────────────────────────
+
+const CREDIT: &str = "© OpenStreetMap contributors (ODbL) · Overture Maps Foundation, release 2026-09-23.1 · Microsoft ML Buildings (ODbL) · USGS Lidar";
+
+fn flight_options() -> RenderOptions {
+    RenderOptions {
+        project: midtown(),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from: Some(300.0),
+        to: Some(360.0),
+        speedup: Some(1.0),
+        fps: 30,
+        width: 1920,
+        height: 1080,
+    }
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture and the GPU"]
+fn gate11_credit() {
+    for name in ["buildings-parts.geojson", "buildings.geojson"] {
+        let job = Job::prepare_with(&flight_options(), None, Some(&midtown().join(name))).unwrap();
+        println!("gate11 {name}: {:?}", job.credit());
+        assert_eq!(job.credit(), Some(CREDIT), "{name}");
+    }
+}
+
+// ── Gate 12: Midtown's traffic with parts ────────────────────────────────────
+
+/// Box pixels in the centre, the middle and the whole frame, over every 15th frame
+/// (Phase 3 gate 8's count), with the parts cache.
+fn box_pixels(flight: &Path, on: bool) -> [u64; 3] {
+    let cache = midtown().join("buildings-parts.geojson");
+    let mut job =
+        Job::prepare_without_credit(&flight_options(), Some(flight), Some(&cache)).unwrap();
+    job.set_see_through(on);
+    let mut tot = [0u64; 3];
+    for n in (0..1800u64).step_by(15) {
+        let a = job.render_frame(n).unwrap();
+        let e = job.render_empty().unwrap();
+        for (i, (x, y)) in a.chunks(4).zip(e.chunks(4)).enumerate() {
+            if x != y {
+                let (px, py) = ((i % 1920) as f64 + 0.5, (i / 1920) as f64 + 0.5);
+                let mid = (px - 960.0).abs() <= 480.0 && (py - 540.0).abs() <= 270.0;
+                let cen = (px - 960.0).abs() <= 240.0 && (py - 540.0).abs() <= 135.0;
+                tot[0] += cen as u64;
+                tot[1] += mid as u64;
+                tot[2] += 1;
+            }
+        }
+    }
+    tot
+}
+
+fn within_1pct(name: &str, got: [u64; 3], want: [u64; 3]) -> bool {
+    let mut ok = true;
+    for (k, region) in ["centre", "middle", "frame"].iter().enumerate() {
+        let dev = (got[k] as f64 - want[k] as f64) / want[k] as f64;
+        println!(
+            "gate12 {name} {region}: {} (probe {}, {:+.3} %)",
+            got[k],
+            want[k],
+            100.0 * dev
+        );
+        ok &= dev.abs() <= 0.01;
+    }
+    ok
+}
+
+#[test]
+#[ignore = "needs the Midtown fixture and the GPU"]
+fn gate12_traffic() {
+    let orbit = root().join("tests/see-through-flight.toml");
+    let city_flight = root().join("tests/city-flight.toml");
+    let mut ok = within_1pct(
+        "orbit off",
+        box_pixels(&orbit, false),
+        [62_082, 92_016, 147_200],
+    );
+    ok &= within_1pct(
+        "orbit on",
+        box_pixels(&orbit, true),
+        [159_502, 259_247, 387_679],
+    );
+    ok &= within_1pct(
+        "city off",
+        box_pixels(&city_flight, false),
+        [4_033, 55_729, 111_115],
+    );
+    ok &= within_1pct(
+        "city on",
+        box_pixels(&city_flight, true),
+        [4_886, 57_610, 123_130],
+    );
+    assert!(ok, "a count is more than 1 % from the probe's");
 }

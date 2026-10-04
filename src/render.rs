@@ -371,7 +371,7 @@ impl Renderer {
                 self.cut = Some(Cut {
                     buildings: b.clone(),
                     mesh: BuildingsCut::new(b, (cam.cx, cam.cy)),
-                    drawn: b.buildings.iter().map(|x| x.height).collect(),
+                    drawn: b.buildings.iter().map(|x| x.top()).collect(),
                     on: true,
                 });
             }
@@ -398,7 +398,7 @@ impl Renderer {
         let want = if c.on {
             see_through::heights(&c.buildings, pose)
         } else {
-            c.buildings.buildings.iter().map(|x| x.height).collect()
+            c.buildings.buildings.iter().map(|x| x.top()).collect()
         };
         if want != c.drawn {
             draw::set_building_heights(world, mesh, &c.mesh, &want);
