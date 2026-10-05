@@ -6,7 +6,7 @@ note: >
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
 status: accepted
-last_updated: 2026-10-05
+last_updated: 2026-10-04
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
@@ -40,7 +40,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 7 — Engine pin at route repair: df8aec0 → 90331591, both fixtures re-frozen"
-    reviewed: null
+    reviewed: 2026-10-04
     shipped: null
     cut: null
     by: null
@@ -1432,7 +1432,7 @@ Decided by the user, 2026-10-04:
   the phase's first commit, made when it is built, not in this draft. §2.2.2's rules stand:
   the rev is written once, and it moves on purpose, in a commit of its own.
 
-Answered by the user, 2026-10-05, on the draft, before review:
+Answered by the user, 2026-10-04, on the draft, before review:
 - **d. OQ-15: (a).** vis-002 Phase 1's gate 3 compares with a second run at the new pin,
   made by gate 4 and kept as `scratch/midtown-2850-90331591/` (§2.13.6 row 6).
 - **e. The new references are named `ref-pin90331591-<name>`** (§2.13.6). Accepted as
@@ -1561,16 +1561,18 @@ whole, every `ffprobe` and error case, gate 1's `N` = 8700 (the span is unchange
 test files `view`, `slider`, `camera`, `buildings`, `credit` and `--lib`.
 
 **Recorded changes: files edited by Phase 7** (commit 2). Each is a number or a name the
-new traffic makes wrong, and nothing else in the file changes:
+new traffic makes wrong, with the comments and printed messages that name it, and nothing
+else in the file changes. A script that prints a reference's basename needs no message
+edit; `gates.sh` and `gates-city.sh` spell theirs out:
 
 | # | file, check | today (`df8aec0` traffic) | probe (`90331591` traffic) | the edit |
 |---|---|---|---|---|
-| 1 | `scripts/gates.sh`, vis-001 Phase 3 gate 1: `REF` | `ref-8eb9052`, 8700 of 8700 | 2323 of 8700: frames 0–2322 equal, every frame from 2323 (86.53 s) differs | `REF` → `scratch/ref-pin90331591-default.framemd5` |
-| 2 | `scripts/gates-ties.sh`, vis-001 Phase 6 gate 2 | `ref-ortho-city-92d09a0`, `ref-ortho-roads-92d09a0`: 1800 each | 0 of 1800 each | → `ref-pin90331591-ortho-city`, `-ortho-roads` |
-| 3 | `scripts/gates-see-through.sh`, vis-002 Phase 3 gate 2: `ref()` | `ref-ties-<name>-2b25d5e`, seven renders, 1800 each | 0, 0, 59, 0, 0, 0, 0 of 1800 | `ref()` → `ref-pin90331591-<name>` |
-| 4 | `scripts/gates-parts.sh`, vis-002 Phase 4 gate 2: `ref()` | `ref-p4-<name>-fb53d7f`, five renders, 1800 each | 0, 0, 59, 0, 1 of 1800 | `ref()` → `ref-pin90331591-<name>` |
+| 1 | `scripts/gates.sh`, vis-001 Phase 3 gate 1: `REF` | `ref-8eb9052`, 8700 of 8700 | 2323 of 8700: frames 0–2322 equal, every frame from 2323 (86.53 s) differs | `REF` → `scratch/ref-pin90331591-default.framemd5`; in the comment above it and the `phase3 gate1:` message, `the 8eb9052 reference` → `the pin90331591 reference`, and the comment's "built as vis-001 Phase 3 gate 1 says" → "built as vis-001 Phase 7 gate 5 says" |
+| 2 | `scripts/gates-ties.sh`, vis-001 Phase 6 gate 2 | `ref-ortho-city-92d09a0`, `ref-ortho-roads-92d09a0`: 1800 each | 0 of 1800 each | → `ref-pin90331591-ortho-city`, `-ortho-roads`; the header comment's "Gate 2 compares against …" names the new files, made by vis-001 Phase 7 gate 5 |
+| 3 | `scripts/gates-see-through.sh`, vis-002 Phase 3 gate 2: `ref()` | `ref-ties-<name>-2b25d5e`, seven renders, 1800 each | 0, 0, 59, 0, 0, 0, 0 of 1800 | `ref()` → `ref-pin90331591-<name>`; the header comment as in row 2 |
+| 4 | `scripts/gates-parts.sh`, vis-002 Phase 4 gate 2: `ref()` | `ref-p4-<name>-fb53d7f`, five renders, 1800 each | 0, 0, 59, 0, 1 of 1800 | `ref()` → `ref-pin90331591-<name>`; the header comment as in row 2 |
 | 5 | `scripts/gates-city.sh`, vis-002 Phase 1 gate 3: rows | literal 280,872 (today's fixture: 280,875, a `FAIL`) | 202,241 | `280872` → `202241` |
-| 6 | `scripts/gates-city.sh`, gate 3: the second FCD | `scratch/midtown-2850`: 42,890 rows only here, 42,887 only there | against it: 148,966 and 227,597. Against a second run at the new pin: 0 and 0 (equal SHA-1) | `REF` → `scratch/midtown-2850-90331591/fcd/baseline_42.parquet` (OQ-15 (a)) |
+| 6 | `scripts/gates-city.sh`, gate 3: the second FCD | `scratch/midtown-2850`: 42,890 rows only here, 42,887 only there | against it: 148,966 and 227,597. Against a second run at the new pin: 0 and 0 (equal SHA-1) | `REF` → `scratch/midtown-2850-90331591/fcd/baseline_42.parquet` (OQ-15 (a)); the three messages that name `scratch/midtown-2850` (the `EXCEPT ALL` line, its `fail`, and the skipped line) name `scratch/midtown-2850-90331591` |
 | 7 | `tests/see_through.rs`, vis-002 Phase 3 gate 8 (`gate8_traffic_shows`): box pixels, centre / middle / frame, each within 1 % | orbit off 59,506 / 91,305 / 168,189; on 159,502 / 258,570 / 387,849; city off 3,928 / 42,502 / 90,710; on 4,719 / 45,322 / 99,748 | orbit off **50,587 / 90,039 / 128,421**; on **145,388 / 274,692 / 369,219**; city off **4,586 / 31,474 / 77,443**; on **9,661 / 39,855 / 92,676** | the twelve literals → the probe's. The ratio check stays: 2.874 ≥ 2.5 (today 2.680) |
 | 8 | `tests/parts.rs`, vis-002 Phase 4 gate 12 (`gate12_traffic`): the same counts with the parts cache | orbit off 62,082 / 92,016 / 147,200; on 159,502 / 259,247 / 387,679; city off 4,033 / 55,729 / 111,115; on 4,886 / 57,610 / 123,130 | orbit off **54,134 / 90,574 / 126,628**; on **145,388 / 275,052 / 371,972**; city off **4,812 / 42,637 / 96,012**; on **10,078 / 50,472 / 111,800** | the twelve literals → the probe's |
 
@@ -1578,8 +1580,8 @@ Rows 7 and 8 fail as written at the new pin (`a count is more than 1 % from the 
 rows 1–6 print `FAIL`. Each of these tests and scripts passes with the edit. The comments
 that call the counts "the probe's" stay true: the probe is now this one.
 
-**The new references.** The four scripts read ten names, and the camera render is compared
-by hand. Each name is `scratch/ref-pin90331591-<name>.framemd5`: the pin, so a reader cannot
+**The new references.** The four scripts read nine names, and the tenth, `camera`, is
+compared by hand. Each name is `scratch/ref-pin90331591-<name>.framemd5`: the pin, so a reader cannot
 take it for a commit of this repo. The probe's are kept in `scratch/p7/refs/`. The
 second column is the SHA-1 of the file's frame lines (those not starting `#`):
 
@@ -1617,7 +1619,8 @@ the other pairs that share a SHA-1 here.
   (3400–4200);
 - the scripts' recorded counts: `gates-see-through.sh` gate 7 and `gates-parts.sh` gate 9
   still find 1800 of 1800 frames differing between on and off, and between parts and the
-  old `ref-p4-*`.
+  `ref()` references: the old `ref-p4-*` in the probe, the new `ref-pin90331591-*` after
+  row 4's edit (measured against `scratch/p7/refs/`, still 1800 of 1800).
 
 `tests/flight.toml`, `tests/city-flight.toml` and `tests/see-through-flight.toml` follow
 no vehicle that changes: the first follows vehicle 1, whose rows are equal, and the other
@@ -1632,7 +1635,7 @@ order is fixed:
 2. **The pin moves** (commit 1). `scratch/engine` still holds `df8aec0`'s CLI, and no
    fixture is touched.
 3. **The code-side gate runs on the fixtures in place:** every gate script and test file,
-   as vis-002 Phase 4's gate run ran them.
+   by `scratch/vis001p7-gates/pass.sh old` (Phase 7's exit gate).
 4. **The old fixtures are kept:** `scratch/urban_grid`, `scratch/midtown`, `scratch/derived`
    and `scratch/engine` are copied to `scratch/pin-df8aec0/` with `cp -Rp`, about 27 MB.
    With them go three of gate 2's Midtown videos, which the user's check (gate 10) shows
@@ -1664,7 +1667,13 @@ is the three `rev =` values.
 
 #### 2.13.10 Not in Phase 7
 
-- Engine main past `90331591` (§2.13.1 a).
+- Engine main past `90331591` (§2.13.1 a). *Note (2026-10-04, review round 1):* after the
+  draft, engine main moved to `90b39292` (2026-10-04 20:06), the merge of `core-hash-order`
+  (asm-016 Phase 5: hash order reaches no decision or output). It changes
+  `crates/core/src/network_data.rs`, `crates/geometry/src/frame_collect.rs` and
+  `crates/geometry/src/network_json.rs`, which this repo links. At `90331591` the
+  determinism rests on measured runs (§2.13.5, gate 4). A move to it is a later pin move of
+  its own, re-gated as this one.
 - The 5650 demand as the fixture (OQ-16).
 - The engine's N332 contacts at 5650 (asm-016 OQ-17).
 - A public build (OQ-6) and any change to placement: the code is unchanged (§2.13.3).
@@ -1847,7 +1856,7 @@ is the three `rev =` values.
 
   *Recommendation:* (a). Phase 7's scope is written for (a). *(design call: the user;
   needed before review, because it sets a script edit in the scope.)*~~ **RESOLVED
-  2026-10-05 (user, before review): (a)**, recorded in §2.13.1 d. Phase 7's scope, gate 4
+  2026-10-04 (user, before review): (a)**, recorded in §2.13.1 d. Phase 7's scope, gate 4
   and §2.13.6 row 6 stand as drafted.
 - ~~**OQ-16** — Should Midtown's fixture move to the full demand (5650) now that it flows?
   vis-002 §2.2 h chose the 2850 copy while both demands gridlocked. At `90331591` the 5650
@@ -1856,7 +1865,7 @@ is the three `rev =` values.
   OQ-17), and a fixture change resets every Midtown number again.
   *Recommendation:* no: keep 2850 in Phase 7. If the user wants 5650 for a presentation,
   is one engine run of `scratch/midtown-5650`'s inputs, and a fixture change is its own decision after
-  OQ-17 closes. *(design call: the user; non-blocking.)*~~ **RESOLVED 2026-10-05 (user,
+  OQ-17 closes. *(design call: the user; non-blocking.)*~~ **RESOLVED 2026-10-04 (user,
   before review): keep 2850 in Phase 7**, recorded in §2.13.1 g. Gate 10 no longer asks it.
   Moving the fixture to 5650 later is a decision of its own, after asm-016 OQ-17 closes.
 
@@ -3136,6 +3145,17 @@ vis-002 §2.9 and OQ-4.
   predictions, exact unless a gate says otherwise. Its logs are in `scratch/p7/pass-old/`
   (today's fixtures) and `scratch/p7/pass-new/` (the new ones).
 
+  **The runner and the comparison.** Gates 2 and 7 run every gate script and test file with
+  `scratch/vis001p7-gates/pass.sh <tag>`: a copy of `scratch/p7/pass.sh` with its `cd` changed
+  to the repo root and its log directory `B` changed to `scratch/vis001p7-gates/pass-<tag>`.
+  It runs the six scripts, saves `gates.sh`'s `scratch/out/camera.framemd5` and
+  `default.framemd5`, then the nine test files and `--lib` with
+  `--include-ignored --test-threads=1 --nocapture`. Gate 2 is tag `old`, gate 7 tag `new`.
+  `scratch/vis002p4-gates/` is a shipped phase's record and is not written. A log is
+  compared with the probe's by `diff` of both through `scratch/p7/norm.py`, which strips
+  times, the probe's paths, cargo's build lines and test-binary hashes, and `fetch.log`'s
+  seconds. `progress.log` is not compared.
+
   **Baseline, before any change,** at `origin/main`. No gate run: gate 2 is the run on
   today's fixtures, and the references it reads were made by today's code.
   - Record spec-lint, `Cargo.lock`'s package count (500) and `target/`'s size.
@@ -3150,9 +3170,7 @@ vis-002 §2.9 and OQ-4.
      `cargo build --release` succeeds with no warning. Its time from clean, and
      `target/`'s growth, are recorded.
   2. **The code side: the new binary on today's fixtures.** Before any `FORCE=1`, with
-     `scratch/engine` still at `df8aec0`. Every gate script and test file is run as
-     vis-002 Phase 4's gate run ran them (`scratch/vis002p4-gates/run.sh`, with `parts`
-     added), with `--include-ignored --test-threads=1`.
+     `scratch/engine` still at `df8aec0`. `scratch/vis001p7-gates/pass.sh old` (above).
      - `gates.sh` PASS, with **8700 of 8700** against `ref-8eb9052`. Its
        `scratch/out/camera.framemd5` is **8700 of 8700** against `ref-camera-ef741d8`, by
        hand.
@@ -3163,8 +3181,10 @@ vis-002 §2.9 and OQ-4.
        42,890 and 42,887).
      - **82 tests pass:** `gates` 5, `view` 10, `slider` 8, `camera` 19, `buildings` 13,
        `credit` 6, `ties` 2, `see_through` 7, `parts` 8, `--lib` 4.
-     - **Every printed line equals vis-002 Phase 4's gate run's** (`scratch/vis002p4-gates/`),
-       apart from times and `fetch.log`'s `seconds`.
+     - **Every log equals the probe's `scratch/p7/pass-old/` one through `norm.py`,** whose
+       lines in turn equal vis-002 Phase 4's gate run's (§2.13.4). A line that differs is a
+       missed prediction, recorded with its cause; only a time or load figure `norm.py`
+       does not strip may differ.
 
      Then the old fixtures and three videos are copied to `scratch/pin-df8aec0/` (§2.13.7
      step 4): `scratch/out/ties/flight-city1.mp4` and `flight-roads1.mp4`, and
@@ -3172,6 +3192,8 @@ vis-002 §2.9 and OQ-4.
   3. **The re-freeze** (§2.13.7 step 5). `FORCE=1 scripts/fixture.sh`, then
      `FORCE=1 scripts/fixture.sh midtown`. Both exit 0, and their output names `@ 90331591`.
      - `scratch/engine/bin/assimilator` is re-installed at the new rev, 14,376,384 bytes.
+       `FORCE=1` reinstalls it on each call (`scripts/fixture.sh`'s step 2 comes before the
+       fixture branch), so the second call builds the same rev again.
      - urban_grid's FCD has SHA-1 **`3ad76744…`**, 21,556 rows, 198 vehicles, and `time`
        9.1 … 299.1 s. Its `runs` row reads 198 spawned, 91 completed, 107 active, 0 abandoned.
      - Midtown's FCD has SHA-1 **`01becc86…`**, the engine's (§2.13.2), with 202,241 rows,
@@ -3179,27 +3201,32 @@ vis-002 §2.9 and OQ-4.
        every completed trip's last FCD row is on its destination link.
      - `demand.yaml` is still `66f54820…`. `buildings.geojson` and `buildings-parts.geojson`
        are still `f241ccbd…` and `714e2f3a…`, and `fetch.log` and `fetch-parts.log` are
-       byte-identical: no fetch runs.
+       byte-identical to their copies in `scratch/pin-df8aec0/midtown/` (gate 2's
+       `gates-parts.sh` rewrote them before the copy): no fetch runs.
   4. **The engine is deterministic on both fixtures.** Each fixture's inputs are copied
      twice under `scratch/`, and the four runs go at once, with the fixture script's
-     command. Every FCD has its fixture's SHA-1: **3 of 3** for each fixture, counting the
+     command. The inputs are `project.yaml`, `network.yaml` and `demand.yaml`, and Midtown's
+     `import_report.json`; not `results.db` or `fcd/` (as `scratch/p7/runs/run-all.sh`). Every FCD has its fixture's SHA-1: **3 of 3** for each fixture, counting the
      fixture's own run (the probe: 4 of 4). One Midtown run is made in `scratch/midtown-2850-90331591/` and
      kept, for gate 3 (OQ-15 (a)). The other three are deleted.
-  5. **The new references.** The ten renders of §2.13.6's table, run once each by hand on
-     the new fixtures, then `ffmpeg -y -v error -i <mp4> -f framemd5`. Each file's frame
+  5. **The new references.** The renders of §2.13.6's table, run once each by hand on
+     the new fixtures, then `ffmpeg -y -v error -i <mp4> -f framemd5`. That is nine renders
+     for ten names: `city-off` is `flight-city1`'s render, saved under both names. Each file's frame
      lines equal the probe's in `scratch/p7/refs/`, with the SHA-1s of that table. They are
      saved as `scratch/ref-pin90331591-<name>.framemd5`. Against each old reference, the
      frames equal are recorded, and the probe's counts are the prediction: `default`
      against `ref-8eb9052` 2323 (frames 0–2322), `camera` against `ref-camera-ef741d8`
-     3026, `flight-city1` against `ref-ties-flight-city1-2b25d5e` 59, `orbit-off` against
-     `ref-p4-orbit-off-fb53d7f` 1, and the other six 0.
+     3026, `flight-city1` against `ref-ties-flight-city1-2b25d5e` 59, `city-off` against
+     `ref-p4-city-off-fb53d7f` 59 (the same two videos), `orbit-off` against
+     `ref-p4-orbit-off-fb53d7f` 1, and the other five 0.
 
   **Commit 2, the scripts and tests:**
   6. **The edits are §2.13.6's rows 1–8, and nothing else.** `git diff <commit 1> --
-     scripts/ tests/` shows those lines only. `src/`, `Cargo.*` and the three keyframe
+     scripts/ tests/` shows those lines only: the literals and names, and the comments and
+     messages each row names. `src/`, `Cargo.*` and the three keyframe
      files are unchanged.
-  7. **Every test and gate script of vis-001 and vis-002, on the new fixtures,** with
-     `--include-ignored --test-threads=1`, as in gate 2:
+  7. **Every test and gate script of vis-001 and vis-002, on the new fixtures:**
+     `scratch/vis001p7-gates/pass.sh new`:
      - all six scripts PASS. **`gates-city.sh` passes whole for the first time since
        vis-002 Phase 1:** gate 3 prints 202,241 rows, 985 vehicles, `time` 1.1 … 1199.1,
        and `EXCEPT ALL` against `scratch/midtown-2850-90331591` **0 rows only here, 0 only
@@ -3209,9 +3236,15 @@ vis-002 §2.9 and OQ-4.
      - **82 tests pass**. `see_through`'s gate 8 and `parts`' gate 12 print each of their
        24 counts at **+0.000 %** from the new literals. Gate 8's centre ratio is
        **2.874**;
-     - every printed line equals the probe's (`scratch/p7/pass-new/`) apart from times,
-       except that the reference lines now name `ref-pin90331591-*` and read 1800 of 1800
-       (8700 for `default`). The printed changes of §2.13.6 are as listed there: gate 6's
+     - every log equals the probe's `scratch/p7/pass-new/` one through `norm.py`, except
+       the lines printed by the checks of §2.13.6 rows 1–8, `gates-parts.sh` gate 9's lines
+       that name a `ref()` file (now `ref-pin90331591-*`, still 1800 of 1800 differing), and,
+       as in gate 2, a time or load figure `norm.py` does not strip. The probe ran them unedited, so
+       there they named the old references and `scratch/midtown-2850` and printed `FAIL`,
+       with diagnostics and a `FAIL` summary. Here they name `ref-pin90331591-*` (and
+       `the pin90331591 reference`) and read 1800 of 1800 (8700 for `default`); gate 3's
+       lines are as above; the 24 counts read +0.000 %; and those `FAIL` lines, diagnostics
+       and summaries are gone. The printed changes of §2.13.6 are as listed there: gate 6's
        640,633 pairs, gate 8's 422 / 0 steps, 54 of `urban_grid_sample`'s 87 hashes.
   8. **Every render is deterministic,** in gate 7's run:
      - each pair a script renders twice is equal. `gates.sh`: the default and `--camera`,
@@ -3224,7 +3257,8 @@ vis-002 §2.9 and OQ-4.
        `scratch/out/camera.framemd5` against `ref-pin90331591-camera`, 8700.
 
   **Recorded, not predicted:**
-  9. The clean build (probe: 11 m 38 s, at a load of 50–77) and the engine install (7 m 49 s).
+  9. The clean build (probe: 11 m 38 s, at a load of 50–77) and the engine installs, one
+     per `FORCE=1` call (the probe's one: 7 m 49 s).
      The fixtures' engine runs (probe: Midtown alone 19 s, against 468 s at `df8aec0`).
      `gates.sh`'s render times, and `target/` before and after.
 
@@ -3279,6 +3313,9 @@ vis-002 §2.9 and OQ-4.
         makes it;
     - §2.2.2 gains a dated "Moved" bullet like the last move's, `df8aec0` → `90331591`;
     - vis-002's frontmatter `reference` names the pin `df8aec0`, and it becomes `90331591`;
+    - vis-002 Phase 1's gate 3 (280,872 rows, `scratch/midtown-2850`) gains a dated note:
+      from vis-001 Phase 7, `gates-city.sh` checks 202,241 rows against
+      `scratch/midtown-2850-90331591`, and the recorded miss stands;
     - no `CLAUDE.md` stanza change.
   - When gate 10 passes and the user says to close it, the close-out writes vis-002
     OQ-4's `RESOLVED` line, pointing here (§2.13.8). Phase 1's recorded gate 3 miss stands.
