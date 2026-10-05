@@ -587,6 +587,13 @@ engine and not yet answered (OQ-4). Buildings need only the network's geometry a
 - the fixture's traffic is frozen again with `FORCE=1 scripts/fixture.sh midtown`, which
   keeps the buildings.
 
+*(2026-10-04)* The engine has fixed it at `90331591` (asm-016 Phase 4, route repair, with
+the approach index visited in a fixed order). The plan above is drafted as vis-001 Phase 7
+(`specs/visualizer_spec.md` §2.13), which the user scheduled before Streets: the pin moves
+`df8aec0` → `90331591`, both fixtures are re-frozen, and every gate of both specs is re-run
+with its new numbers predicted. Midtown 2850 at the new pin gives the engine's FCD,
+`01becc86…`, on every run. OQ-4 stays open until that phase ships (vis-001 §2.13.8).
+
 **Who can run these gates:** only this machine. They need the private engine (vis-001
 §2.2.1) and the user's own project.
 
@@ -693,6 +700,7 @@ constraint.
   (counted 2026-10-03).
 - **Re-frozen traffic** after the engine fix (OQ-4). This is a pin move with a re-gate
   (vis-001 §2.2.2), not a phase.
+  *(2026-10-04, user)* A phase after all: vis-001 Phase 7 (§2.13 there), before Streets.
 
 ### 2.14 The credit line in the video (Phase 2)
 
