@@ -6,7 +6,7 @@ note: >
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
 status: accepted
-last_updated: 2026-10-04
+last_updated: 2026-10-05
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
@@ -1432,6 +1432,16 @@ Decided by the user, 2026-10-04:
   the phase's first commit, made when it is built, not in this draft. §2.2.2's rules stand:
   the rev is written once, and it moves on purpose, in a commit of its own.
 
+Answered by the user, 2026-10-05, on the draft, before review:
+- **d. OQ-15: (a).** vis-002 Phase 1's gate 3 compares with a second run at the new pin,
+  made by gate 4 and kept as `scratch/midtown-2850-90331591/` (§2.13.6 row 6).
+- **e. The new references are named `ref-pin90331591-<name>`** (§2.13.6). Accepted as
+  drafted.
+- **f. The two notes beyond the vis-002 §2.9 pointer stand:** the one on vis-002 §2.13's
+  roadmap line ("Re-frozen traffic"), and the ones in §2.7 and §2.2.2 here.
+- **g. OQ-16: Midtown's fixture stays the 2850 demand in Phase 7.** Gate 10 no longer asks
+  about it.
+
 #### 2.13.2 What the engine reported (2026-10-04, relayed by the user)
 
 - **Nondeterminism found and fixed, not masked.** `build_approach_index` in
@@ -1821,7 +1831,7 @@ is the three `rev =` values.
   sample time with two vehicles at one `(link, lane, position)`, against 128 at `df8aec0`
   (§2.13.5). The FCD was counted, not the drawn boxes.
 
-- **OQ-15** — vis-002 Phase 1's gate 3 compares the fixture's FCD with a second run,
+- ~~**OQ-15** — vis-002 Phase 1's gate 3 compares the fixture's FCD with a second run,
   `scratch/midtown-2850` (2026-09-30, at `df8aec0`), by DuckDB `EXCEPT ALL`, and checks its
   rows, vehicles and time span against literals. At the new pin that folder is another
   engine's run, and the literals are another run's (280,872 rows; today's fixture has
@@ -1836,15 +1846,19 @@ is the three `rev =` values.
     engine's determinism on our inputs after this phase.
 
   *Recommendation:* (a). Phase 7's scope is written for (a). *(design call: the user;
-  needed before review, because it sets a script edit in the scope.)*
-- **OQ-16** — Should Midtown's fixture move to the full demand (5650) now that it flows?
+  needed before review, because it sets a script edit in the scope.)*~~ **RESOLVED
+  2026-10-05 (user, before review): (a)**, recorded in §2.13.1 d. Phase 7's scope, gate 4
+  and §2.13.6 row 6 stand as drafted.
+- ~~**OQ-16** — Should Midtown's fixture move to the full demand (5650) now that it flows?
   vis-002 §2.2 h chose the 2850 copy while both demands gridlocked. At `90331591` the 5650
   run completes 1,446 trips, with 3 abandoned, 0 frozen vehicles and 2 standing at the end
   (§2.13.5). But the engine still has 3 crossing contacts in N332 at 5650 only (asm-016
   OQ-17), and a fixture change resets every Midtown number again.
   *Recommendation:* no: keep 2850 in Phase 7. If the user wants 5650 for a presentation,
   is one engine run of `scratch/midtown-5650`'s inputs, and a fixture change is its own decision after
-  OQ-17 closes. *(design call: the user; non-blocking.)*
+  OQ-17 closes. *(design call: the user; non-blocking.)*~~ **RESOLVED 2026-10-05 (user,
+  before review): keep 2850 in Phase 7**, recorded in §2.13.1 g. Gate 10 no longer asks it.
+  Moving the fixture to 5650 later is a decision of its own, after asm-016 OQ-17 closes.
 
 ## 4. Implementation phases
 
@@ -3244,7 +3258,7 @@ vis-002 §2.9 and OQ-4.
       new videos, and nothing else changed. Optionally, urban_grid's `--camera` video
       (`scratch/out/camera.mp4`): it matches the old frame for frame until 1:16
       (frame 2298), and after that it shows the new traffic. The user also says whether
-      vis-002 OQ-4 is closed (§2.13.8), and answers OQ-16.
+      vis-002 OQ-4 is closed (§2.13.8). (OQ-16 was answered before review: §2.13.1 g.)
 - **Not predicted, and so not gated:** the times (gate 9) and what the user sees (gate 10).
 - **Close-out (standing plan steps, §3 of the methodology):**
   - **Commit plan:** one branch (`vis-001-phase-7`) and one push. The commits:
