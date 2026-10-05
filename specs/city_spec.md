@@ -43,7 +43,7 @@ related: [vis-001]
 reference: >
   Overture Maps, buildings theme, type building, on the public S3 bucket
   overturemaps-us-west-2 under release/<release>/theme=buildings/type=building/
-  (GeoParquet, ODbL). Engine: ~/dev/main/assimilator at the pin of vis-001 §2.2.2 (df8aec0),
+  (GeoParquet, ODbL). Engine: ~/dev/main/assimilator at the pin of vis-001 §2.2.2 (90b39292),
   read-only; its import projection and metadata.map_origin are what this spec relies on.
   The user's Midtown project is /Users/ivapo/assimilator/projects/midtown-section at
   e2de274, read-only. Out of scope from Overture: the base theme (land use, water),
@@ -2484,6 +2484,10 @@ phase (§2.2 l, §2.13).
        When `scratch/midtown-2850` exists, DuckDB `EXCEPT ALL` between the two FCDs gives 0
        rows both ways.
      - The engine run's wall time is recorded (468 s on 2026-09-30).
+     - *Note (2026-10-05):* from vis-001 Phase 7 (the engine pin `90b39292`),
+       `scripts/gates-city.sh` checks **202,241 rows** and compares with
+       `scratch/midtown-2850-90b39292`, a second run at the new pin. This gate's recorded miss
+       (280,875 rows, and the comparison with `scratch/midtown-2850`) stands as recorded.
   4. **The extent.** `network-extent --project scratch/midtown` prints
      `-73.9938413 40.7544211 -73.9643086 40.7740495`, and with `--margin 0`
      `-73.9908762 40.7566669 -73.9672737 40.7718037`. On `scratch/urban_grid` it prints one

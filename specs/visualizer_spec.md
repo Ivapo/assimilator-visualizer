@@ -214,6 +214,14 @@ Decided by the user, 2026-09-28.
 - *Note (2026-10-04):* the next move, `df8aec0` → `90b39292` (route repair, which landed at
   `90331591`, and the hash-order audit after it), is drafted as Phase 7 (§2.13), a phase
   rather than a bare re-gate, on the user's call.
+- **Moved 2026-10-05 (user): `df8aec0` → `90b39292`,** as Phase 7 (§2.13). The reason is
+  vis-002 OQ-4: route repair (asm-016 Phase 4, `90331591`) fixed Midtown's frozen vehicles
+  and its run-to-run differences, and `90b39292` adds the engine's hash-order audit (§2.13.1
+  a′). The user decided the move on 2026-10-04 and, that day, that Claude makes the commit.
+  The build needed no code change: `Cargo.lock` differs only in the `source` of the six
+  `assimilator-*` crates, 500 packages. Both fixtures were re-frozen, and the new references
+  are `scratch/ref-pin90b39292-*`. The results are in Phase 7's gate record in
+  `specs/reviews/vis-001.md`.
 
 ### 2.3 Headless render with a fixed clock
 
