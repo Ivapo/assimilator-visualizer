@@ -2015,14 +2015,27 @@ nothing shipped is removed (the flag gives today's frames); step 2, vis-002 owns
 around the traffic and its roadmap names this item, so a phase is appended (decision 1).
 vis-001 is not edited.
 
+Decided by the user, 2026-10-05, on the draft, before review (the answers to OQ-18 and
+OQ-19, and three calls on the draft):
+5. **The median gap is a painted median** (OQ-18's (a)): filled with the road's grey,
+   with one double yellow line in a gap under 1 m and a double yellow line inside each
+   edge of a wider one (§2.17.5).
+6. **Markings fade where they are under a pixel** (OQ-19's (a), §2.17.10).
+7. **`M` is the key** that shows and hides streets in `view` (§2.17.12).
+8. **Stop lines stay 0.60 m deep,** though the engine stops a vehicle's front 0.6 m
+   behind the line's junction-facing edge, a standoff written for a 0.4 m line
+   (§2.17.7).
+9. **The engine's own street geometry for its dashboard was considered** and the draft
+   draws its own; §2.17.2 says why and compares the two.
+
 The rest of this section is the draft's proposal. It settles:
 - what the engine gives, and that no engine request and no crate is needed (§2.17.2);
 - the strips, kept (§2.17.3), and the junction surfaces (§2.17.4);
-- the median gap (§2.17.5, OQ-18);
+- the median gap (§2.17.5, OQ-18, answered (a));
 - the markings' widths, patterns and colours (§2.17.6), the stop lines (§2.17.7) and the
   yellow line (§2.17.8);
 - lifts and draw order (§2.17.9);
-- what a viewer can see of a 0.15 m line, and the fade (§2.17.10, OQ-19);
+- what a viewer can see of a 0.15 m line, and the fade (§2.17.10, OQ-19, answered (a));
 - the meshes and their cost (§2.17.11);
 - the flag, the key and the scripts (§2.17.12).
 
@@ -2040,6 +2053,39 @@ The rest of this section is the draft's proposal. It settles:
   `JunctionConfig::stop_line_offsets`;
 - `assimilator_config::network::LinkConfig`'s `lanes`, `total_width()`,
   `lane_center_offsets()` and `median_gap`, and `JunctionConfig::control`.
+
+**The engine's own street drawing was considered** (decision 9). For its dashboard the
+engine builds street geometry in
+`crates/geometry/src/network_json.rs:NetworkJson::from_config_with_network_data`, public,
+in `assimilator-geometry`, which this crate already builds. It differs from §2.17.6–§2.17.8:
+- **dashes 2.5 m long every 6.5 m** (`DASH_LENGTH` 2.5, `DASH_GAP` 4.0), against the
+  draft's 3 m every 12 m: 3,921 in Midtown and 2,044 in urban_grid against 2,208 and
+  1,105;
+- **the centre line is one 0.15 m line,** and only on a pair with a zero gap (3 in
+  Midtown, none in urban_grid); a pair with a gap shows the gap, with "median noses" at
+  its ends. The draft draws a double yellow line on every pair and fills the gap;
+- **stop lines 0.4 m deep,** one rectangle across the whole approach unless a lane has
+  its own delta, and **also at unsignalised approaches** whose lanes have conflicting
+  paths (`NetworkData::is_transparent_lane_path`): 39 rectangles on 38 of Midtown's
+  approaches that the draft leaves unmarked (§2.17.7);
+- it carries no colour, height or triangulation: its fills and lines are 2D rings for a
+  dashboard to paint.
+
+**Where they share data, they agree exactly** (`streets-engine`, §2.17.15):
+- its `junction_fills` are `NetworkData::junction_polygon`'s rings: 106 and 9, every
+  vertex equal to the draft's surfaces' (worst distance 0.000000 m). Its ring repeats the
+  closing vertex the draft drops;
+- its `stop_lines` at signals put their junction-facing edge where the draft's stop lines
+  end: every corner of the draft's 402 and 71 lines lies on the engine's edge for that
+  link and lane (804 and 142 corners, worst 0.000000 m).
+
+**Why the draft draws its own:** the user decided the US look (decision 3), which differs
+from the dashboard's in the dashes, the centre line and the stop lines' places; the data
+item needs a stop line per `(link, lane)` (§2.17.7), where the dashboard draws one per
+approach; and the draft needs heights, colours and triangles, which the dashboard's rings
+do not have. Building the whole `NetworkJson` would also build its turn paths, conflict
+points, arrows and detectors for nothing. Since the shared geometry agrees to 0 m, drawing
+our own puts nothing anywhere the engine would not.
 
 The strips' geometry is unchanged (§2.17.3): the trimmed, offset polyline through
 `Placement::place_lateral`. The other fields the engine exposes (`junction_curb_arcs`,
@@ -2128,8 +2174,8 @@ at 0.5 m, a dark band at 3.5–4 m. The proposal:
   by two sets of solid double yellow lines).
 
 Whether a 3.5–4 m gap is a painted median or a raised one is not in the data. A raised one
-has curbs, which come with the ground (decision 2), so this draft paints it. The choice
-is OQ-18's.
+has curbs, which come with the ground (decision 2), so this draft paints it. *(2026-10-05,
+user)* OQ-18 is answered (a), as drafted (decision 5).
 
 #### 2.17.6 The markings: widths, patterns and colours
 
@@ -2175,6 +2221,36 @@ is OQ-18's.
   fixtures the base offset is 0 (each is trimmed), so the line touches the junction's
   edge. urban_grid's `L_J12_J11` lane 0 has a 5 m delta, so its line stands 5 m back from
   lane 1's.
+- **Where the first vehicle stops: at the line's back edge.** The engine stops a
+  vehicle's front `STOP_LINE_STANDOFF` = 0.6 m behind the stop line's junction-facing edge
+  (`crates/core/src/systems/conflict.rs:STOP_LINE_STANDOFF`: `stop_pos = link_length −
+  stop_offset − half_length − STOP_LINE_STANDOFF`, `stop_pos` being the centre, as FCD's
+  `position` is). Its comment: the standoff "must exceed the stop line depth (0.4m) to
+  produce a visible gap behind the line". Here the line is 0.60 m deep, so **the
+  engine's code predicts a gap of 0 between a stopped first box's front and the line's
+  back edge**: the box touches the line and no grey shows between them. The box is drawn
+  centred on its placed point (`src/draw.rs:box_transform`), so its drawn front is that
+  front.
+  - **Measured** on both whole runs (§2.17.15, `streets-engine`): an FCD row with speed
+    under 0.1 m/s on a link into a signal, ahead of every other row on its `(link,
+    lane)` in that snapshot, with its front within 5 m of the line's back edge; an
+    *episode* starts at such a row when the vehicle had none a second before. The gap is
+    the back edge's `s` less the front's:
+
+    | | Episodes (rows) | Median | Within 0.10 m | 1.35–1.55 m | Front at the junction-facing edge (−0.600 m) | Other |
+    |---|---|---|---|---|---|---|
+    | Midtown | 2,491 (48,899) | **+0.042 m** | 2,441 (98.0 %) | 27 | 10 | 13 |
+    | urban_grid | 129 (2,555) | **+0.042 m** | 123 (95.3 %) | 6 | 0 | 0 |
+
+    So a stopped first box stops about 4 cm short of the line's back edge, a gap under a
+    pixel in every frame here (§2.17.10), and the box reads as standing at the line. The
+    27 and 6 at about 1.4 m stop early, and Midtown's 10 stand over the line, their front
+    at the junction's edge; both are the engine's, recorded, not changed.
+  - **Kept at 0.60 m anyway** (decision 8). The data item will colour stop lines by
+    signal state (§2.17.13), so the line must read on its own; and in Midtown's
+    orthographic frame a 0.60 m line shows at about 77 % of its colour (`w_px` 0.37,
+    §2.17.10), a 0.40 m one at about 32 % (`w_px` 0.25). A 0.40 m line would leave the
+    engine's 0.2 m of grey behind it, which is under a pixel in every frame here anyway.
 - **The lane lines of an approach end** at the upstream edge of its furthest-back stop
   line.
 - **Kept per `(link, lane)`**, in the mesh's order with its vertex range, so a later phase
@@ -2299,7 +2375,8 @@ What it gives, in the probe's frames (§2.17.15):
 - In `view`, `H` is the window's height in logical pixels, as its camera's `height_m =
   H·k` is.
 
-The alternatives are OQ-19's: true colours everywhere, or a minimum width on screen.
+The alternatives were OQ-19's: true colours everywhere, or a minimum width on screen.
+*(2026-10-05, user)* OQ-19 is answered (a), the fade (decision 6).
 
 #### 2.17.11 The meshes and their cost
 
@@ -2342,7 +2419,8 @@ Two new entities, both baked relative to the fit's centre like the roads:
 - **`--no-streets`**, on `render` and `view`, turns them off. With it, `render` builds its
   scene exactly as today: no streets are built and nothing is spawned, so every frame is
   today's, byte for byte.
-- **`M`** in `view` (by position, `KeyCode::KeyM`; unbound today) shows and hides them at
+- **`M`** (accepted by the user, decision 7) in `view` (by position, `KeyCode::KeyM`;
+  unbound today) shows and hides them at
   any moment, as `B` does the buildings. `view --no-streets` starts with them hidden, and
   `M` shows them. It changes nothing else. The keyframe line does not carry it.
 - **No new error.** Every network has links, so there is always something to draw;
@@ -2410,6 +2488,8 @@ holds:
     differs from its reference in every frame. Wall times: urban_grid 138–167 s, Midtown
     30–51 s, at load 2.3–4.0;
 - `streets-cost`: the rebuild's cost (§2.17.11);
+- `streets-engine` (2026-10-05, for decisions 8 and 9): the stopped first boxes' gaps
+  (§2.17.7) and the engine's `NetworkJson` against the draft (§2.17.2);
 - the lift test (§2.17.9), and `view --bench` (§2.17.11).
 
 ## 3. Open questions
@@ -2785,7 +2865,7 @@ holds:
     were predicted with (a) and do not change.
   - *(2026-10-04, user, at Phase 4's gate 15)* Stands: gate 15 passed, and nothing drawn
     from the parts changes.
-- **OQ-18** — What fills a two-way street's median gap (§2.17.5)? **OPEN.**
+- **OQ-18** — What fills a two-way street's median gap (§2.17.5)? **RESOLVED.**
   - *The facts:* the engine sets a pair's two strips `median_gap` apart, and today the gap
     shows the background. Midtown's pairs: 3 at 0 m, 11 at 0.5 m, 4 at 3.5 m and 11 at
     4 m; urban_grid's 24 at 0.5 m. Whether a wide gap is painted or raised is not in the
@@ -2800,10 +2880,14 @@ holds:
       width.
   - *Recommendation:* (a). It is the US marking for a painted median, it keeps a street
     one surface until curbs exist, and it is what the probe drew.
-  - *(design call: the user; blocks the median fills' and yellow lines' counts in gates
+  - ~~*(design call: the user; blocks the median fills' and yellow lines' counts in gates
     5, 6 and 8 for Midtown's 15 wide pairs: with (b) Midtown has 11 fills and 28 yellow
-    lines; with (c) 26 fills and 58 yellow lines. Nothing else.)*
-- **OQ-19** — How are markings drawn where they are under a pixel (§2.17.10)? **OPEN.**
+    lines; with (c) 26 fills and 58 yellow lines. Nothing else.)*~~
+  - *(answered 2026-10-05, user, before review)* **(a): the painted median.** Every gap is
+    filled with the road's grey; under 1 m one double yellow line in its middle, 1 m or
+    more a double yellow line inside each edge. Recorded as §2.17.1's answers and
+    §2.17.5. Gates 5, 6 and 8 were predicted with (a) and do not change.
+- **OQ-19** — How are markings drawn where they are under a pixel (§2.17.10)? **RESOLVED.**
   - *The facts:* a 0.15 m line is 0.09 px wide in Midtown's orthographic frame, 0.06 px
     in `view`'s launch fit, and 0.09–0.54 px through the city flight. Drawn at true
     colour, MSAA ×4 turns Midtown's lines, which run at an angle to the pixel grid, into
@@ -2823,9 +2907,13 @@ holds:
       median's four lines merge into a 6 m amber band. It is a per-pose geometry rebuild.
   - *Recommendation:* (a). It is the only one that shows a clean overview and true
     markings close up, and it is the probe's measured look.
-  - *(design call: the user; blocks gate 9 and the markings mesh's per-pose rebuild in
+  - ~~*(design call: the user; blocks gate 9 and the markings mesh's per-pose rebuild in
     gate 13 and 14 with (a). With (b), gate 9 and the rebuild go, and gate 15's overview
-    has the dots. Gates 1–8 and 10–12 hold either way: gate 8's lines are 3 px wide.)*
+    has the dots. Gates 1–8 and 10–12 hold either way: gate 8's lines are 3 px wide.)*~~
+  - *(answered 2026-10-05, user, before review)* **(a): the fade.** A marking's colour
+    blends from the road's grey under 0.1 px to its own from 0.5 px, opaque, per pose.
+    Recorded as §2.17.1's answers and §2.17.10. Gates 9, 13 and 14 were predicted with (a)
+    and do not change.
 
 ## 4. Implementation phases
 
@@ -4257,8 +4345,8 @@ Drafted 2026-10-05; the design is §2.17, and the user's decisions are §2.17.1.
 builds on vis-001 Phase 7's fixtures (engine `90b39292`) and on Phases 1–4 here. With
 `--no-streets` it changes no output. With streets on it changes no box, building, camera,
 credit line or road strip: it adds two meshes under the boxes. OQ-18 (the median) and
-OQ-19 (the fade) are the user's; the scope and gates below are their recommendations,
-(a) each, and say what changes with another answer.
+OQ-19 (the fade) are answered (a) each (§2.17.1, decisions 5 and 6), as the scope and
+gates below were drafted.
 
 - **Scope:**
   - **The streets (`src/streets.rs`, new; no Bevy types).**
@@ -4423,6 +4511,14 @@ OQ-19 (the fade) are the user's; the scope and gates below are their recommendat
      | Lane-line dashes | **2,208** | **1,105** |
      | Surface mesh: vertices, triangles | **10,510**, **9,532** | **13,971**, **13,842** |
      | Markings mesh: vertices, triangles | **37,594**, **32,198** | **36,292**, **33,844** |
+
+     **And against the engine's dashboard geometry** (§2.17.2): `NetworkJson::
+     from_config_with_network_data(&placement.network, &placement.data)` on each fixture.
+     Its `junction_fills` (106 and 9), less each ring's repeated closing vertex, equal the
+     surfaces' polygons vertex for vertex: worst distance **0.000000 m**, within 1 cm.
+     Every corner of the draft's stop lines' junction-facing edges (804 and 142) lies on
+     the junction-facing edge of the engine's stop line for that link (its lane's, where
+     it has one per lane): worst distance **0.000000 m**, within 1 cm.
   7. **The strips and the boxes** (`tests/streets.rs`, ignored, headless). From
      `run::load` on each fixture, over its whole run:
      - every strip-end corner at a junction polygon (922 and 144) is within **1 mm** of its
@@ -4430,7 +4526,14 @@ OQ-19 (the fade) are the user's; the scope and gates below are their recommendat
      - of the box centres at every whole second (201,256 and 21,358), **100.000 %** lie on
        the strips or the junction surfaces, and those in a junction span (17,706 and
        1,231) all on the surfaces; on the strips alone **91.202 %** and **94.236 %**, as
-       today.
+       today;
+     - **the first stopped box at a stop line** (§2.17.7's rule, from the FCD rows): the
+       engine's code predicts its front at the line's back edge, a gap of **0**. Measured,
+       and predicted exactly here since the FCD is fixed: Midtown **2,491** episodes
+       (48,899 rows), median gap **+0.042 m**, **2,441** within 0.10 m, 27 between 1.35
+       and 1.55 m, **10** at −0.600 m (front at the junction's edge) and 13 others;
+       urban_grid **129** (2,555), median **+0.042 m**, **123** within 0.10 m and 6
+       between 1.35 and 1.55 m.
   - **The streets — through the GPU:**
   8. **The synthetic crossing, drawn** (`tests/streets.rs`, ignored, no fixture). Gate 5's
      network, through `Renderer::new` with `scene::Camera { cx: 0, cy: 0, k: 0.05 }` at
@@ -4510,23 +4613,24 @@ OQ-19 (the fade) are the user's; the scope and gates below are their recommendat
       - **The orbit with buildings (`streets-orbit.mp4`), 0:00 to 1:00, the middle of the
         frame.** The crossing there is grey, and the boxes crossing it stand on grey, not
         on the dark background. Every street shows sharp white dashes; the approaches
-        have a white bar across their lanes at the crossing's edge, and boxes queued at
-        a red light stop just behind it; a two-way street has an amber double line down its middle.
+        have a white bar across their lanes at the crossing's edge, and the first box
+        queued at a red light stops with its front at the bar, touching it, with no grey
+        between them and not over it; a two-way street has an amber double line down its middle.
         Nothing flickers between white and grey from frame to frame, and the boxes stand
         over the lines.
       - **urban_grid's `--camera` render (`streets-ug-camera.mp4`), from 0:55 to 2:11,**
         the follow at `height_m` 120 to 60: lane dashes, the double amber line beside the
         followed box, and white bars where it reaches a crossing, all sharp. At the
         centre crossing, on the approach from the east, one lane's bar stands about 5 m
-        behind its neighbour's (`L_J12_J11` lane 0's delta).
+        behind its neighbour's.
       - **In `view` on Midtown:** at launch, grey crossings and no lines; scrolling in
         over a street, the lines fade in smoothly; `M` hides streets (the crossings go
         dark again) and shows them; `view --no-streets` opens as today, and `M` shows
         them.
 
-      Then answer OQ-18 and OQ-19 as they look, and say whether the widths, the
-      colours, the dash pattern or the fade's thresholds should change (iteration,
-      §2.17.6, §2.17.10).
+      Then say whether OQ-18's and OQ-19's answers stand as they look, and whether the
+      widths, the colours, the dash pattern or the fade's thresholds should change
+      (iteration, §2.17.6, §2.17.10).
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
@@ -4537,7 +4641,9 @@ OQ-19 (the fade) are the user's; the scope and gates below are their recommendat
   | Packages; `Cargo.toml` | 0; unchanged | 4 |
   | Synthetic: surfaces, pairs, yellow lines, fills, dashes, stop lines | 1; 2; 4; 2; 24; 6, `L_EC` lane 0 5 m back | 5 |
   | Midtown / urban_grid counts | as gate 6's table | 6 |
+  | Against the engine's `NetworkJson`: fills, stop lines' junction-facing edges | worst 0.000000 m each | 6 |
   | Strip ends; box centres on the drawn road | ≤ 1 mm; 100.000 % (today 91.202 % / 94.236 %) | 7 |
+  | First stopped box's front to the line's back edge, Midtown / urban_grid | engine's code: 0; 2,491 / 129 episodes, median +0.042 m, 2,441 / 123 within 0.10 m, 10 / 0 at −0.600 m | 7 |
   | Synthetic pixels off → on; changed, white, yellow, yellow on the one-way | as gate 8's table; 112,608, 6,316, 6,120, 0 | 8 |
   | The fade | 0, 0.5, 1; 0.768; 0.017 | 9 |
   | Streets on, twice each: two urban_grid, five Midtown renders | 8700 of 8700; 1800 of 1800 | 10 |
