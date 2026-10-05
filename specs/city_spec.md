@@ -39,7 +39,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 5 — Streets: junction surfaces, lane lines, stop lines and the yellow centre line, by default"
-    reviewed: null
+    reviewed: 2026-10-05
     shipped: null
     cut: null
     by: null
@@ -101,7 +101,9 @@ the buildings between the camera and the point it looks at down to stubs, by def
 `--no-see-through` gives the video as before (§2.15). *(2026-10-04)* From Phase 4, the
 fetch also writes each building's `building_part`s into the same file, and `render` and
 `view` draw a building that has them from its parts; the report gains `raised` and `parts`,
-and `--no-parts` writes the file as before (§2.16).
+and `--no-parts` writes the file as before (§2.16). *(2026-10-05)* From Phase 5, `render`
+and `view` also draw the streets by default: junction surfaces, lane lines, stop lines at
+signals and the yellow centre line; `--no-streets` gives the video as before (§2.17).
 
 Rejected candidates for the observable:
 - *`buildings.geojson`.* It is an input to a video, as vis-001 §1 says of the scene bundle.
@@ -176,6 +178,8 @@ Decided by the user, 2026-10-01, before drafting.
     `scratch/ref-8eb9052.framemd5`, as `scripts/gates.sh` checks;
     *(2026-10-02)* from Phase 2, that holds for urban_grid only: every render of a network
     with `map_origin` carries the credit line (§2.14.1 decision 2);
+    *(2026-10-05)* from Phase 5, only with `--no-streets`: streets are drawn by default
+    on every network (§2.17.12);
   - see-through or fading buildings, land use and textures are later phases.
 - (g) **Pitch:** the 25° floor stays. vis-001 OQ-12 stays open. It belongs to a later phase
   here that brings sky, fog and a wider extent (§2.13).
@@ -500,7 +504,9 @@ fetched building is drawn" means it is in the scene, not in every frame.
 - **Roads and boxes stay unlit** (vis-001 §2.11.2). The light does not touch their pixels.
 - **Without `--buildings`, nothing new is spawned:** no mesh and no light. That is what keeps
   `render` byte-identical (§2.2 f). *(2026-10-02)* From Phase 2, a network with `map_origin`
-  also gets the credit's UI tree, with or without `--buildings` (§2.14.5).
+  also gets the credit's UI tree, with or without `--buildings` (§2.14.5). *(2026-10-05)*
+  From Phase 5, every render also gets the streets' two meshes unless `--no-streets` is
+  given (§2.17.11).
 
 The base grey, the ambient level, the sun's illuminance and the exact angles are iteration
 (vis-001 §2.6). These constraints are not:
@@ -516,6 +522,7 @@ The base grey, the ambient level, the sun's illuminance and the exact angles are
 Both gain `--buildings <file.geojson>`. Without it, nothing changes.
 *(2026-10-02)* From Phase 2, `render` of an imported network draws the credit line with or
 without it, and `render --buildings` needs a cache fetched in Phase 2's form (§2.14).
+*(2026-10-05)* From Phase 5, both draw the streets unless `--no-streets` is given (§2.17.12).
 
 `render`:
 - **With or without `--camera`.** Without it the camera is vis-001's orthographic top-down
@@ -2046,7 +2053,9 @@ The rest of this section is the draft's proposal. It settles:
 `Placement::data`, at the pin (`90b39292`). Phase 5 reads, read-only:
 - **`NetworkData::junction_polygons`**: one polygon per `junction` or `waypoint` node, in
   metres. Neither fixture gives explicit vertices (`JunctionConfig::geometry` has only a
-  `setback`), so each is the engine's own `generate_junction_polygon` result;
+  `setback`), so each is the engine's own `generate_junction_polygon` result. Its last
+  vertex is a copy of its first (the last corner arc ends on the first arm's tip): 44
+  vertices at a four-arm junction, 33 at a three-arm one;
 - **`NetworkData::lane_stop_line_offset(link, lane)`**: where the engine stops a vehicle,
   as a distance back from the link's trimmed end. It is 0 for a link trimmed at a junction
   polygon, plus the crossing pushback (none here) and the per-lane delta from
@@ -2072,9 +2081,11 @@ in `assimilator-geometry`, which this crate already builds. It differs from §2.
   dashboard to paint.
 
 **Where they share data, they agree exactly** (`streets-engine`, §2.17.15):
-- its `junction_fills` are `NetworkData::junction_polygon`'s rings: 106 and 9, every
-  vertex equal to the draft's surfaces' (worst distance 0.000000 m). Its ring repeats the
-  closing vertex the draft drops;
+- its `junction_fills` are `NetworkData::junction_polygon`'s rings: 106 and 9. Each ring
+  ends with two copies of its first vertex, the polygon's own and the one `NetworkJson`
+  pushes to close it (45 vertices at a four-arm junction); the draft's surface drops the
+  polygon's one (43). With every trailing copy of the first vertex stripped, each ring
+  equals its surface's polygon vertex for vertex (worst distance 0.000000 m);
 - its `stop_lines` at signals put their junction-facing edge where the draft's stop lines
   end: every corner of the draft's 402 and 71 lines lies on the engine's edge for that
   link and lane (804 and 142 corners, worst 0.000000 m).
@@ -2103,7 +2114,7 @@ The fixtures, as the engine builds them (`streets-probe`, §2.17.15):
 | Two-way pairs (links) | 29 (58) | 24 (48) |
 | Pairs by median gap | 0 m: 3; 0.5 m: 11; 3.5 m: 4; 4 m: 11 | 0.5 m: 24 |
 | Junctions (signal / unsignalised, rule) | 106 (83 / 23, every one with no `rule`) | 9 (9 / 0) |
-| Junction polygons, all generated | 106, 32–43 vertices each, 18,859 m² | 9, 43 vertices each, 4,628 m² |
+| Junction polygons, all generated: vertices as given (after the closing copy is dropped) | 106, 33–44 (32–43) each, 18,859 m² | 9, 44 (43) each, 4,628 m² |
 | Setback | 3 m at 103, 5 m at 2, 6 m at 1 | 5 m at 9 |
 | Waypoints; crossings; lanes with `gap_after` | 0; 0; 0 | 0; 0; 0 |
 | Per-lane stop-line deltas | none | `L_J12_J11` lane 0: 5 m |
@@ -2153,8 +2164,8 @@ junction surfaces the only new road.
 - **How:** triangulated with `earcut` (already a dependency, §2.11), flat at height 0,
   opaque, with the road's material, `scene::ROAD`. The polygons are concave at their
   rounded corners, which `earcut` handles; the engine's polygons repeat some vertices
-  (a corner arc's ends), which `earcut` drops: 3,478 triangles in Midtown (4,404 vertices
-  as given) and 306 in urban_grid (387).
+  (a corner arc's ends), which `earcut` drops: 3,478 triangles in Midtown (4,510 vertices
+  as given, 4,404 after each closing copy is dropped) and 306 in urban_grid (396, 387).
 - **The look:** a junction is the road's grey, joined to its strips with no seam, and the
   boxes crossing it stand on it. It carries no marking (no crosswalk, decision 2).
 
@@ -2200,7 +2211,11 @@ user)* OQ-18 is answered (a), as drafted (decision 5).
   is a darker amber than the 5–9 m/s box colour (247, 201, 72), and the white is not the
   buildings' lit grey. Both are unlit, like the road.
 - Every marking is a ribbon sampled along its link at most 1 m apart, as the strips are
-  (`scene::STRIP_STEP`), so it follows a curved link.
+  (`scene::STRIP_STEP`), so it follows a curved link. A ribbon from `s0` to `s1` takes
+  `n = max(1, ceil((s1 − s0) / STRIP_STEP))` equal steps, so `n + 1` samples, each placed
+  with `Placement::place_lateral` and offset along its right normal to the ribbon's two
+  laterals: 2 vertices a sample, 2 triangles a step, no vertex shared between ribbons.
+  The median fills are ribbons by the same rule. Gate 6's mesh counts follow from it.
 
 #### 2.17.7 Stop lines: at signals, one per lane, where the engine stops
 
@@ -2253,9 +2268,9 @@ user)* OQ-18 is answered (a), as drafted (decision 5).
     engine's 0.2 m of grey behind it, which is under a pixel in every frame here anyway.
 - **The lane lines of an approach end** at the upstream edge of its furthest-back stop
   line.
-- **Kept per `(link, lane)`**, in the mesh's order with its vertex range, so a later phase
-  can recolour each by its signal's state (vis-001 §2.7 item 5). That phase is not
-  designed here.
+- **Kept per `(link, lane)`**, in the mesh's order, so a later phase can recolour each by
+  its signal's state (vis-001 §2.7 item 5). That phase is not designed here, and no gate
+  of this phase reads the order.
 
 #### 2.17.8 The yellow line: double, between a two-way pair's strips
 
@@ -2272,7 +2287,10 @@ user)* OQ-18 is answered (a), as drafted (decision 5).
   are in every pair here.
   - gap under 1 m: one double yellow line, its two lines at `c ± (0.05 … 0.20)`;
   - gap 0 (3 pairs in Midtown): the same, over the seam between the two strips;
-  - gap 1 m or more: a flush median (§2.17.5), a double yellow line inside each edge.
+  - gap 1 m or more: a flush median (§2.17.5), a double yellow line inside each edge,
+    its outer line flush with the edge: with the gap between laterals `g0 = −w_A/2 − g`
+    and `g1 = −w_A/2`, the four lines are at `[g0, g0 + 0.15]`, `[g0 + 0.25, g0 + 0.40]`,
+    `[g1 − 0.40, g1 − 0.25]` and `[g1 − 0.15, g1]`.
 - **Double, not single.** Every pair here has at least two lanes in all, and US city
   streets mark a two-way centre line double solid (§2.17.6). Midtown has 15 flush medians
   (4 lines each) and 14 centred lines (2 each): **88 yellow lines**; urban_grid **48**.
@@ -2305,9 +2323,9 @@ each run. So no two faces of different colours share a height:
   perspective; a marking under a box is inside it and never shows.
 - **Depth precision.** Bevy's perspective projection is reverse-Z with an infinite far
   plane and a 32-bit float depth, so a depth step at distance `z` is about `z · 1.2·10⁻⁷`:
-  0.4 mm at 3.5 km, the farthest the view's zoom reaches over Midtown. A 0.01 m lift is
-  25 steps there, and more at a slant, where the lift's length along the ray is
-  `lift / sin θ`. The orthographic depth is linear over at most 1 km (`draw::ortho_eye`):
+  0.5 mm at 4.2 km, the eye's farthest from the look-at point at the view's widest zoom
+  over Midtown (`height_m` 3.46 km). A 0.01 m lift is 20 steps there, and more at a
+  slant, where the lift's length along the ray is `lift / sin θ`. The orthographic depth is linear over at most 1 km (`draw::ortho_eye`):
   a 0.01 m lift is about 160 steps.
 - **Measured** (§2.17.15). The orbit's frames 0 and 900 and the city flight's 900 and
   1799, rendered with the markings at 0 m (a tie with the road), at 0.01/0.02 m and at
@@ -2350,11 +2368,15 @@ continuous line, white or amber (4,052 pixels at least half a marking).
 - For each marking vertex, `w_px = w / mpp`, where `w` is its line's width (0.15 m, or
   0.60 m for a stop line) and `mpp` the metres per pixel there: `k` in the orthographic
   render; in perspective, `|p − eye| · 2·tan(φ/2) / H`, the pixel's size across the ray
-  at the vertex.
+  at the vertex, with `eye` = `Pose::eye`, `φ` = `camera::FOV_DEG` and `H` the frame's
+  height in pixels (`streets::mpp_at`). Straight down at the look-at point it is
+  `height_m / H`.
 - `α = smoothstep((w_px − 0.1) / (0.5 − 0.1))`, clamped to [0, 1]: 0 under a tenth of a
   pixel, 1 from half a pixel up.
 - The vertex's colour is the road's grey blended toward the marking's colour by `α`, in
-  linear light. It stays opaque: no transparency, no sorted pass.
+  linear light, per channel in `f32` as `(1 − α)·road + α·marking`, which is exactly the
+  road at `α` 0 and exactly the marking at 1. The three linear colours are computed once.
+  It stays opaque: no transparency, no sorted pass.
 - The orthographic render computes it once. In perspective it follows the pose: the
   markings' mesh (positions and indices unchanged) gets new colours at every `set_pose`,
   as see-through's mesh gets new heights (§2.15.5), and `view` does it each frame while
@@ -2423,17 +2445,21 @@ Two new entities, both baked relative to the fit's centre like the roads:
   unbound today) shows and hides them at
   any moment, as `B` does the buildings. `view --no-streets` starts with them hidden, and
   `M` shows them. It changes nothing else. The keyframe line does not carry it.
-- **No new error.** Every network has links, so there is always something to draw;
-  `--no-streets` is accepted everywhere. `--streets` is not a flag, so clap rejects it
-  (exit 2), as it rejects `--see-through`.
+- **No new error.** `--no-streets` is accepted everywhere. A network can give an empty
+  mesh (one-lane one-way links and no junction give no surface and no marking); a mesh
+  with no triangle is not spawned, so such a network draws as with `--no-streets`.
+  `--streets` is not a flag, so clap rejects it (exit 2), as it rejects `--see-through`.
 - **The library keeps today's default.** `Job::prepare*` build every job with streets
   off, so every test that builds a job draws as today. `src/main.rs` turns them on with
   `Job::set_streets(true)` unless `--no-streets` is given, as it does see-through.
   `RenderOptions` and every `Job::prepare*` signature are unchanged.
+- **A harness** that needs today's video passes `--no-streets`, as it can pass
+  `--no-see-through` (§2.15.6). This is the first phase that changes urban_grid's default
+  render.
 
-**The scripts that compare a render with a `ref-pin90b39292` file** must give it
-`--no-streets`, or the default would fail them. These 29 CLI renders gain the flag and
-nothing else:
+**The scripts whose renders are compared with a `ref-pin90b39292` file**, directly, by hand
+(gate 1's `camera`) or through a recorded line, give them `--no-streets`, so that those
+comparisons still hold. These 29 CLI renders gain the flag and nothing else:
 - `scripts/gates.sh`: `default`, `default2`, `camera`, `camera2` (4);
 - `scripts/gates-ties.sh` gate 2: `ortho-city`, `ortho-roads` (2);
 - `scripts/gates-see-through.sh` gate 2's seven and gate 7's five (12): gate 7's recorded
@@ -2445,6 +2471,8 @@ The other renders in scripts compare only with each other: `gates.sh`'s `explici
 (none), `gates-ties.sh` gate 9, `gates-city.sh` gate 13 and `gates-credit.sh` gate 14.
 They are not edited, now draw streets, and must still give equal pairs (Phase 5 gate 3).
 The error cases in every script stop before a frame, so streets do not reach them.
+`gates-see-through.sh` gate 10's `view --no-see-through --bench 1` on urban_grid now opens
+with streets; it checks only its exit and its JSON line, so it still passes.
 
 #### 2.17.13 What it does not do
 
@@ -2491,6 +2519,21 @@ holds:
 - `streets-engine` (2026-10-05, for decisions 8 and 9): the stopped first boxes' gaps
   (§2.17.7) and the engine's `NetworkJson` against the draft (§2.17.2);
 - the lift test (§2.17.9), and `view --bench` (§2.17.11).
+
+**Where the probe differs from the scope** (noted in review round 1, 2026-10-05):
+- it spawned the streets inside `Renderer::build`, before the boxes, the buildings and the
+  credit and before the first settle, and `streets-synth` built two renderers, one off and
+  one on. The scope spawns them through `Renderer::set_streets` after the build and
+  settles again, and gate 8 turns them on part-way on one renderer. No two faces of
+  different colours tie in depth (§2.17.9), so the same pixels are expected, but gate 8's
+  counts were measured through the probe's path;
+- it blended colours as `road + (marking − road)·α`, not the scope's `(1 − α)·road +
+  α·marking`. The two agree to an `f32` ulp; gate 8's lines are whole (`α` 1), where the
+  scope's form is exact;
+- its comparison with `NetworkJson` dropped one trailing copy of the first vertex, not two,
+  and compared the first 43 vertices; that is the comparison gate 6 now states;
+- it draws stop lines at all-way stops too, and takes the last twin of a node pair, not
+  the first. No fixture has either; the scope follows §2.17.7 and §2.17.8.
 
 ## 3. Open questions
 
@@ -4355,35 +4398,50 @@ gates below were drafted.
       `LIFT_YELLOW_M` 0.01, `LIFT_WHITE_M` 0.02; and the fade's `FADE_FROM_PX` 0.1 and
       `FADE_TO_PX` 0.5 (§2.17.10).
     - `Streets::build(&Placement) -> Streets`: the junction surfaces (each node's polygon,
-      in node order, triangulated with `earcut`), the two-way pairs, the median fills,
+      in node order, kept public with its node id after the closing copy is dropped, and
+      triangulated with `earcut`), the two-way pairs, the median fills,
       and the markings as ribbons, each with its kind (yellow, lane, stop), link, lane
-      and width, built as §2.17.4–§2.17.8 say, in link order. Stop lines are kept per
-      `(link, lane)`.
+      and width, built as §2.17.4–§2.17.8 say, in link order, each ribbon sampled by
+      §2.17.6's rule. Stop lines are kept per `(link, lane)`.
     - `Streets::surface(&self)` and `Streets::markings(&self)`: the two meshes' data in
       `f64` world metres (positions, indices; for the markings also each vertex's colour
       and line width), the yellow lines first, then the lane lines, then the stop lines.
-    - `fade(width_m, mpp) -> f64`, §2.17.10's `α`, and `colour(marking, α)`, the linear
-      blend of `scene::ROAD` toward it.
+    - `fade(width_m, mpp) -> f64`, §2.17.10's `α`; `colour(marking, α)`, the linear
+      blend `(1 − α)·road + α·marking` of `scene::ROAD` toward it (§2.17.10); and
+      `mpp_at(&Pose, h_px) -> impl Fn([f64; 3]) -> f64`, the perspective metres per
+      pixel at a world point (§2.17.10). The orthographic render passes `|_| k`.
   - **Drawing (`src/draw.rs`).**
-    - `spawn_streets(world, &Streets, road material, (fx, fy), mpp)` spawns the two
-      entities of §2.17.11 and returns their handles. The surface uses the road's material
-      handle; the markings one unlit white material with `cull_mode: None` and
-      `NoFrustumCulling`.
-    - `set_street_colours(world, &StreetsDrawn, mpp)` replaces the markings' mesh asset
-      with the same positions and indices and new colours (`Assets::insert`), as
-      `draw::set_building_heights` does.
+    - `StreetsDrawn` (new): the two entities, each an `Option` (§2.17.12: a mesh with no
+      triangle is not spawned), the markings' mesh handle, and what
+      recolouring needs: the markings' `f64` positions, marking colours and line widths,
+      and the last drawn colours.
+    - `spawn_streets(world, &Streets, road material, (fx, fy), mpp: impl Fn([f64; 3]) ->
+      f64) -> StreetsDrawn` spawns the two entities of §2.17.11 (either one only if its
+      mesh has a triangle, §2.17.12). The surface uses the road's material handle; the
+      markings one unlit white material with `cull_mode: None` and `NoFrustumCulling`.
+    - `set_street_colours(world, &mut StreetsDrawn, mpp: impl Fn([f64; 3]) -> f64)`
+      replaces the markings' mesh asset with the same positions and indices and new
+      colours (`Assets::insert`), as `draw::set_building_heights` does, when any colour
+      differs from the last drawn.
     - `materials`, `road_mesh` and every box and building function are unchanged.
   - **`render` (`src/render.rs`, `src/lib.rs`, `src/main.rs`).**
-    - `Renderer::set_streets(&mut self, streets: Option<&Streets>)`: `Some` spawns the two
-      entities, with colours for the orthographic `k` or the current pose, then settles
-      again (three empty renders, as at build); `None` despawns them. Off from the start,
+    - `Renderer` keeps two more fields: the road's material handle (today a local of
+      `Renderer::build`) and, on a perspective renderer, its current pose (the one
+      `Renderer::new_perspective` was given, then each `set_pose`'s), plus
+      `Option<StreetsDrawn>`.
+    - `Renderer::set_streets(&mut self, streets: Option<&Streets>) -> Result<()>`: `Some`
+      spawns the two entities, with colours for the orthographic `k` or the current
+      pose, then settles again (three empty renders, as at build); `None` despawns them (no caller
+      in Phase 5 but `Job::set_streets(false)`, and no gate). Off from the start,
       nothing is spawned.
-    - On a perspective renderer with streets, `set_pose` recomputes the markings' colours
-      for the new pose and replaces their mesh when any colour differs from the last drawn.
-    - `Job::set_streets(&mut self, on: bool)` builds `Streets` from the job's placement and
-      passes it, or `None`. `Job::prepare*` build every job with streets off.
+    - On a perspective renderer with streets, `set_pose` keeps the pose, recomputes the
+      markings' colours for it and replaces their mesh when any colour differs from the
+      last drawn.
+    - `Job::set_streets(&mut self, on: bool) -> Result<()>` builds `Streets` from the
+      job's placement and passes it, or `None`. `Job::prepare*` build every job with
+      streets off.
     - `render --no-streets` is a clap flag. `src/main.rs` calls `Job::prepare_with`, then
-      `set_streets(true)` unless the flag is given, then `set_see_through` as today.
+      `set_streets(true)?` unless the flag is given, then `set_see_through` as today.
       `RenderOptions` and every `Job::prepare*` signature are unchanged.
   - **`view` (`src/view/state.rs`, `src/view/mod.rs`, `src/main.rs`).**
     - `view --no-streets` is a clap flag; `ViewOptions` gains `streets`, true unless it is
@@ -4394,8 +4452,9 @@ gates below were drafted.
       order becomes "… `B`; `X`; `M`; orbit …".
     - `run` builds the streets at launch on every network and spawns them with their
       visibility from `streets_shown`. The window reads `KeyCode::KeyM`. Each frame, after
-      the camera is set, the entities' visibility follows `streets_shown`, and while it is
-      on the markings' colours follow the pose (every frame under `--bench`).
+      the camera is set, the visibility of each entity spawned follows `streets_shown`,
+      and while it is on the markings' colours follow the pose (every frame under
+      `--bench`).
   - **Scripts:** the 29 renders of §2.17.12 gain `--no-streets` and nothing else, in
     `scripts/gates.sh`, `gates-ties.sh`, `gates-see-through.sh` and `gates-parts.sh`; each
     script's header comment says so in one line.
@@ -4442,7 +4501,10 @@ gates below were drafted.
   3. **What streets do not touch.**
      - Every test file but `tests/streets.rs`, unedited, passes with every printed number
        equal to the baseline's. They build their jobs through `Job::prepare*`, which leave
-       streets off.
+       streets off, or their renderers through `Renderer::new*`, which spawn none until
+       `set_streets`; the two that run the binary (`tests/camera.rs`'s
+       `gate5_keyframe_file_errors`, `tests/view.rs`'s `gate2_view_input_errors`) stop
+       at an error before streets are built.
      - The renders that compare only with each other now draw streets and still give equal
        pairs: `gates-ties.sh` gate 9, **1800 of 1800** for each pair; `gates-city.sh` gate
        13, **1800** for flight 2 and flight 3 (sandboxed) against flight 1, and for its
@@ -4466,7 +4528,7 @@ gates below were drafted.
        - {id: E, point: [50, 0], type: endpoint}
        - {id: N, point: [0, 50], type: endpoint}
        - {id: S, point: [0, -50], type: endpoint}
-     links:   # each: median_gap 0.5, two lanes {width 3.5, speed_limit 13.9}
+     links:   # each also: median_gap: 0.5, lanes: [{id: 0, width: 3.5, speed_limit: 13.9}, {id: 1, width: 3.5, speed_limit: 13.9}]
        - {id: L_WC, from_node: W, to_node: C, geometry: [[-50, 0], [0, 0]]}
        - {id: L_CW, from_node: C, to_node: W, geometry: [[0, 0], [-50, 0]]}
        - {id: L_EC, from_node: E, to_node: C, geometry: [[50, 0], [0, 0]]}
@@ -4478,8 +4540,9 @@ gates below were drafted.
      ```
      An east–west two-way street, a one-way street southbound, one signal. The
      predictions (the probe's):
-     - **one junction surface**, the engine's polygon of 43 vertices (36 distinct, with
-       rounded corners), x ±6.5 m and y ±10.25 m at most; the sum of its triangles' areas
+     - **one junction surface**, the engine's polygon of 44 vertices as given, its last a
+       copy of its first, so 43 after that copy is dropped (36 distinct, with rounded
+       corners), x ±6.5 m and y ±10.25 m at most; the sum of its triangles' areas
        equals the polygon's shoelace area (236.69 m²) to 1e-9 of it. Without the surface
        there is no triangle, and this fails;
      - **pairs** `(L_WC, L_CW)` and `(L_EC, L_CE)`; **4 yellow lines**, at
@@ -4514,20 +4577,29 @@ gates below were drafted.
 
      **And against the engine's dashboard geometry** (§2.17.2): `NetworkJson::
      from_config_with_network_data(&placement.network, &placement.data)` on each fixture.
-     Its `junction_fills` (106 and 9), less each ring's repeated closing vertex, equal the
-     surfaces' polygons vertex for vertex: worst distance **0.000000 m**, within 1 cm.
-     Every corner of the draft's stop lines' junction-facing edges (804 and 142) lies on
-     the junction-facing edge of the engine's stop line for that link (its lane's, where
-     it has one per lane): worst distance **0.000000 m**, within 1 cm.
+     Its `junction_fills` (106 and 9), with every trailing vertex equal to the first
+     stripped (two a ring, §2.17.2), have each the same number of vertices as its
+     surface's polygon (`==`) and equal it vertex for vertex: worst distance
+     **0.000000 m**, within 1 cm. Every corner of the draft's stop lines' junction-facing
+     edges (804 and 142) lies on the junction-facing edge of the engine's stop line for
+     that link (its lane's, where it has one per lane): worst distance **0.000000 m**,
+     within 1 cm. The engine's stop lines are matched as the probe matched them: a ring's
+     junction-facing edge is `coords[1]`–`coords[2]`; a ring with a `lane` belongs to its
+     `link_id` and lane; a full-width ring (`link_id` `None`) belongs to the link whose
+     trimmed end (`Placement::place_lateral` at `link_length`, lateral 0) is nearest that
+     edge's midpoint, and to each of its lanes; a ring with a `link_id` and no `lane`
+     (a connector: urban_grid's one, on `L_J12_J11`) and every ring on a link that does
+     not end at a signal (39 in Midtown) are left out.
   7. **The strips and the boxes** (`tests/streets.rs`, ignored, headless). From
      `run::load` on each fixture, over its whole run:
-     - every strip-end corner at a junction polygon (922 and 144) is within **1 mm** of its
-       boundary;
-     - of the box centres at every whole second (201,256 and 21,358), **100.000 %** lie on
-       the strips or the junction surfaces, and those in a junction span (17,706 and
-       1,231) all on the surfaces; on the strips alone **91.202 %** and **94.236 %**, as
-       today;
-     - **the first stopped box at a stop line** (§2.17.7's rule, from the FCD rows): the
+     - every strip-end corner at a junction polygon (922 and 144) is within **1 mm** of the
+       boundary of that junction's built polygon (`Streets`' per-junction polygons);
+     - of the box centres at every whole second (201,256 and 21,358), **all** lie on the
+       strips or the built junction surfaces' triangles, and those in a junction span
+       (17,706 and 1,231) all on the surfaces; on the strips alone **91.202 %** and
+       **94.236 %**, as today;
+     - **the first stopped box at a stop line** (§2.17.7's rule, from the FCD rows, the gap
+       measured to the upstream edge of the built stop line for its `(link, lane)`): the
        engine's code predicts its front at the line's back edge, a gap of **0**. Measured,
        and predicted exactly here since the FCD is fixed: Midtown **2,491** episodes
        (48,899 rows), median gap **+0.042 m**, **2,441** within 0.10 m, 27 between 1.35
@@ -4551,17 +4623,21 @@ gates below were drafted.
      | (6.8, 2) | `L_EC` lane 0 at the edge | road | **road**: its line is 5 m back |
      | (11.8, 2) | `L_EC` lane 0's line | road | **(235, 235, 235)** |
      | (0, 12.5), (0, 16) | the one-way's dash, its gap | road, road | **white**, road |
-     | (−3.3, 14) | the one-way's left edge | road | road |
+     | (3.3, 14) | the one-way's left edge (its driver's; south is down) | road | road |
 
      Over the whole frame: **112,608** pixels change; **6,316** are exactly white and
      **6,120** exactly yellow; and **0** pixels on the one-way street's arms (`|x| < 8`,
      `|y| > 9`) are yellowish (red minus blue over 40). Lines here are 3 px wide, so the
      fade leaves them whole. Without the feature every "on" above fails.
   9. **The fade** (`tests/streets.rs`, not ignored): `fade(0.15, 1.5)` (0.1 px) is
-     **0**; `fade(0.15, 0.5)` (0.3 px) is **0.5**; `fade(0.15, 0.3)` (0.5 px) is **1**;
-     the stop line at Midtown's `k` 1.6009 m/px, **0.768** (±0.001); and a line at
-     urban_grid's 1.1481, **0.017** (±0.001). `colour` at `α` 0 is the road's grey and at
-     1 the marking's colour, exactly.
+     **0**; `fade(0.15, 0.5)` (0.3 px) is **0.5** (within 1e-12); `fade(0.15, 0.3)` (0.5
+     px) is **1**; the stop line at Midtown's `k` 1.6009 m/px, **0.767** (±0.001); and a
+     line at urban_grid's 1.1481, **0.017** (±0.001). `colour` at `α` 0 is the road's grey
+     and at 1 the marking's colour, each channel `==`. `mpp_at(&Pose::top_down(cx, cy,
+     h), H)` at `(cx, cy, 0)` is `h / H` within 1e-9 of it, for `h` 60, 500 and 1800 m and
+     `H` 720 and 1080; at a ground point 100 m from `(cx, cy)` it is larger; and at a
+     pose with pitch 25°, of two ground points on the line of sight's ground track, the
+     one farther from the eye gives the larger value.
   - **The streets — renders:**
   10. **On, deterministic** (`scripts/gates-streets.sh`). Each twice, each pair equal:
       - urban_grid, the default render and `--camera tests/flight.toml`: **8700 of 8700**;
@@ -4570,8 +4646,13 @@ gates below were drafted.
         `--buildings`; `--camera tests/see-through-flight.toml` with `--buildings`:
         **1800 of 1800** each (`ffprobe` `1920,1080,30/1,1800`).
 
-      Each is also compared with its `--no-streets` reference and the count of differing
-      frames recorded (the probe: every frame).
+      **Streets are on by default:** each first render differs from its `--no-streets`
+      reference in **at least one frame**, and the count of differing frames is recorded
+      (the probe: every frame). The references, all `ref-pin90b39292-*`: `default` and
+      `camera` (urban_grid); `ortho-city` and `ortho-roads` (orthographic, with and
+      without buildings); `city-on` and `flight-roads1` (the city flight with buildings,
+      see-through on as `render` defaults, and without); `orbit-on` (the see-through
+      flight).
   11. **The flag's edges** (`scripts/gates-streets.sh`):
       - `render --streets` with every argument a Midtown render needs is a clap usage
         error, **exit 2**, and writes no video;
@@ -4623,7 +4704,9 @@ gates below were drafted.
         followed box, and white bars where it reaches a crossing, all sharp. At the
         centre crossing, on the approach from the east, one lane's bar stands about 5 m
         behind its neighbour's.
-      - **In `view` on Midtown:** at launch, grey crossings and no lines; scrolling in
+      - **In `view` on Midtown:** at launch, grey crossings with faint white ticks at their
+        edges (the stop lines, `w_px` 0.25, about a third of their colour) and no lane or
+        yellow line; scrolling in
         over a street, the lines fade in smoothly; `M` hides streets (the crossings go
         dark again) and shows them; `view --no-streets` opens as today, and `M` shows
         them.
@@ -4642,11 +4725,11 @@ gates below were drafted.
   | Synthetic: surfaces, pairs, yellow lines, fills, dashes, stop lines | 1; 2; 4; 2; 24; 6, `L_EC` lane 0 5 m back | 5 |
   | Midtown / urban_grid counts | as gate 6's table | 6 |
   | Against the engine's `NetworkJson`: fills, stop lines' junction-facing edges | worst 0.000000 m each | 6 |
-  | Strip ends; box centres on the drawn road | ≤ 1 mm; 100.000 % (today 91.202 % / 94.236 %) | 7 |
+  | Strip ends; box centres on the drawn road | ≤ 1 mm; all (today 91.202 % / 94.236 %) | 7 |
   | First stopped box's front to the line's back edge, Midtown / urban_grid | engine's code: 0; 2,491 / 129 episodes, median +0.042 m, 2,441 / 123 within 0.10 m, 10 / 0 at −0.600 m | 7 |
   | Synthetic pixels off → on; changed, white, yellow, yellow on the one-way | as gate 8's table; 112,608, 6,316, 6,120, 0 | 8 |
-  | The fade | 0, 0.5, 1; 0.768; 0.017 | 9 |
-  | Streets on, twice each: two urban_grid, five Midtown renders | 8700 of 8700; 1800 of 1800 | 10 |
+  | The fade; `colour`'s ends; `mpp_at` top-down | 0, 0.5, 1; 0.767; 0.017; exact; `h / H` | 9 |
+  | Streets on, twice each: two urban_grid, five Midtown renders; against `--no-streets` | 8700 of 8700; 1800 of 1800; at least one frame differs (probe: every frame) | 10 |
   | `--streets`; `view --no-streets --bench 1` | exit 2; exit 0 | 11 |
   | `view --bench` with streets and buildings | ≥ 30 fps | 14 |
 - **Not predicted, and so not gated:**
@@ -4667,13 +4750,19 @@ gates below were drafted.
       two meshes, the default, `--no-streets` and `M`. Its `sources` are
       `src/streets.rs`, `src/draw.rs`, `src/render.rs`, `src/lib.rs`,
       `src/view/state.rs`, `src/view/mod.rs` and `src/main.rs`;
-    - **two rules at their caps gain a pointer to it**, reworded to fit, with no
-      `max_lines` raised: `rules/render.md` (60/60), whose CLI line gains
-      `[--no-streets]` and whose "Roads" item says streets are drawn over them unless the
-      flag is given; and `rules/view.md` (60/60), with the CLI, `M` and the frame order;
-    - `rules/see-through.md`, `rules/buildings.md`, `rules/parts.md`, `rules/camera.md`,
-      `rules/credit.md`, `rules/inputs.md`, `rules/motion.md` and `rules/slider.md`: none
-      needed, since none of their subjects changes;
+    - **three rules at their caps are corrected and gain a pointer to it**, reworded to
+      fit, with no `max_lines` raised:
+      - `rules/render.md` (60/60): its CLI line gains `[--no-streets]`; its "Roads" item
+        says streets are drawn over them unless the flag is given; its Pipeline bullet on
+        `Job::prepare_with` says streets are off there too, and that `set_streets`
+        settles again;
+      - `rules/view.md` (60/60): the CLI, `M` and the frame order, with another line of
+        its Drawing bullet tightened to make room;
+      - `rules/camera.md` (60/60): "What each path draws" names the two street meshes on
+        both paths, and the markings' `NoFrustumCulling`;
+    - `rules/see-through.md`, `rules/buildings.md`, `rules/parts.md`, `rules/credit.md`,
+      `rules/inputs.md`, `rules/motion.md` and `rules/slider.md`: none needed, since none
+      of their subjects changes;
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
     - **the README** says that `render` and `view` draw streets by default (what, and the
       fade), gains `--no-streets`, `M` and the new gate commands:
