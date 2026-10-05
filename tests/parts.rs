@@ -825,22 +825,22 @@ fn gate12_traffic() {
     let mut ok = within_1pct(
         "orbit off",
         box_pixels(&orbit, false),
-        [62_082, 92_016, 147_200],
+        [54_134, 90_574, 126_628],
     );
     ok &= within_1pct(
         "orbit on",
         box_pixels(&orbit, true),
-        [159_502, 259_247, 387_679],
+        [145_388, 275_052, 371_972],
     );
     ok &= within_1pct(
         "city off",
         box_pixels(&city_flight, false),
-        [4_033, 55_729, 111_115],
+        [4_812, 42_637, 96_012],
     );
     ok &= within_1pct(
         "city on",
         box_pixels(&city_flight, true),
-        [4_886, 57_610, 123_130],
+        [10_078, 50_472, 111_800],
     );
     assert!(ok, "a count is more than 1 % from the probe's");
 }

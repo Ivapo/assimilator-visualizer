@@ -10,7 +10,7 @@
 # laid out by hand; it ends with `REFETCH=1 scripts/fixture.sh midtown`, after copying the
 # fixture's caches and logs to scratch/out/parts/backup/, and stops the script if
 # buildings.geojson is not today's cache after it. Gate 2 compares against
-# scratch/ref-p4-*-fb53d7f.framemd5, copied before Phase 4 changed any code.
+# scratch/ref-pin90b39292-*.framemd5, made by vis-001 Phase 7 gate 5.
 # Offline. Needs duckdb, ffmpeg/ffprobe and python3.
 set -uo pipefail
 
@@ -147,7 +147,7 @@ print(f"{sys.argv[3]} {sys.argv[1].rsplit('/', 1)[1]} vs {sys.argv[2].rsplit('/'
 assert eq == len(a) == len(b) == 1800
 PY
 }
-ref() { echo "$ROOT/scratch/ref-p4-$1-fb53d7f.framemd5"; }
+ref() { echo "$ROOT/scratch/ref-pin90b39292-$1.framemd5"; }
 
 # ── Gate 2: Midtown with today's cache, byte-identical ───────────────────────
 render gate2 today-ortho-city --buildings "$TODAY"

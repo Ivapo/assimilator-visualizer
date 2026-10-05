@@ -3,8 +3,8 @@
 # `scripts/fixture.sh midtown`: the orthographic render unchanged, and the `--camera`
 # flight deterministic (vis-002 OQ-8). Gates 6–8 are
 #   cargo test --release --test ties -- --include-ignored --test-threads=1 --nocapture
-# Gate 2 compares against scratch/ref-ortho-{city,roads}-92d09a0.framemd5, copied from
-# scripts/gates-credit.sh's gate 14 output before Phase 6 changed any code.
+# Gate 2 compares against scratch/ref-pin90b39292-ortho-{city,roads}.framemd5, made by
+# vis-001 Phase 7 gate 5.
 # Offline. Needs ffmpeg/ffprobe and python3.
 set -uo pipefail
 
@@ -47,9 +47,9 @@ PY
 
 # ── Gate 2: the orthographic render, unchanged ───────────────────────────────
 render gate2 ortho-city --buildings "$CACHE"
-same gate2 "$ROOT/scratch/ref-ortho-city-92d09a0.framemd5" "$OUT/ortho-city.framemd5"
+same gate2 "$ROOT/scratch/ref-pin90b39292-ortho-city.framemd5" "$OUT/ortho-city.framemd5"
 render gate2 ortho-roads
-same gate2 "$ROOT/scratch/ref-ortho-roads-92d09a0.framemd5" "$OUT/ortho-roads.framemd5"
+same gate2 "$ROOT/scratch/ref-pin90b39292-ortho-roads.framemd5" "$OUT/ortho-roads.framemd5"
 
 # ── Gate 9: Midtown's flight, deterministic ──────────────────────────────────
 render gate9 flight-city1 --buildings "$CACHE" --camera "$ROOT/tests/city-flight.toml"
