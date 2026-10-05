@@ -2016,7 +2016,7 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
 
     Recorded as §2.2 l, §2.10, §2.13 and Phase 1's close-out.
 - **OQ-4** — Midtown gridlocks at the pin, at both demand levels. This looks like an engine
-  fault.
+  fault. **RESOLVED.**
   - *The symptom:* vehicles freeze at a link end, often just after a late lane change,
     while their FCD keeps reporting driving speed. Followers brake and queue. There are 21
     such cases in the 2850 run, 36 at 5650, and 0 in urban_grid ("position frozen ≥ 10 s
@@ -2065,8 +2065,14 @@ Midtown's building mesh, today and with parts (the probe, §2.16.10):
     removes. The commit the engine names must give a byte-identical FCD on repeated Midtown
     runs, checked on our inputs. At the pin, urban_grid is deterministic: two runs gave
     equal FCDs (Phase 1's gate run, above).
-  - *(needs-input: engine. It blocks nothing in Phase 1, whose gates measure geometry and
-    the user's check expects the gridlock. It does block a presentable Midtown video.)*
+  - ~~*(needs-input: engine. It blocks nothing in Phase 1, whose gates measure geometry and
+    the user's check expects the gridlock. It does block a presentable Midtown video.)*~~
+  - *(resolved 2026-10-05, user)* **Fixed by the engine, taken in by vis-001 Phase 7**
+    (`specs/visualizer_spec.md` §2.13.8), which shipped 2026-10-05 when the user passed its
+    gate 10. The pin moved `df8aec0` → `90b39292`, and both fixtures were re-frozen. Midtown
+    2850 gives one FCD, `01becc86…`, 202,241 rows, on every run (3 of 3 in vis-001 Phase 7
+    gate 4), and `gates-city.sh`'s gate 3 compares it with `scratch/midtown-2850-90b39292`,
+    `EXCEPT ALL` 0 / 0 (gate 7). Phase 1's recorded gate 3 miss stands as recorded.
 - **OQ-5** — Should Overture's building parts come sooner? **RESOLVED.**
   - *The data:* 487 of Midtown's 4,336 buildings (11 %) have `building_part`s. The
     `building` footprint carries the whole building's height, so a tower on a podium is

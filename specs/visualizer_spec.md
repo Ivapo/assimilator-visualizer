@@ -41,7 +41,7 @@ phases:
     by: null
   - name: "Phase 7 — Engine pin past route repair: df8aec0 → 90b39292, both fixtures re-frozen"
     reviewed: 2026-10-05
-    shipped: null
+    shipped: 2026-10-05
     cut: null
     by: null
 
