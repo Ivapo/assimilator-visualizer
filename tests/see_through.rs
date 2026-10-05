@@ -332,10 +332,10 @@ fn gate8_traffic_shows() {
     let o_on = box_pixels(&orbit, true);
     let c_off = box_pixels(&city_flight, false);
     let c_on = box_pixels(&city_flight, true);
-    let mut ok = within_1pct("orbit off", o_off, [59_506, 91_305, 168_189]);
-    ok &= within_1pct("orbit on", o_on, [159_502, 258_570, 387_849]);
-    ok &= within_1pct("city off", c_off, [3_928, 42_502, 90_710]);
-    ok &= within_1pct("city on", c_on, [4_719, 45_322, 99_748]);
+    let mut ok = within_1pct("orbit off", o_off, [50_587, 90_039, 128_421]);
+    ok &= within_1pct("orbit on", o_on, [145_388, 274_692, 369_219]);
+    ok &= within_1pct("city off", c_off, [4_586, 31_474, 77_443]);
+    ok &= within_1pct("city on", c_on, [9_661, 39_855, 92_676]);
     let ratio = o_on[0] as f64 / o_off[0] as f64;
     println!("gate8 orbit centre on / off: {ratio:.3}");
     assert!(ok, "a count is more than 1 % from the probe's");

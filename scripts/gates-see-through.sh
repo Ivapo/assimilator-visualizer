@@ -5,8 +5,8 @@
 #   cargo test --release --test see_through -- --include-ignored --test-threads=1 --nocapture
 # Gate 1 is scripts/gates.sh, its --camera frames compared by hand; gate 3 re-runs the
 # other test files and scripts; gate 13 is `view --bench`, recorded by hand.
-# Gate 2 compares against scratch/ref-ties-*-2b25d5e.framemd5, copied from
-# scripts/gates-ties.sh's output before Phase 3 changed any code.
+# Gate 2 compares against scratch/ref-pin90b39292-*.framemd5, made by vis-001 Phase 7
+# gate 5.
 # Offline. Needs ffmpeg/ffprobe, python3 and perl; gate 10's `view` opens a window.
 set -uo pipefail
 
@@ -52,7 +52,7 @@ print(f"{sys.argv[3]} {sys.argv[1].rsplit('/', 1)[1]} vs {sys.argv[2].rsplit('/'
 assert eq == len(a) == len(b) == 1800
 PY
 }
-ref() { echo "$ROOT/scratch/ref-ties-$1-2b25d5e.framemd5"; }
+ref() { echo "$ROOT/scratch/ref-pin90b39292-$1.framemd5"; }
 
 # ── Gate 2: `--no-see-through`, and where nothing is cut ─────────────────────
 render gate2 nost-ortho-city --buildings "$CACHE" --no-see-through

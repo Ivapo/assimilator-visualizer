@@ -67,17 +67,17 @@ read -r ROWS VEH TMIN TMAX < <(duckdb -noheader -csv -separator ' ' \
     -c "select count(*), count(distinct vehicle_id), min(time), max(time) from '$FCD'") \
     || { echo "FAIL: cannot read $FCD with duckdb"; exit 1; }
 echo "gate3 FCD: $ROWS rows, $VEH vehicles, time $TMIN … $TMAX"
-[ "$ROWS" = 280872 ] || fail "gate3 FCD rows"
+[ "$ROWS" = 202241 ] || fail "gate3 FCD rows"
 [ "$VEH" = 985 ] || fail "gate3 FCD vehicles"
 python3 -c "assert round($TMIN, 1) == 1.1 and round($TMAX, 1) == 1199.1" || fail "gate3 FCD time span"
-REF="$ROOT/scratch/midtown-2850/fcd/baseline_42.parquet"
+REF="$ROOT/scratch/midtown-2850-90b39292/fcd/baseline_42.parquet"
 if [ -f "$REF" ]; then
     read -r HERE THERE < <(duckdb -noheader -csv -separator ' ' -c "
         select (select count(*) from (select * from '$FCD' except all select * from '$REF')),
                (select count(*) from (select * from '$REF' except all select * from '$FCD'))")
-    echo "gate3 EXCEPT ALL against scratch/midtown-2850: $HERE rows only here, $THERE only there"
+    echo "gate3 EXCEPT ALL against scratch/midtown-2850-90b39292: $HERE rows only here, $THERE only there"
     if [ "$HERE" != 0 ] || [ "$THERE" != 0 ]; then
-        fail "gate3 FCD differs from scratch/midtown-2850"
+        fail "gate3 FCD differs from scratch/midtown-2850-90b39292"
         # The difference's shape: its vehicles, its time span, and which columns differ
         # on rows paired by (vehicle_id, time).
         duckdb -c "
@@ -99,7 +99,7 @@ if [ -f "$REF" ]; then
             from here h join there t using (vehicle_id, time);"
     fi
 else
-    echo "gate3: no scratch/midtown-2850, EXCEPT ALL skipped"
+    echo "gate3: no scratch/midtown-2850-90b39292, EXCEPT ALL skipped"
 fi
 
 # ── Gate 4: the extent ───────────────────────────────────────────────────────

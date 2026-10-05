@@ -211,8 +211,9 @@ cargo test --release --test ties -- --include-ignored --test-threads=1 --nocaptu
 ```
 
 `scripts/gates.sh` also compares the default render's frames with
-`scratch/ref-8eb9052.framemd5` when that file exists. That is Phase 3's gate 1: the file is
-built once from a `git archive 8eb9052` build, as the spec says.
+`scratch/ref-pin90b39292-default.framemd5` when that file exists. That is Phase 3's gate 1:
+the file is the default render's `framemd5` at the engine pin `90b39292`, made once by
+vis-001 Phase 7 gate 5, as the spec says.
 
 vis-002's gates run on a second fixture, Midtown, built from the user's own project
 (`MIDTOWN_PROJECT`, default `~/assimilator/projects/midtown-section`, read with
@@ -242,10 +243,9 @@ mirror is a copy of `scratch/overture-2026-09-23.1/building.parquet` under
 `theme=buildings/type=building_part/`.
 
 `FORCE=1 scripts/fixture.sh midtown` redoes the project and the run but keeps both fetched
-caches. The engine at the pin does not give the same Midtown traffic twice,
-so the run in `scratch/midtown` is the fixture. One check of `gates-city.sh` is a known
-miss until its cause is fixed, and prints `FAIL`: gate 3's comparison with the 2026-09-30
-run (the engine, vis-002 OQ-4).
+caches. The engine at the pin gives the same Midtown traffic on every run (vis-001
+Phase 7), so gate 3 of `gates-city.sh` compares the fixture's FCD with a second run kept in
+`scratch/midtown-2850-90b39292`.
 
 ## Map data
 
