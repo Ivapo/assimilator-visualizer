@@ -4,7 +4,9 @@
 //! With buildings (vis-002), the scene adds their mesh and the sun. With a credit line
 //! (vis-002 §2.14), a UI tree draws it in the bottom-right corner of the image, fitted
 //! to the frame's width after the settle frames. With see-through on (vis-002 §2.15), a
-//! perspective renderer redraws the buildings at each pose's heights.
+//! perspective renderer redraws the buildings at each pose's heights. With streets
+//! (vis-002 §2.17), two more meshes: the junction surfaces and median fills, and the
+//! markings, whose colours a perspective renderer fades for each pose.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -31,11 +33,12 @@ use bevy::winit::WinitPlugin;
 use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::credit;
-use crate::draw::{self, BuildingsCut, CreditNodes};
+use crate::draw::{self, BuildingsCut, CreditNodes, StreetsDrawn};
 use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
 use crate::see_through;
+use crate::streets::{self, Streets};
 
 /// One box to draw.
 #[derive(Debug, Clone, Copy)]
@@ -101,6 +104,12 @@ pub struct Renderer {
     buildings_mesh: Option<Entity>,
     /// See-through; `None` while it is off.
     cut: Option<Cut>,
+    /// The road's material, which the junction surfaces share (vis-002 §2.17.9).
+    road_mat: Handle<StandardMaterial>,
+    /// The perspective camera's pose now; `None` on the orthographic path.
+    pose: Option<Pose>,
+    /// The streets; `None` while they are off.
+    streets: Option<StreetsDrawn>,
 }
 
 impl Renderer {
@@ -225,7 +234,7 @@ impl Renderer {
         };
         world.spawn((
             Mesh3d(road_mesh),
-            MeshMaterial3d(road_mat),
+            MeshMaterial3d(road_mat.clone()),
             Transform::IDENTITY,
         ));
         let boxes = match box_mesh {
@@ -276,6 +285,9 @@ impl Renderer {
             credit,
             buildings_mesh,
             cut: None,
+            road_mat,
+            pose: pose.copied(),
+            streets: None,
         };
         // Let assets and pipelines settle before the first frame that counts.
         r.settle()?;
@@ -380,11 +392,39 @@ impl Renderer {
         }
     }
 
+    /// Streets (vis-002 §2.17.12): `Some` spawns their two meshes, the markings faded for
+    /// the orthographic `k` or the current pose, then settles again; `None` despawns them.
+    /// Off from the start, nothing is spawned.
+    pub fn set_streets(&mut self, streets: Option<&Streets>) -> Result<()> {
+        let world = self.apps.main.world_mut();
+        if let Some(old) = self.streets.take() {
+            draw::despawn_streets(world, old);
+        }
+        let Some(st) = streets else {
+            return Ok(());
+        };
+        let cam = self.camera;
+        let at = (cam.cx, cam.cy);
+        self.streets = Some(match &self.pose {
+            None => draw::spawn_streets(world, st, &self.road_mat, at, |_| cam.k),
+            Some(pose) => draw::spawn_streets(
+                world,
+                st,
+                &self.road_mat,
+                at,
+                streets::mpp_at(pose, cam.height as f64),
+            ),
+        });
+        self.settle()
+    }
+
     /// Set the perspective camera to `pose` for the next frames; nothing on the
     /// orthographic path. With see-through on, the buildings are redrawn at `pose`'s
-    /// heights when any differs from the last drawn.
+    /// heights when any differs from the last drawn; with streets, the markings are
+    /// recoloured for `pose` when any colour differs.
     pub fn set_pose(&mut self, pose: &Pose) {
         let Some(e) = self.perspective else { return };
+        self.pose = Some(*pose);
         let cam = self.camera;
         let aspect = cam.width as f64 / cam.height as f64;
         let (transform, projection) = draw::perspective(pose, cam.cx, cam.cy, aspect);
@@ -392,6 +432,9 @@ impl Renderer {
         let mut ent = world.entity_mut(e);
         *ent.get_mut::<Transform>().unwrap() = transform;
         *ent.get_mut::<Projection>().unwrap() = projection;
+        if let Some(d) = self.streets.as_mut() {
+            draw::set_street_colours(world, d, streets::mpp_at(pose, cam.height as f64));
+        }
         let (Some(mesh), Some(c)) = (self.buildings_mesh, self.cut.as_mut()) else {
             return;
         };

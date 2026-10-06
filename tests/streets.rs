@@ -16,11 +16,14 @@ use assimilator_geometry::network_json::NetworkJson;
 use assimilator_video::camera::Pose;
 use assimilator_video::motion::Piece;
 use assimilator_video::place::Placement;
+use assimilator_video::render::{Renderer, VehicleBox};
 use assimilator_video::run::{self, LoadOptions, Run};
 use assimilator_video::scene;
 use assimilator_video::streets::{
     self, DASH_M, GAP_M, Kind, LINE_M, Pair, STOP_M, Streets, WHITE, YELLOW, colour, fade, mpp_at,
 };
+use assimilator_video::view::state::Follow;
+use assimilator_video::view::{Fit, ViewInput, ViewState};
 
 type P = [f64; 2];
 /// A link's engine stop-line edges: each with its lane (`None`: the whole approach).
@@ -979,5 +982,220 @@ fn gate7_urban_grid_strips_and_boxes() {
             at_edge: 0,
             other: 0,
         },
+    );
+}
+
+// ── Gate 8: the synthetic crossing, drawn ────────────────────────────────────
+
+#[test]
+#[ignore = "renders through the GPU"]
+fn gate8_synthetic_drawn() {
+    let pl = synthetic();
+    let st = Streets::build(&pl);
+    let strips = scene::strips(&pl);
+    let cam = scene::Camera {
+        cx: 0.0,
+        cy: 0.0,
+        k: 0.05,
+        width: 1280,
+        height: 720,
+    };
+    let mut r = Renderer::new(&strips, cam, 1, None, None).unwrap();
+    let off = r.render(&[]).unwrap();
+    r.set_streets(Some(&st)).unwrap();
+    let on = r.render(&[]).unwrap();
+    let px = |f: &[u8], x: f64, y: f64| {
+        let (i, j) = cam.world_to_pixel(x, y);
+        let o = ((j.floor() as usize) * 1280 + i.floor() as usize) * 4;
+        [f[o], f[o + 1], f[o + 2]]
+    };
+    let (bg, road) = (scene::BACKGROUND, scene::ROAD);
+    // A world point, what is there, and its colour off and on.
+    type Row = (f64, f64, &'static str, [u8; 3], [u8; 3]);
+    let table: [Row; 13] = [
+        (0.0, 0.0, "the junction", bg, road),
+        (-20.0, 0.0, "the median fill", bg, road),
+        (-20.0, 0.125, "the double yellow, north", bg, YELLOW),
+        (-20.0, -0.125, "the double yellow, south", bg, YELLOW),
+        (-8.0, 3.75, "a lane-line dash", road, WHITE),
+        (-14.0, 3.75, "between dashes", road, road),
+        (-6.8, -2.0, "L_WC's stop line", road, WHITE),
+        (6.8, 5.5, "L_EC lane 1's stop line", road, WHITE),
+        (6.8, 2.0, "L_EC lane 0 at the edge", road, road),
+        (11.8, 2.0, "L_EC lane 0's line, 5 m back", road, WHITE),
+        (0.0, 12.5, "the one-way's dash", road, WHITE),
+        (0.0, 16.0, "the one-way's gap", road, road),
+        (3.3, 14.0, "the one-way's left edge", road, road),
+    ];
+    for (x, y, what, want_off, want_on) in table {
+        let (a, b) = (px(&off, x, y), px(&on, x, y));
+        println!("gate 8 ({x}, {y}) {what}: off {a:?} on {b:?}");
+        assert_eq!((a, b), (want_off, want_on), "({x}, {y}) {what}");
+    }
+    let changed = off
+        .chunks(4)
+        .zip(on.chunks(4))
+        .filter(|(a, b)| a != b)
+        .count();
+    let white = on.chunks(4).filter(|p| p[..3] == WHITE).count();
+    let yellow = on.chunks(4).filter(|p| p[..3] == YELLOW).count();
+    let mut yellowish = 0;
+    for (i, p) in on.chunks(4).enumerate() {
+        let (x, y) = (
+            ((i % 1280) as f64 + 0.5 - 640.0) * 0.05,
+            -((i / 1280) as f64 + 0.5 - 360.0) * 0.05,
+        );
+        if x.abs() < 8.0 && y.abs() > 9.0 && p[0] as i32 - p[2] as i32 > 40 {
+            yellowish += 1;
+        }
+    }
+    println!(
+        "gate 8: {changed} pixels change; {white} white, {yellow} yellow; {yellowish} yellowish on the one-way's arms"
+    );
+    assert_eq!(
+        (changed, white, yellow, yellowish),
+        (112_608, 6_316, 6_120, 0)
+    );
+}
+
+// ── Gate 12: `M`, headless ───────────────────────────────────────────────────
+
+const W: f64 = 1280.0;
+const H: f64 = 720.0;
+const DT: f64 = 1.0 / 60.0;
+
+/// vis-001 Phase 3's `plain_state`: `[0, 300]`, centre (0, 0), `k` = 1, 1280×720.
+fn plain_state() -> ViewState {
+    let fit = Fit {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        rect: (-1e4, -1e4, 1e4, 1e4),
+        size: (W, H),
+    };
+    ViewState::new(0.0, 300.0, vec![], fit)
+}
+
+fn at(c: (f64, f64)) -> ViewInput {
+    ViewInput {
+        cursor: Some(c),
+        pointer: Some(c),
+        size: (W, H),
+        dt: DT,
+        ..Default::default()
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+/// `input` with `m` pressed flips the flag and does exactly what `input` alone does.
+fn step_m(s: &mut ViewState, input: ViewInput) {
+    let mut without = s.clone();
+    let line = without.frame(&input, no_boxes);
+    let before = s.streets_shown;
+    let mut with_m = input;
+    with_m.pressed.m = true;
+    assert_eq!(s.frame(&with_m, no_boxes), line, "the keyframe line");
+    assert_eq!(s.streets_shown, !before, "m flips the flag");
+    let mut flipped_back = s.clone();
+    flipped_back.streets_shown = before;
+    assert_eq!(flipped_back, without, "m changes nothing else");
+}
+
+fn step(s: &mut ViewState, input: ViewInput) {
+    let before = s.streets_shown;
+    s.frame(&input, no_boxes);
+    assert_eq!(s.streets_shown, before, "only m flips the flag");
+}
+
+#[test]
+fn gate12_m() {
+    let mut s = plain_state();
+    assert!(!s.streets_shown, "off at new");
+    let (buildings, see_through) = (s.buildings_shown, s.see_through);
+    step_m(&mut s, at((640.0, 360.0)));
+    assert!(s.streets_shown);
+    step_m(&mut s, at((640.0, 360.0)));
+    assert!(!s.streets_shown);
+
+    // Playing, following, with K pressed in the same frame.
+    s.playing = true;
+    s.follow = Some(Follow {
+        vehicle_id: 7,
+        drawn: false,
+    });
+    let mut k = at((640.0, 360.0));
+    k.pressed.k = true;
+    step_m(&mut s, k);
+    step_m(&mut s, at((640.0, 360.0)));
+    s.playing = false;
+    s.follow = None;
+
+    // A right-button orbit.
+    step(
+        &mut s,
+        ViewInput {
+            right_press: true,
+            ..at((640.0, 360.0))
+        },
+    );
+    assert!(s.orbit.is_some());
+    step_m(&mut s, at((700.0, 330.0)));
+    assert!(s.orbit.is_some(), "the orbit goes on");
+    step(
+        &mut s,
+        ViewInput {
+            right_release: true,
+            ..at((700.0, 330.0))
+        },
+    );
+    assert!(s.orbit.is_none());
+
+    // A left drag.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((400.0, 300.0))
+        },
+    );
+    step_m(&mut s, at((460.0, 340.0)));
+    assert!(s.press.is_some(), "the drag goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((460.0, 340.0))
+        },
+    );
+
+    // A scrub.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((640.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_some());
+    step_m(&mut s, at((300.0, 706.0)));
+    assert!(s.scrub.is_some(), "the scrub goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((300.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_none());
+    assert_eq!(
+        (s.buildings_shown, s.see_through),
+        (buildings, see_through),
+        "m never touches buildings_shown or see_through"
+    );
+    println!(
+        "gate 12: m flips streets_shown and nothing else, through an orbit, a drag and a scrub: PASS"
     );
 }

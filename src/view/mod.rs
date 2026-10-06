@@ -4,6 +4,8 @@
 //! pose (§2.11), the shaded boxes at `t`, the readout and the time slider (§2.10). With
 //! `--buildings` (vis-002 §2.8), the buildings and the sun, shown or hidden by `B`, with
 //! the buildings in the way cut to stubs while see-through is on (§2.15.6), flipped by `X`.
+//! Streets (vis-002 §2.17) are drawn on every network, shown or hidden by `M`, their
+//! markings faded for the pose while shown.
 
 pub mod slider;
 pub mod state;
@@ -20,6 +22,7 @@ use crate::buildings::Buildings;
 use crate::draw::{self, BuildingsCut};
 use crate::run::{self, LoadOptions, Run};
 use crate::see_through;
+use crate::streets::{self, Streets};
 pub use state::{Fit, ViewInput, ViewState};
 
 /// What `view` needs, after CLI parsing.
@@ -30,6 +33,8 @@ pub struct ViewOptions {
     pub buildings: Option<std::path::PathBuf>,
     /// See-through at launch (vis-002 §2.15.6): true unless `--no-see-through`.
     pub see_through: bool,
+    /// Streets shown at launch (vis-002 §2.17.12): true unless `--no-streets`.
+    pub streets: bool,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -50,6 +55,8 @@ struct Viewer {
     camera: Entity,
     /// The buildings, their mesh and sun; `None` without `--buildings`.
     buildings: Option<ViewBuildings>,
+    /// The streets, built at launch on every network; shown while `streets_shown`.
+    streets: draw::StreetsDrawn,
     readout: Entity,
     bar: BarNodes,
     bench: Option<Bench>,
@@ -115,6 +122,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     let snaps = run.fcd.snapshots.iter().map(|s| s.time).collect();
     let mut state = ViewState::new(run.from, run.to, snaps, fit);
     state.see_through = o.see_through;
+    state.streets_shown = o.streets;
     if o.bench.is_some() {
         state.t = BENCH_T.clamp(state.from, state.to);
         state.playing = true;
@@ -146,9 +154,24 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         .id();
     world.spawn((
         Mesh3d(road_mesh),
-        MeshMaterial3d(road_mat),
+        MeshMaterial3d(road_mat.clone()),
         Transform::IDENTITY,
     ));
+    let streets = draw::spawn_streets(
+        world,
+        &Streets::build(&run.placement),
+        &road_mat,
+        (fit.cx, fit.cy),
+        streets::mpp_at(&state.pose(), state.size.1),
+    );
+    let shown = if state.streets_shown {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    for e in streets.entities() {
+        *world.entity_mut(e).get_mut::<Visibility>().unwrap() = shown;
+    }
     let boxes = draw::spawn_boxes(world);
     let buildings = buildings.map(|b| ViewBuildings {
         entities: draw::spawn_buildings(world, &b, (fit.cx, fit.cy)),
@@ -182,6 +205,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         boxes,
         camera,
         buildings,
+        streets,
         readout,
         bar,
         bench: o.bench.map(|secs| Bench {
@@ -251,6 +275,7 @@ fn input(world: &mut World) -> ViewInput {
             f: keys.just_pressed(KeyCode::KeyF),
             b: keys.just_pressed(KeyCode::KeyB),
             x: keys.just_pressed(KeyCode::KeyX),
+            m: keys.just_pressed(KeyCode::KeyM),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -321,6 +346,28 @@ fn frame(world: &mut World) {
                 draw::set_building_heights(world, b.entities.mesh, cut, &heights);
                 b.drawn = heights;
             }
+        }
+        // Streets (vis-002 §2.17.12): shown or hidden by `M`; while shown, the markings'
+        // colours follow the pose, replaced when one changes and on every frame of
+        // `--bench`.
+        let want = if s.streets_shown {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        for e in v.streets.entities().collect::<Vec<_>>() {
+            let mut ent = world.entity_mut(e);
+            let mut vis = ent.get_mut::<Visibility>().unwrap();
+            if *vis != want {
+                *vis = want;
+            }
+        }
+        if s.streets_shown {
+            if v.bench.is_some() {
+                v.streets.force();
+            }
+            let mpp = streets::mpp_at(&s.pose(), s.size.1);
+            draw::set_street_colours(world, &mut v.streets, mpp);
         }
         let text = s.readout();
         let mut ent = world.entity_mut(v.readout);
