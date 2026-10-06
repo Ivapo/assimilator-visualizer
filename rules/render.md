@@ -13,7 +13,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-10-03
+generated: 2026-10-06
 ---
 
 # Render
@@ -23,7 +23,7 @@ generated: 2026-10-03
 ## CLI
 `assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
 [--results] [--fcd] [--from] [--to] [--speedup] [--fps 30] [--width 1920] [--height 1080]
-[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through]`.
+[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through] [--no-streets]`.
 - Width and height must be even. Stderr: one `{"frame": n, "of": N}` per frame, then `{"done": "<out>"}`.
 - On error, one `error: …` line and exit 1; a clap usage error exits 2 with its first line.
 - No logger: Bevy's `bevy_log` feature is off, so neither Bevy nor wgpu prints.
@@ -33,10 +33,10 @@ generated: 2026-10-03
 - Frame `n` (from 0) shows `from + n · speedup / fps`, never wall-clock time.
 
 ## Scene (built by `src/draw.rs`, shared with `view`: `rules/view.md`)
-- **Roads.** One flat mesh at height 0, in the network's link order. Each link is a strip
-  `total_width` wide. Its centreline is sampled with `interpolate_with_lateral(link, s,
-  0.0)` at `s = L·i/n`, `n = ceil(L / 1 m)`, and the edges are offset along the right
-  normal `(cos h, −sin h)`.
+- **Roads.** One flat mesh at height 0, in link order: each link a strip `total_width`
+  wide, its centreline sampled with `interpolate_with_lateral(link, s, 0.0)` at `s = L·i/n`,
+  `n = ceil(L / 1 m)`, edges offset along the right normal `(cos h, −sin h)`. Streets
+  (junctions, median fills, markings) are drawn over them unless `--no-streets` (`rules/streets.md`).
 - **Road material** is unlit and not culled. **Vehicles** in `vehicle_id` order (where:
   `rules/motion.md`): a pool of unit cuboids orthographic, one shaded mesh in perspective.
   - Each box is length × 1.8 m × 1.5 m on the placed point, lifted 0.01 m per rank (0.001 m
@@ -66,9 +66,9 @@ generated: 2026-10-03
   until the observer has the lossless readback (≤ 200 updates): `W·H·4` bytes, top row first.
 - `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate):
   size, fps, speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings,
-  the credit line (`prepare_without_credit`: none), see-through off (`set_see_through`). Gates: `render_frame(n)`,
-  `render_at(t)`, `render_empty()`, `camera()`/`k()` (the fit), `pose_at(t)`, `boxes_at(t)`,
-  `buildings()`, `motion_report()`, `credit()`, `credit_size()` and `credit_box()`.
+  the credit line (`prepare_without_credit`: none); see-through and streets off (`set_streets`
+  spawns them and settles again). Gates: `render_frame(n)`, `render_at(t)`, `render_empty()`,
+  `camera()`/`k()`, `pose_at(t)`, `boxes_at(t)`, `buildings()`, `motion_report()`, `credit*()`.
 
 ## Output
 - `ffmpeg -f rawvideo -pix_fmt rgba -s WxH -r fps -i - -c:v libx264 -pix_fmt yuv420p

@@ -12,7 +12,7 @@ covers: >
   and following, the readout, the keyframe line and the hidden `--bench`. The time
   slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.
 max_lines: 60
-generated: 2026-10-03
+generated: 2026-10-06
 ---
 
 # View
@@ -21,7 +21,7 @@ generated: 2026-10-03
 
 ## CLI
 `assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd]
-[--from] [--to] [--width 1280] [--height 720] [--buildings <file>] [--no-see-through]`.
+[--from] [--to] [--width 1280] [--height 720] [--buildings <file>] [--no-see-through] [--no-streets]`.
 - `run::load` runs `render`'s checks after width and height, then `--buildings`'s, before
   any `App` is built; no ffmpeg. An error is one `error: …` line, exit 1, no window.
 - Stdout carries only keyframe lines, one per `K`, flushed. Stderr carries only the
@@ -32,12 +32,12 @@ generated: 2026-10-03
   frame times, prints `{"frames", "mean_fps", "median_ms", "p99_ms", "worst_ms"}`, exits 0.
 
 ## Drawing (`src/draw.rs`, shared with `render`)
-- The road mesh and the boxes' one mesh (`draw::set_boxes` each frame, 0.001 m lift) are
-  baked relative to the launch fit's centre `(fx, fy)`. The camera is perspective at the
-  state's pose (`height_m = H·k`), set every frame by `draw::perspective`.
-- The readout is a 14 px white UI text line at left 16, bottom 30, just above the slider.
-- `--buildings` adds their mesh and sun; `B` hides and shows them (`rules/buildings.md`). Those
-  in the way are cut to stubs from launch unless `--no-see-through`; `X` flips it (`rules/see-through.md`).
+- The road mesh, the streets and the boxes' one mesh (`draw::set_boxes`, 0.001 m lift) are
+  baked about the launch fit's centre `(fx, fy)`; the perspective camera is at the state's
+  pose (`height_m = H·k`), set every frame. Readout: 14 px white text at left 16, bottom 30.
+- Streets on every network, shown unless `--no-streets`; `M` flips them (`rules/streets.md`).
+  `--buildings`: their mesh and sun, `B` hides and shows them (`rules/buildings.md`); those in
+  the way cut to stubs unless `--no-see-through`, `X` flips it (`rules/see-through.md`).
 
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
@@ -68,7 +68,7 @@ generated: 2026-10-03
 - Following sets the centre to the vehicle's placed point each frame it is drawn. When it
   is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops
   it; an orbit or a key step does not.
-- Frame order: bar press; clock; scrub; `Esc`; `B`; `X`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
+- Frame order: bar press; clock; scrub; `Esc`; `B`; `X`; `M`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`
