@@ -2598,11 +2598,21 @@ dated notes in place instead (step 1's third bullet): §2.17.1's decisions 3, 8 
 and OQ-18. Step 2: vis-002 owns the scene around the traffic and its roadmap names the
 item, so the new work is a phase appended here (decision 1). vis-001 is not edited.
 
-The rest of this section is the draft's proposal. It settles:
+Decided by the user, 2026-10-08, on the draft, before review (the answer to OQ-20, and a
+call on the draft):
+4. **The colours are the dark palette at the dashboard's opacities, composited over our
+   road** (OQ-20's (a), §2.18.4).
+5. **A median gap stays as drafted** (§2.18.3). The user saw the two other ways, the gap
+   as the dashboard shows it (dark, with rounded noses) and the grey fill with one engine
+   yellow line down it, and keeps the draft: the grey fill stays (decision 3), a pair
+   with a gap shows no line between its directions, and the centre line is drawn only
+   where the gap is 0, as the engine draws it.
+
+The rest of this section is the draft's proposal, with OQ-20 now decided. It settles:
 - drawing `NetworkJson`'s shapes directly, not rebuilding them, and its cost and order
   (§2.18.2);
 - what is drawn and what is not (§2.18.3);
-- the colours (§2.18.4, OQ-20);
+- the colours (§2.18.4, OQ-20, answered (a));
 - the arrow glyphs (§2.18.5);
 - the stop lines, kept per `(link, lane)` (§2.18.6), and where the first vehicle now stops
   (§2.18.7);
@@ -2711,8 +2721,11 @@ a network needs them (§2.18.13).
 shows the gap itself, dark, with rounded noses. Here the gap stays filled with the road's
 grey (decision 3, Phase 5's decision 5), so **a pair with a gap shows no line between its
 two directions**. That is 26 of Midtown's pairs and all 24 of urban_grid's. Phase 5 drew a
-double yellow line on each. OQ-18's yellow part is replaced (its dated note), and gate 15
-shows it.
+double yellow line on each. OQ-18's yellow part is replaced (its dated note), and gate 14
+shows it. *(2026-10-08, user)* Kept as drafted, after seeing the dashboard's dark gap with
+rounded noses and the grey fill with one engine yellow line down it (§2.18.1, decision 5):
+the fill stays, a pair with a gap shows no line, and the centre line is drawn only where
+the gap is 0.
 
 **The movements behind the arrows:**
 
@@ -2765,7 +2778,8 @@ road under them:
   that is the look decided (decision 2).
 
 The road keeps its grey (§2.17.3: the strips do not change, and decision 3 keeps the
-junction surfaces and fills in it). The alternatives are OQ-20's.
+junction surfaces and fills in it). The alternatives are OQ-20's. *(2026-10-08, user)*
+OQ-20 is answered (a), as drafted (§2.18.1, decision 4).
 
 #### 2.18.5 The arrow glyphs
 
@@ -3501,7 +3515,7 @@ vertex, where the scope keeps a constant table; and its `Kind` names differ (`Me
     and do not change.
   - *(2026-10-08, user, at Phase 5's gate 15)* Stands: gate 15 passed, and nothing drawn
     changes.
-- **OQ-20** — Which colours do the engine's markings take here (§2.18.4)? **OPEN.**
+- **OQ-20** — Which colours do the engine's markings take here (§2.18.4)? **RESOLVED.**
   - *The facts:* the dashboard has two palettes, `dark` (its default) and `light`, which
     differ only in the centre line and the dead-end bar. It paints each marking with an
     opacity (0.5 lane dashes, 0.7 centre line, 0.9 stop lines, 0.6 arrows, 0.85 dead-end
@@ -3521,8 +3535,11 @@ vertex, where the scope keeps a constant table; and its `Kind` names differ (`Me
       2–5 m/s boxes' (244, 132, 45), and the bar (201, 47, 48).
   - *Recommendation:* (a). It keeps the look the dashboard gives against its road, on
     ours, and it is what the probe drew (§2.18.15).
-  - *(design call: the user; blocks the colours in gates 5, 8 and 9 and gate 14's
-    descriptions. Every count, position, mesh size and gate 7 hold either way.)*
+  - ~~*(design call: the user; blocks the colours in gates 5, 8 and 9 and gate 14's
+    descriptions. Every count, position, mesh size and gate 7 hold either way.)*~~
+  - *(answered 2026-10-08, user, before review)* **(a): the dark palette at the
+    dashboard's opacities, over our road.** Recorded as §2.18.1's decision 4 and §2.18.4.
+    Gates 5, 8, 9 and 14 were predicted with (a) and do not change.
 
 ## 4. Implementation phases
 
@@ -5351,8 +5368,9 @@ where they are under a pixel, over Phase 5's junction surfaces and median fills.
 Drafted 2026-10-08; the design is §2.18, and the user's decisions are §2.18.1. Phase 6
 builds on Phase 5 (shipped 2026-10-08) at engine `90b39292`. With `--no-streets` it changes
 no output. With streets on it changes only the markings mesh: no box, building, camera,
-credit line, road strip, junction surface or median fill. OQ-20 (the colours) is open;
-the scope and gates below are drafted with its recommendation, (a).
+credit line, road strip, junction surface or median fill. OQ-20 (the colours) is answered
+(a), and the median gaps stay as drafted (§2.18.1, decisions 4 and 5), as the scope and
+gates below were drafted.
 
 - **Scope:**
   - **The streets (`src/streets.rs`; no Bevy types).**
@@ -5666,9 +5684,12 @@ the scope and gates below are drafted with its recommendation, (a).
         (`α` 0.07), and no dash or arrow; scrolling in over a street, dashes, bars and
         arrows fade in smoothly; `M` hides the streets and shows them; `view --no-streets`
         opens as today, and `M` shows them.
+      - **In every video, decided and watched** (§2.18.1, decision 5): a two-way street
+        with a median gap shows grey between its two directions and no line; an amber
+        centre line shows only on the few two-way streets with no gap (three in Midtown,
+        none in urban_grid).
 
-      Then say whether OQ-20's answer stands as it looks, and whether a pair with a gap
-      should show anything between its directions (it shows none: §2.18.3).
+      Then say whether OQ-20's colours stand as they look (iteration, §2.18.4).
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
@@ -5687,7 +5708,7 @@ the scope and gates below are drafted with its recommendation, (a).
   | Copied values at their lines | each holds | 11 |
   | `view --bench` with streets and buildings | ≥ 30 fps | 13 |
 - **Not predicted, and so not gated:**
-  - the look: OQ-20's colours, the arrows' size on screen, the fade's widths, for the
+  - the look: the colours (OQ-20, answered (a)), the arrows' size on screen, the fade's widths, for the
     user at gate 14;
   - render times (gate 12), and `view`'s frame rate above 30 (gate 13).
 - **Close-out (standing plan steps, the methodology's §3):**
