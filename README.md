@@ -13,14 +13,15 @@ vis-002 (`specs/city_spec.md`) Phase 1 puts the real buildings around an importe
 network: Overture footprints, fetched once into a cache and drawn as grey, sunlit blocks.
 Its Phase 2 draws the data's credit line in the corner of every frame of an imported
 network's video. Its Phase 3 cuts the buildings between the camera and the point it looks
-at down to stubs, so the traffic there shows.
+at down to stubs, so the traffic there shows. Its Phase 5 draws the streets: junctions
+filled in grey, and US road markings.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
                          [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                          [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
                          [--camera <file.toml>] [--buildings <file.geojson>]
-                         [--no-see-through]
+                         [--no-see-through] [--no-streets]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -43,6 +44,15 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   at full height, the video as before Phase 3. It is accepted, with no effect, where
   nothing is cut: the orthographic render, which is never cut, and a render without
   buildings.
+- **Streets.** Every network's roads are drawn as streets by default: each junction is
+  filled in the road's grey, the gap between a two-way street's halves is filled too, and
+  the markings are US ones: white broken lines between lanes (3 m every 12 m), a white stop
+  line across each lane where the engine stops traffic at a signal, and a double yellow
+  line down the middle of every two-way street (two, one inside each edge, on a median
+  1 m or wider). A line narrower than half a pixel on screen fades into the road's grey,
+  and is gone under a tenth of a pixel, so a far or high camera shows no speckle; it fades
+  back in smoothly as the camera comes closer. `--no-streets` draws the plain strips, the
+  video exactly as before Phase 5.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
   bottom-right corner of every frame, with or without `--buildings`, crediting its data
   (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
@@ -123,7 +133,7 @@ scripts/fetch-buildings.sh --project <dir> --out <dir>/buildings.geojson
 assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                        [--width <px>] [--height <px>] [--buildings <file.geojson>]
-                       [--no-see-through]
+                       [--no-see-through] [--no-streets]
 ```
 
 `view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
@@ -153,6 +163,7 @@ and framings worth rendering.
 | `K` | print the camera as a keyframe line on stdout |
 | `B` | hide / show the buildings (with `--buildings`) |
 | `X` | see-through on / off: buildings in the way cut to stubs (on at launch with `--buildings`, unless `--no-see-through`) |
+| `M` | hide / show the streets (shown at launch, unless `--no-streets`) |
 
 The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
 with a handle at the current time and a tick at each whole minute (thinned on long runs).
@@ -232,7 +243,14 @@ scripts/gates-see-through.sh      # Phase 3 gates 2, 7, 10 (CLI) and the gate 14
 cargo test --release --test see_through -- --include-ignored --test-threads=1   # Phase 3 gates 5, 6, 8, 9, 11
 scripts/gates-parts.sh            # Phase 4 gates 2, 5, 9, 11 (CLI) and the gate 15 renders, offline
 cargo test --release --test parts -- --include-ignored --test-threads=1 --nocapture       # Phase 4 gates 6–8, 10–12
+scripts/gates-streets.sh          # Phase 5 gates 10, 11 and the gate 15 renders, offline
+cargo test --release --test streets -- --include-ignored --test-threads=1 --nocapture     # Phase 5 gates 5–9, 12
 ```
+
+Streets are on by default, so the renders that `scripts/gates.sh`, `gates-ties.sh`,
+`gates-see-through.sh` and `gates-parts.sh` compare with a `ref-pin90b39292` file pass
+`--no-streets`; the renders compared only with each other (`gates-ties.sh`'s gate 9,
+`gates-city.sh` and `gates-credit.sh`) draw streets.
 
 `scripts/fixture.sh midtown` fetches two caches: `buildings.geojson` with `--no-parts`,
 which the gates of Phases 1–3 read, and `buildings-parts.geojson` with parts. Both are

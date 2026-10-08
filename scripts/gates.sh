@@ -11,6 +11,7 @@
 #   cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture
 # Phase 5 (3D camera): gate 10, the keyframed render, is below; gates 4–9, 11 and 12 are
 #   cargo test --release --test camera -- --include-ignored --test-threads=1 --nocapture
+# vis-002 Phase 5: the renders compared with a reference pass --no-streets.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -62,7 +63,7 @@ s = d / min(max(d, 30.0), 300.0)
 print(math.ceil(d * 30 / s - 1e-6))")
 echo "gate1 formula: FCD time $T_MIN … $T_MAX, D = $(python3 -c "print($T_MAX - $T_MIN)"), N = $N_DEFAULT"
 t0=$(date +%s)
-render default || fail "gate1 default render exited $?"
+render default --no-streets || fail "gate1 default render exited $?"
 dt=$(( $(date +%s) - t0 ))
 echo "gate1 default: rendered $N_DEFAULT frames in $dt s ($(python3 -c "print(round($N_DEFAULT / max($dt, 1), 1))") frames/s)"
 check_video default 1920 1080 30 "$N_DEFAULT"
@@ -73,7 +74,7 @@ render explicit --from 60 --to 120 --speedup 2 --fps 24 --width 1280 --height 72
 check_video explicit 1280 720 24 720
 
 # Gate 2 — the same inputs twice give the same decoded frames.
-render default2 || fail "gate2 second render exited $?"
+render default2 --no-streets || fail "gate2 second render exited $?"
 # No stale hash file can be compared: delete both first, and -y in case one reappears.
 rm -f "$OUT/default.framemd5" "$OUT/default2.framemd5"
 ffmpeg -y -v error -i "$OUT/default.mp4" -f framemd5 "$OUT/default.framemd5"
@@ -103,11 +104,11 @@ fi
 # Phase 5 gate 10 — a keyframed render (vis-001 §2.11.5): the defaults with
 # --camera tests/flight.toml, twice; the frames of both runs must be equal.
 t0=$(date +%s)
-render camera --camera "$ROOT/tests/flight.toml" || fail "phase5 gate10 render exited $?"
+render camera --camera "$ROOT/tests/flight.toml" --no-streets || fail "phase5 gate10 render exited $?"
 dt=$(( $(date +%s) - t0 ))
 echo "phase5 gate10: rendered $N_DEFAULT frames with --camera in $dt s"
 check_video camera 1920 1080 30 "$N_DEFAULT"
-render camera2 --camera "$ROOT/tests/flight.toml" || fail "phase5 gate10 second render exited $?"
+render camera2 --camera "$ROOT/tests/flight.toml" --no-streets || fail "phase5 gate10 second render exited $?"
 rm -f "$OUT/camera.framemd5" "$OUT/camera2.framemd5"
 ffmpeg -y -v error -i "$OUT/camera.mp4" -f framemd5 "$OUT/camera.framemd5"
 ffmpeg -y -v error -i "$OUT/camera2.mp4" -f framemd5 "$OUT/camera2.framemd5"

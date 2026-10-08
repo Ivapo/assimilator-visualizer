@@ -6,6 +6,7 @@
 # Gate 2 compares against scratch/ref-pin90b39292-ortho-{city,roads}.framemd5, made by
 # vis-001 Phase 7 gate 5.
 # Offline. Needs ffmpeg/ffprobe and python3.
+# vis-002 Phase 5: the renders compared with a reference pass --no-streets.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,9 +47,9 @@ PY
 }
 
 # ── Gate 2: the orthographic render, unchanged ───────────────────────────────
-render gate2 ortho-city --buildings "$CACHE"
+render gate2 ortho-city --buildings "$CACHE" --no-streets
 same gate2 "$ROOT/scratch/ref-pin90b39292-ortho-city.framemd5" "$OUT/ortho-city.framemd5"
-render gate2 ortho-roads
+render gate2 ortho-roads --no-streets
 same gate2 "$ROOT/scratch/ref-pin90b39292-ortho-roads.framemd5" "$OUT/ortho-roads.framemd5"
 
 # ── Gate 9: Midtown's flight, deterministic ──────────────────────────────────

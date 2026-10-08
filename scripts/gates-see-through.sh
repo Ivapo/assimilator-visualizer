@@ -8,6 +8,7 @@
 # Gate 2 compares against scratch/ref-pin90b39292-*.framemd5, made by vis-001 Phase 7
 # gate 5.
 # Offline. Needs ffmpeg/ffprobe, python3 and perl; gate 10's `view` opens a window.
+# vis-002 Phase 5: the renders compared with a reference pass --no-streets.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,29 +56,29 @@ PY
 ref() { echo "$ROOT/scratch/ref-pin90b39292-$1.framemd5"; }
 
 # ── Gate 2: `--no-see-through`, and where nothing is cut ─────────────────────
-render gate2 nost-ortho-city --buildings "$CACHE" --no-see-through
+render gate2 nost-ortho-city --buildings "$CACHE" --no-see-through --no-streets
 same gate2 "$(ref ortho-city)" "$OUT/nost-ortho-city.framemd5"
-render gate2 nost-ortho-roads --no-see-through
+render gate2 nost-ortho-roads --no-see-through --no-streets
 same gate2 "$(ref ortho-roads)" "$OUT/nost-ortho-roads.framemd5"
-render gate2 see-through-city-off --buildings "$CACHE" --camera "$CITY" --no-see-through
+render gate2 see-through-city-off --buildings "$CACHE" --camera "$CITY" --no-see-through --no-streets
 same gate2 "$(ref flight-city1)" "$OUT/see-through-city-off.framemd5"
-render gate2 nost-flight-roads --camera "$CITY" --no-see-through
+render gate2 nost-flight-roads --camera "$CITY" --no-see-through --no-streets
 same gate2 "$(ref flight-roads1)" "$OUT/nost-flight-roads.framemd5"
-render gate2 default-ortho-city --buildings "$CACHE"
+render gate2 default-ortho-city --buildings "$CACHE" --no-streets
 same gate2 "$(ref ortho-city)" "$OUT/default-ortho-city.framemd5"
-render gate2 default-ortho-roads
+render gate2 default-ortho-roads --no-streets
 same gate2 "$(ref ortho-roads)" "$OUT/default-ortho-roads.framemd5"
-render gate2 default-flight-roads --camera "$CITY"
+render gate2 default-flight-roads --camera "$CITY" --no-streets
 same gate2 "$(ref flight-roads1)" "$OUT/default-flight-roads.framemd5"
 
 # ── Gates 7 and 12: Midtown cut, deterministic; render times ─────────────────
-render gate7 see-through-city-on1 --buildings "$CACHE" --camera "$CITY"
-render gate7 see-through-city-on2 --buildings "$CACHE" --camera "$CITY"
+render gate7 see-through-city-on1 --buildings "$CACHE" --camera "$CITY" --no-streets
+render gate7 see-through-city-on2 --buildings "$CACHE" --camera "$CITY" --no-streets
 same gate7 "$OUT/see-through-city-on1.framemd5" "$OUT/see-through-city-on2.framemd5"
-render gate7 see-through-orbit-on1 --buildings "$CACHE" --camera "$ORBIT"
-render gate7 see-through-orbit-on2 --buildings "$CACHE" --camera "$ORBIT"
+render gate7 see-through-orbit-on1 --buildings "$CACHE" --camera "$ORBIT" --no-streets
+render gate7 see-through-orbit-on2 --buildings "$CACHE" --camera "$ORBIT" --no-streets
 same gate7 "$OUT/see-through-orbit-on1.framemd5" "$OUT/see-through-orbit-on2.framemd5"
-render gate7 see-through-orbit-off --buildings "$CACHE" --camera "$ORBIT" --no-see-through
+render gate7 see-through-orbit-off --buildings "$CACHE" --camera "$ORBIT" --no-see-through --no-streets
 python3 - "$OUT/see-through-city-on1.framemd5" "$OUT/see-through-city-off.framemd5" \
     "$OUT/see-through-orbit-on1.framemd5" "$OUT/see-through-orbit-off.framemd5" <<'PY'
 import sys

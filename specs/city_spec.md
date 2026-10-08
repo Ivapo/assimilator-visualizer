@@ -40,7 +40,7 @@ phases:
     by: null
   - name: "Phase 5 — Streets: junction surfaces, lane lines, stop lines and the yellow centre line, by default"
     reviewed: 2026-10-05
-    shipped: null
+    shipped: 2026-10-08
     cut: null
     by: null
 
@@ -717,6 +717,15 @@ constraint.
   states need stop lines to be drawn at.
   *(2026-10-05)* Drafted as **Phase 5** (§2.17), after vis-001 Phase 7. The user's
   decisions are §2.17.1: no crosswalks, curbs or sidewalks; US markings; on by default.
+- **Engine look + lane arrows** *(user, 2026-10-08)*. Draw the road markings as the
+  engine's own UI does: `NetworkJson` (`crates/geometry/src/network_json.rs`) for shapes
+  and places, its web front end (`web/src/canvas/networkRenderer.ts`) for colours and the
+  arrow glyphs. That means one 0.15 m yellow centre line, its dashes (2.5 m every 6.5 m),
+  0.4 m stop lines, so the first stopped box shows the engine's 0.2 m gap
+  (`STOP_LINE_STANDOFF` 0.6 m), stop lines also at the unsignalised approaches it marks,
+  and its lane arrows (`lane_arrows`). Kept from Phase 5: the junction surfaces, the
+  median fills, the fade, the default, `--no-streets` and `M`. Phase 5's US set stands
+  until then. Next item, before data.
 - **Vehicle shapes** *(added 2026-10-03, agreed by the user)*: a shape per FCD
   `vehicle_class`, after vis-001's data item. Midtown's 985 vehicles are all `car`
   (counted 2026-10-03).
@@ -2930,6 +2939,8 @@ holds:
     filled with the road's grey; under 1 m one double yellow line in its middle, 1 m or
     more a double yellow line inside each edge. Recorded as §2.17.1's answers and
     §2.17.5. Gates 5, 6 and 8 were predicted with (a) and do not change.
+  - *(2026-10-08, user, at Phase 5's gate 15)* Stands: gate 15 passed, and nothing drawn
+    changes.
 - **OQ-19** — How are markings drawn where they are under a pixel (§2.17.10)? **RESOLVED.**
   - *The facts:* a 0.15 m line is 0.09 px wide in Midtown's orthographic frame, 0.06 px
     in `view`'s launch fit, and 0.09–0.54 px through the city flight. Drawn at true
@@ -2957,6 +2968,8 @@ holds:
     blends from the road's grey under 0.1 px to its own from 0.5 px, opaque, per pose.
     Recorded as §2.17.1's answers and §2.17.10. Gates 9, 13 and 14 were predicted with (a)
     and do not change.
+  - *(2026-10-08, user, at Phase 5's gate 15)* Stands: gate 15 passed, and nothing drawn
+    changes.
 
 ## 4. Implementation phases
 

@@ -12,6 +12,7 @@
 # buildings.geojson is not today's cache after it. Gate 2 compares against
 # scratch/ref-pin90b39292-*.framemd5, made by vis-001 Phase 7 gate 5.
 # Offline. Needs duckdb, ffmpeg/ffprobe and python3.
+# vis-002 Phase 5: the renders compared with a reference pass --no-streets.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -150,26 +151,26 @@ PY
 ref() { echo "$ROOT/scratch/ref-pin90b39292-$1.framemd5"; }
 
 # ── Gate 2: Midtown with today's cache, byte-identical ───────────────────────
-render gate2 today-ortho-city --buildings "$TODAY"
+render gate2 today-ortho-city --buildings "$TODAY" --no-streets
 same gate2 "$(ref ortho-city)" "$OUT/today-ortho-city.framemd5"
-render gate2 today-city-on --buildings "$TODAY" --camera "$CITY"
+render gate2 today-city-on --buildings "$TODAY" --camera "$CITY" --no-streets
 same gate2 "$(ref city-on)" "$OUT/today-city-on.framemd5"
-render gate2 today-city-off --buildings "$TODAY" --camera "$CITY" --no-see-through
+render gate2 today-city-off --buildings "$TODAY" --camera "$CITY" --no-see-through --no-streets
 same gate2 "$(ref city-off)" "$OUT/today-city-off.framemd5"
-render gate2 today-orbit-on --buildings "$TODAY" --camera "$ORBIT"
+render gate2 today-orbit-on --buildings "$TODAY" --camera "$ORBIT" --no-streets
 same gate2 "$(ref orbit-on)" "$OUT/today-orbit-on.framemd5"
-render gate2 today-orbit-off --buildings "$TODAY" --camera "$ORBIT" --no-see-through
+render gate2 today-orbit-off --buildings "$TODAY" --camera "$ORBIT" --no-see-through --no-streets
 same gate2 "$(ref orbit-off)" "$OUT/today-orbit-off.framemd5"
 
 # ── Gates 9, 11 and 13: Midtown with parts, deterministic; render times ──────
-render gate9 parts-city-on1 --buildings "$PARTS" --camera "$CITY"
-render gate9 parts-city-on2 --buildings "$PARTS" --camera "$CITY"
+render gate9 parts-city-on1 --buildings "$PARTS" --camera "$CITY" --no-streets
+render gate9 parts-city-on2 --buildings "$PARTS" --camera "$CITY" --no-streets
 same gate9 "$OUT/parts-city-on1.framemd5" "$OUT/parts-city-on2.framemd5"
-render gate9 parts-orbit-on1 --buildings "$PARTS" --camera "$ORBIT"
-render gate9 parts-orbit-on2 --buildings "$PARTS" --camera "$ORBIT"
+render gate9 parts-orbit-on1 --buildings "$PARTS" --camera "$ORBIT" --no-streets
+render gate9 parts-orbit-on2 --buildings "$PARTS" --camera "$ORBIT" --no-streets
 same gate9 "$OUT/parts-orbit-on1.framemd5" "$OUT/parts-orbit-on2.framemd5"
-render gate9 parts-city-off --buildings "$PARTS" --camera "$CITY" --no-see-through
-render gate9 parts-orbit-off --buildings "$PARTS" --camera "$ORBIT" --no-see-through
+render gate9 parts-city-off --buildings "$PARTS" --camera "$CITY" --no-see-through --no-streets
+render gate9 parts-orbit-off --buildings "$PARTS" --camera "$ORBIT" --no-see-through --no-streets
 python3 - "$OUT/parts-city-on1.framemd5" "$(ref city-on)" "$OUT/parts-orbit-on1.framemd5" "$(ref orbit-on)" \
     "$OUT/parts-city-off.framemd5" "$(ref city-off)" "$OUT/parts-orbit-off.framemd5" "$(ref orbit-off)" <<'PY'
 import sys

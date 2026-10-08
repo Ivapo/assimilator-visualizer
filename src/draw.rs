@@ -6,6 +6,8 @@
 //! is the orthographic path's. vis-002 adds the buildings: one lit mesh, a sun and the
 //! orthographic eye's rule, and, for `render` only, the credit line's UI tree (§2.14.5).
 //! See-through (vis-002 §2.15.5) rebuilds the buildings' mesh with lowered heights.
+//! Streets (vis-002 §2.17.11) add two meshes: the junction surfaces and median fills,
+//! and the markings, recoloured as the fade follows the camera.
 
 use std::collections::HashSet;
 
@@ -21,6 +23,7 @@ use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
 use crate::credit;
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
+use crate::streets::{self, MarkingsData, Streets};
 
 /// The rank lift of the perspective path, metres (§2.11.2): 0.01 m per rank would float
 /// a 110th box 1.09 m over the road at a tilt. The orthographic path keeps
@@ -671,5 +674,154 @@ pub fn spawn_credit(
 pub fn set_credit_size(world: &mut World, nodes: &CreditNodes, size: u32) {
     for e in std::iter::once(nodes.fill).chain(nodes.outline) {
         world.get_mut::<TextFont>(e).unwrap().font_size = FontSize::Px(size as f32);
+    }
+}
+
+/// The streets as drawn (vis-002 §2.17.11): the surface's and the markings' entities,
+/// each spawned only if its mesh has a triangle, and what recolouring the markings needs.
+pub struct StreetsDrawn {
+    pub surface: Option<Entity>,
+    pub markings: Option<Entity>,
+    /// The markings' mesh, replaced by [`set_street_colours`].
+    mesh: Option<Handle<Mesh>>,
+    /// The markings' data in `f64` world metres, and the fit's centre it is baked about.
+    data: MarkingsData,
+    at: (f64, f64),
+    /// The colours the markings' mesh is drawn with now.
+    drawn: Vec<[f32; 4]>,
+}
+
+impl StreetsDrawn {
+    /// Forget the colours drawn, so the next [`set_street_colours`] replaces the mesh:
+    /// `view --bench` does it every frame.
+    pub fn force(&mut self) {
+        self.drawn.clear();
+    }
+
+    /// Every entity spawned.
+    pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.surface.into_iter().chain(self.markings)
+    }
+}
+
+fn markings_mesh(d: &MarkingsData, colours: Vec<[f32; 4]>, (fx, fy): (f64, f64)) -> Mesh {
+    let pos: Vec<[f32; 3]> = d
+        .positions
+        .iter()
+        .map(|p| [(p[0] - fx) as f32, p[2] as f32, -(p[1] - fy) as f32])
+        .collect();
+    let n = pos.len();
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
+    .with_inserted_indices(Indices::U32(d.indices.clone()))
+}
+
+/// Spawn the streets (vis-002 §2.17.11): the junction surfaces and median fills with the
+/// road's material, and the markings with per-vertex colours faded at `mpp` (metres per
+/// pixel at a world point) on one unlit white material that does not cull, never
+/// frustum-culled. A mesh with no triangle is not spawned (§2.17.12).
+pub fn spawn_streets(
+    world: &mut World,
+    streets: &Streets,
+    road: &Handle<StandardMaterial>,
+    (fx, fy): (f64, f64),
+    mpp: impl Fn([f64; 3]) -> f64,
+) -> StreetsDrawn {
+    let surface = streets.surface();
+    let surface = (!surface.indices.is_empty()).then(|| {
+        let pos: Vec<[f32; 3]> = surface
+            .positions
+            .iter()
+            .map(|p| [(p[0] - fx) as f32, p[2] as f32, -(p[1] - fy) as f32])
+            .collect();
+        let n = pos.len();
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD,
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n])
+        .with_inserted_indices(Indices::U32(surface.indices));
+        let mesh = world.resource_mut::<Assets<Mesh>>().add(mesh);
+        world
+            .spawn((
+                Mesh3d(mesh),
+                MeshMaterial3d(road.clone()),
+                Transform::IDENTITY,
+            ))
+            .id()
+    });
+    let data = streets.markings();
+    let mut drawn = StreetsDrawn {
+        surface,
+        markings: None,
+        mesh: None,
+        drawn: Vec::new(),
+        data,
+        at: (fx, fy),
+    };
+    if !drawn.data.indices.is_empty() {
+        let colours = streets::vertex_colours(
+            &drawn.data.positions,
+            &drawn.data.colours,
+            &drawn.data.widths,
+            mpp,
+        );
+        let mesh = world.resource_mut::<Assets<Mesh>>().add(markings_mesh(
+            &drawn.data,
+            colours.clone(),
+            drawn.at,
+        ));
+        let material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial {
+                base_color: Color::WHITE,
+                unlit: true,
+                cull_mode: None,
+                ..default()
+            });
+        drawn.markings = Some(
+            world
+                .spawn((
+                    Mesh3d(mesh.clone()),
+                    MeshMaterial3d(material),
+                    Transform::IDENTITY,
+                    NoFrustumCulling,
+                ))
+                .id(),
+        );
+        drawn.mesh = Some(mesh);
+        drawn.drawn = colours;
+    }
+    drawn
+}
+
+/// Recolour the markings for `mpp` (vis-002 §2.17.10): the mesh is replaced, with the
+/// same positions and indices, only when a colour differs from the last drawn.
+pub fn set_street_colours(world: &mut World, d: &mut StreetsDrawn, mpp: impl Fn([f64; 3]) -> f64) {
+    let Some(handle) = d.mesh.as_ref() else {
+        return;
+    };
+    let colours = streets::vertex_colours(&d.data.positions, &d.data.colours, &d.data.widths, mpp);
+    if colours == d.drawn {
+        return;
+    }
+    let mesh = markings_mesh(&d.data, colours.clone(), d.at);
+    world
+        .resource_mut::<Assets<Mesh>>()
+        .insert(handle.id(), mesh)
+        .expect("the markings' mesh handle is held");
+    d.drawn = colours;
+}
+
+/// Despawn the streets.
+pub fn despawn_streets(world: &mut World, d: StreetsDrawn) {
+    for e in d.entities() {
+        world.despawn(e);
     }
 }

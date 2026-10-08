@@ -27,6 +27,7 @@ pub mod render;
 pub mod run;
 pub mod scene;
 pub mod see_through;
+pub mod streets;
 pub mod view;
 
 use std::path::{Path, PathBuf};
@@ -269,6 +270,14 @@ impl Job {
     pub fn set_see_through(&mut self, on: bool) {
         let cut = if on { self.buildings.as_ref() } else { None };
         self.renderer.set_see_through(cut);
+    }
+
+    /// Streets (vis-002 §2.17.12): on builds them from the job's placement and draws them
+    /// from the next frame; off removes them. Every `prepare*` builds a job with them off;
+    /// `render` turns them on unless `--no-streets` is given.
+    pub fn set_streets(&mut self, on: bool) -> Result<()> {
+        let streets = on.then(|| crate::streets::Streets::build(&self.placement));
+        self.renderer.set_streets(streets.as_ref())
     }
 
     /// The credit line drawn on every frame (vis-002 §2.14.2); `None` without one.

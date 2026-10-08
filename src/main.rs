@@ -70,6 +70,10 @@ enum Cmd {
         /// the buildings between the camera and the point it looks at are cut to stubs.
         #[arg(long)]
         no_see_through: bool,
+        /// Draw the roads as plain strips. Default: junctions filled, and lane lines, stop
+        /// lines and the yellow centre line, faded where they are under a pixel.
+        #[arg(long)]
+        no_streets: bool,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -105,6 +109,10 @@ enum Cmd {
         /// to stubs, as it does by default.
         #[arg(long)]
         no_see_through: bool,
+        /// Start with the roads as plain strips; `M` shows the streets, as they are by
+        /// default.
+        #[arg(long)]
+        no_streets: bool,
         /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
         #[arg(long, hide = true)]
         bench: Option<f64>,
@@ -153,6 +161,7 @@ fn run(cli: Cli) -> Result<()> {
             camera,
             buildings,
             no_see_through,
+            no_streets,
         } => render(
             RenderOptions {
                 project,
@@ -171,6 +180,7 @@ fn run(cli: Cli) -> Result<()> {
             camera,
             buildings,
             !no_see_through,
+            !no_streets,
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -185,6 +195,7 @@ fn run(cli: Cli) -> Result<()> {
             height,
             buildings,
             no_see_through,
+            no_streets,
             bench,
         } => view::run(&ViewOptions {
             load: LoadOptions {
@@ -198,6 +209,7 @@ fn run(cli: Cli) -> Result<()> {
             },
             buildings,
             see_through: !no_see_through,
+            streets: !no_streets,
             width,
             height,
             bench,
@@ -211,11 +223,15 @@ fn render(
     camera: Option<PathBuf>,
     buildings: Option<PathBuf>,
     see_through: bool,
+    streets: bool,
 ) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
     };
     let mut job = Job::prepare_with(&opts, camera.as_deref(), buildings.as_deref())?;
+    if streets {
+        job.set_streets(true)?;
+    }
     job.set_see_through(see_through);
 
     let n_frames = job.clock.frames;
