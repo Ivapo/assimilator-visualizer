@@ -46,9 +46,10 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   nothing is cut: the orthographic render, which is never cut, and a render without
   buildings.
 - **Streets.** Every network's roads are drawn as streets by default: each junction is
-  filled in the road's grey, the gap between a two-way street's halves is filled too, and
-  the markings are the engine dashboard's, taken from the engine's own `NetworkJson`: grey
-  lane dashes (2.5 m every 6.5 m), a 0.4 m white stop line across each lane of every
+  filled in the road's grey, the gap between a two-way street's halves shows dark, as on
+  the engine's dashboard, its ends at each junction rounded in grey by the engine's median
+  noses, and the markings are the dashboard's, taken from the engine's own `NetworkJson`:
+  grey lane dashes (2.5 m every 6.5 m), a 0.4 m white stop line across each lane of every
   approach the engine marks, an arrow in each lane before the stop line and after a
   junction, and an amber centre line only on a two-way street with no median gap, all in
   the dashboard's colours. A line narrower than half a pixel on screen fades into the
@@ -247,7 +248,7 @@ scripts/gates-parts.sh            # Phase 4 gates 2, 5, 9, 11 (CLI) and the gate
 cargo test --release --test parts -- --include-ignored --test-threads=1 --nocapture       # Phase 4 gates 6–8, 10–12
 scripts/gates-streets.sh          # Phase 5 gates 10, 11 and its renders (now with Phase 6's markings), offline
 cargo test --release --test streets -- --include-ignored --test-threads=1 --nocapture     # Phase 5 gates 5–9, 12
-scripts/gates-look.sh             # Phase 6 gate 10 and the gate 14 renders, offline
+scripts/gates-look.sh             # Phase 6 gate 10 and the gate 14 renders, against scratch/out/look-v1/, offline
 cargo test --release --test look -- --include-ignored --test-threads=1 --nocapture        # Phase 6 gates 5–9
 ```
 
