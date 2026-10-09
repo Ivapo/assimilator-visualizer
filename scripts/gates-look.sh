@@ -9,7 +9,9 @@
 # is `view --bench`, recorded by hand. Gate 10 compares each first render with Phase 5's
 # of the same case, copied to scratch/out/streets-p5/ before Phase 6 was built, and with
 # scratch/ref-pin90b39292-*.framemd5, made by vis-001 Phase 7 gate 5, only to count the
-# frames the look changes.
+# frames the look changes. As amended at gate 14 (§2.18.16), it also compares each first
+# render with the first build's of the same case, copied to scratch/out/look-v1/ before
+# the amendment was built.
 # Offline. Needs ffmpeg/ffprobe and python3.
 set -uo pipefail
 
@@ -19,6 +21,7 @@ MID="$ROOT/scratch/midtown"
 UG="$ROOT/scratch/urban_grid"
 OUT="$ROOT/scratch/out/look"
 P5="$ROOT/scratch/out/streets-p5"
+V1="$ROOT/scratch/out/look-v1"
 CACHE="$MID/buildings.geojson"
 CITY="$ROOT/tests/city-flight.toml"
 ORBIT="$ROOT/tests/see-through-flight.toml"
@@ -75,9 +78,10 @@ case_() { # <frames> <project> <tag> <Phase 5's tag> <reference> [extra args…]
     same "$n" "$OUT/$tag.framemd5" "$OUT/$tag-2.framemd5"
     differs "$P5/$p5.framemd5" "$OUT/$tag.framemd5"
     differs "$ROOT/scratch/ref-pin90b39292-$ref.framemd5" "$OUT/$tag.framemd5"
+    differs "$V1/$tag.framemd5" "$OUT/$tag.framemd5"
 }
 
-# ── Gate 10: on by default, deterministic, and not Phase 5's ─────────────────
+# ── Gate 10: on, deterministic, not Phase 5's and not the first build's ──────
 case_ 8700 "$UG" look-ug-default streets-ug-default default
 case_ 8700 "$UG" look-ug-camera streets-ug-camera camera --camera "$ROOT/tests/flight.toml"
 case_ 1800 "$MID" look-ortho-city streets-ortho-city ortho-city --buildings "$CACHE"

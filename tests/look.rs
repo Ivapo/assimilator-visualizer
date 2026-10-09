@@ -261,17 +261,41 @@ fn gate5_synthetic_arrows() {
     let nj = NetworkJson::from_config_with_network_data(&pl.network, &pl.data);
     let of = |k: Kind| st.markings.iter().filter(move |m| m.kind == k);
 
-    // The surfaces, pairs and fills stay Phase 5's: two fills, on the 0.5 m and 4 m pairs.
+    // The surfaces and pairs stay Phase 5's; no fill (§2.18.16).
     assert_eq!(st.junctions.len(), 1);
     let pairs: Vec<_> = st.pairs.iter().map(|p| (p.a, p.b, p.gap)).collect();
     assert_eq!(
         pairs,
         vec![(0, 1, 0.0), (2, 3, 0.5), (4, 5, 0.0), (6, 7, 4.0)]
     );
-    assert_eq!(
-        st.fills.iter().map(|f| f.link).collect::<Vec<_>>(),
-        vec![2, 6]
-    );
+
+    // Four median noses, each `NetworkJson`'s ring exactly: two at the junction end of
+    // L_EC's 0.5 m gap (radius 0.25), two at L_SC's 4 m gap (radius 2).
+    assert_eq!(st.noses.len(), 4);
+    assert_eq!(nj.median_noses.len(), 4);
+    for (n, m) in st.noses.iter().zip(&nj.median_noses) {
+        assert_eq!(n.polygon, open(&m.coords), "each vertex its ring's");
+        assert_eq!((n.polygon.len(), n.triangles.len() / 3), (10, 6));
+    }
+    let noses = st.noses.iter().fold((0, 0), |(v, t), n| {
+        (v + n.polygon.len(), t + n.triangles.len() / 3)
+    });
+    assert_eq!(noses, (40, 24));
+    let extents = [
+        ((10.0, 10.25), (0.0, 0.25)),
+        ((10.0, 10.25), (-0.25, 0.0)),
+        ((0.0, 2.0), (-15.5, -13.5)),
+        ((-2.0, 0.0), (-15.5, -13.5)),
+    ];
+    for (n, (x, y)) in st.noses.iter().zip(extents) {
+        assert!(
+            spans(range(&n.polygon, |p| p[0]), x.0, x.1)
+                && spans(range(&n.polygon, |p| p[1]), y.0, y.1),
+            "nose extent"
+        );
+    }
+    let sd = st.surface();
+    assert_eq!((sd.positions.len(), sd.indices.len() / 3), (83, 58));
 
     // Two centre lines, on the two 0 m pairs.
     let centre: Vec<_> = of(Kind::Centre).collect();
@@ -476,9 +500,14 @@ fn gate5_synthetic_arrows() {
     assert!(area <= 1e-9, "cut areas {area}");
     assert_eq!(whole, 0);
     println!(
-        "gate 5: 2 centre lines, 68 dashes, 9 stop lines, 1 connector, 35 arrows (every type), mesh {} vertices {} triangles; vertices on their rings within {worst:.1e} m, cut areas within {area:.1e}: PASS",
+        "gate 5: 2 centre lines, 68 dashes, 9 stop lines, 1 connector, 35 arrows (every type), mesh {} vertices {} triangles; vertices on their rings within {worst:.1e} m, cut areas within {area:.1e}; {} noses, {} vertices, {} triangles; surface mesh {} vertices {} triangles: PASS",
         md.positions.len(),
-        md.indices.len() / 3
+        md.indices.len() / 3,
+        st.noses.len(),
+        noses.0,
+        noses.1,
+        sd.positions.len(),
+        sd.indices.len() / 3
     );
 }
 
@@ -875,6 +904,9 @@ struct Expect6 {
     arrows: usize,
     types: [usize; 9],
     mesh: (usize, usize),
+    /// Median noses: count, vertices, triangles; then the surface mesh (§2.18.16).
+    noses: (usize, usize, usize),
+    surface: (usize, usize),
     road_worst: f64,
 }
 
@@ -1011,7 +1043,34 @@ fn gate6(dir: &str, e: Expect6) {
     // Every vertex back to `NetworkJson`.
     let (worst, area, whole) = trace(pl, &st, &nj);
 
-    // Every marking vertex on the drawn road: the strips, the junction surfaces, the fills.
+    // The median noses, `NetworkJson`'s as given, and the surface mesh with them.
+    let noses = st
+        .noses
+        .iter()
+        .fold((st.noses.len(), 0, 0), |(c, v, t), n| {
+            (c, v + n.polygon.len(), t + n.triangles.len() / 3)
+        });
+    let nose_rings = st
+        .noses
+        .iter()
+        .zip(&nj.median_noses)
+        .all(|(n, m)| n.polygon == open(&m.coords));
+    let sd = st.surface();
+    println!(
+        "gate 6 {dir}: noses {} ({} in NetworkJson, each its ring {nose_rings}), {} vertices {} triangles; surface mesh {} vertices {} triangles",
+        noses.0,
+        nj.median_noses.len(),
+        noses.1,
+        noses.2,
+        sd.positions.len(),
+        sd.indices.len() / 3
+    );
+    assert_eq!(noses.0, nj.median_noses.len());
+    assert!(nose_rings, "each nose its ring");
+    assert_eq!(noses, e.noses);
+    assert_eq!((sd.positions.len(), sd.indices.len() / 3), e.surface);
+
+    // Every marking vertex on the drawn road: the strips, the junction surfaces, the noses.
     let mut road = Vec::new();
     for s in &run.strips {
         for i in 0..s.left.len() - 1 {
@@ -1019,7 +1078,6 @@ fn gate6(dir: &str, e: Expect6) {
             road.push([s.right[i], s.right[i + 1], s.left[i + 1]]);
         }
     }
-    let sd = st.surface();
     for t in sd.indices.chunks(3) {
         let q = |i: u32| [sd.positions[i as usize][0], sd.positions[i as usize][1]];
         road.push([q(t[0]), q(t[1]), q(t[2])]);
@@ -1075,6 +1133,8 @@ fn gate6_midtown_counts() {
             arrows: 1_050,
             types: [788, 111, 119, 13, 12, 2, 5, 0, 0],
             mesh: (33_662, 22_288),
+            noses: (94, 940, 564),
+            surface: (5_344, 4_042),
             road_worst: 0.0063,
         },
     );
@@ -1095,6 +1155,8 @@ fn gate6_urban_grid_counts() {
             arrows: 190,
             types: [121, 29, 30, 2, 2, 1, 5, 0, 0],
             mesh: (11_946, 7_194),
+            noses: (72, 720, 432),
+            surface: (1_107, 738),
             road_worst: 0.0,
         },
     );
@@ -1300,10 +1362,12 @@ fn gate8_synthetic_drawn() {
     // A world point, what is there, and its colour off and on.
     type Row = (f64, f64, &'static str, [u8; 3], [u8; 3]);
     #[rustfmt::skip]
-    let table: [Row; 30] = [
+    let table: [Row; 32] = [
         (0.0, 0.0, "the junction", bg, road),
-        (30.0, 0.0, "the 0.5 m fill, no line", bg, road),
-        (0.0, -15.0, "the 4 m fill, no line", bg, road),
+        (30.0, 0.0, "the 0.5 m gap", bg, bg),
+        (0.0, -15.0, "inside the 4 m gap's rounded end", bg, bg),
+        (1.8, -13.7, "the 4 m gap's nose", bg, road),
+        (-1.8, -13.7, "the 4 m gap's other nose", bg, road),
         (-30.0, 0.0, "L_WC's centre line", road, centre),
         (0.0, 15.0, "L_NC's centre line", road, centre),
         (-26.25, -3.5, "a dash", road, dash),
@@ -1356,6 +1420,6 @@ fn gate8_synthetic_drawn() {
     );
     assert_eq!(
         (changed, counts),
-        (243_827, [954, 2_166, 5_240, 6_546, 160])
+        (233_007, [954, 2_166, 5_240, 6_546, 160])
     );
 }

@@ -5,7 +5,7 @@
 //! (vis-002 §2.14), a UI tree draws it in the bottom-right corner of the image, fitted
 //! to the frame's width after the settle frames. With see-through on (vis-002 §2.15), a
 //! perspective renderer redraws the buildings at each pose's heights. With streets
-//! (vis-002 §2.17), two more meshes: the junction surfaces and median fills, and the
+//! (vis-002 §2.17), two more meshes: the junction surfaces and median noses, and the
 //! markings, whose colours a perspective renderer fades for each pose.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a

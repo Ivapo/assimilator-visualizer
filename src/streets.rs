@@ -1,7 +1,9 @@
-//! Streets (vis-002 §2.17, §2.18): the junctions' surfaces, the median gaps filled, and the
-//! engine dashboard's markings — lane dashes, a centre line where a pair has no gap, solid
+//! Streets (vis-002 §2.17, §2.18): the junctions' surfaces, the engine's median noses, and
+//! the engine dashboard's markings — lane dashes, a centre line where a pair has no gap, solid
 //! lane lines, 0.4 m stop lines and lane arrows — drawn from the engine's own
 //! `NetworkJson`, with the dashboard's colours and arrow glyphs copied from its front end.
+//! A median gap is not drawn, so it shows the background, as on the dashboard; its ends at
+//! a junction are rounded by the noses, in the road's grey (§2.18.16).
 //! Plain Rust with no Bevy types; `draw` turns [`Streets::surface`] and
 //! [`Streets::markings`] into the two meshes (§2.18.10), and [`fade`] fades a marking toward
 //! the road where it is under a pixel (§2.17.10, §2.18.9).
@@ -147,14 +149,6 @@ impl Kind {
     }
 }
 
-/// A strip along one link: its two edges, sample for sample. `left` is the smaller
-/// lateral (left of travel), `right` the larger.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Ribbon {
-    pub left: Vec<[f64; 2]>,
-    pub right: Vec<[f64; 2]>,
-}
-
 /// One marking: a simple polygon from `NetworkJson`, with no closing copy, and its
 /// `earcut` triangles (indices into `polygon`).
 #[derive(Debug, Clone, PartialEq)]
@@ -190,20 +184,22 @@ pub struct Pair {
     pub gap: f64,
 }
 
-/// A median gap, filled with the road's grey (§2.17.5), along its pair's `a`.
+/// One of `NetworkJson::median_noses`, drawn in the road's grey (§2.18.16): its ring with
+/// the closing copy dropped, and its `earcut` triangles (indices into `polygon`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fill {
-    pub link: usize,
-    pub ribbon: Ribbon,
+pub struct Nose {
+    pub polygon: Vec<[f64; 2]>,
+    pub triangles: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Streets {
     /// In node order.
     pub junctions: Vec<Junction>,
-    /// In link order of `a`.
+    /// In link order of `a`. Nothing draws from them (§2.18.16).
     pub pairs: Vec<Pair>,
-    pub fills: Vec<Fill>,
+    /// In `NetworkJson`'s order.
+    pub noses: Vec<Nose>,
     /// In `NetworkJson`'s order: the centre lines, the dashes, the solid lines, the stop
     /// lines and connectors, then each arrow's outlines and its bar.
     pub markings: Vec<Marking>,
@@ -224,30 +220,6 @@ pub struct MarkingsData {
     pub colours: Vec<[u8; 3]>,
     pub widths: Vec<f64>,
     pub indices: Vec<u32>,
-}
-
-/// A ribbon on `link` from `s0` to `s1` between laterals `a` < `b` (right of travel
-/// positive), sampled in `n = max(1, ceil((s1 − s0) / STRIP_STEP))` equal steps. `None`
-/// when `s1 ≤ s0` or the link cannot be placed.
-pub fn ribbon(pl: &Placement, link: &str, s0: f64, s1: f64, a: f64, b: f64) -> Option<Ribbon> {
-    if s1 <= s0 {
-        return None;
-    }
-    let n = (((s1 - s0) / STRIP_STEP).ceil() as usize).max(1);
-    let mut r = Ribbon {
-        left: Vec::with_capacity(n + 1),
-        right: Vec::with_capacity(n + 1),
-    };
-    for i in 0..=n {
-        let s = s0 + (s1 - s0) * i as f64 / n as f64;
-        let p = pl.place_lateral(link, s, 0.0)?;
-        let h = p.heading.to_radians();
-        // Right of travel, as `scene::strips`.
-        let (rx, ry) = (h.cos(), -h.sin());
-        r.left.push([p.x + rx * a, p.y + ry * a]);
-        r.right.push([p.x + rx * b, p.y + ry * b]);
-    }
-    Some(r)
 }
 
 /// A ring with its closing copies of the first vertex dropped.
@@ -415,7 +387,7 @@ pub fn place(at: [f64; 2], heading_deg: f64, p: [f64; 2]) -> [f64; 2] {
 }
 
 impl Streets {
-    /// The streets of a placed network (§2.17.4, §2.17.5, §2.18).
+    /// The streets of a placed network (§2.17.4, §2.18, §2.18.16).
     pub fn build(pl: &Placement) -> Streets {
         let net = &pl.network;
         let data = &pl.data;
@@ -457,28 +429,28 @@ impl Streets {
             .map(|(i, l)| (l.id.0.as_str(), i))
             .collect();
 
-        // Two-way pairs and their median fills, along the link that comes first.
+        // Two-way pairs, along the link that comes first.
         for (i, link) in net.links.iter().enumerate() {
             let twin = by_nodes.get(&(link.to_node.0.as_str(), link.from_node.0.as_str()));
             if let Some(&j) = twin
                 && i < j
             {
-                let id = link.id.0.as_str();
-                let w = link.total_width();
                 let g = (link.median_gap + net.links[j].median_gap) / 2.0;
-                // The gap lies left of `a`'s left edge.
-                if g > 0.0
-                    && let Some(ribbon) =
-                        ribbon(pl, id, 0.0, pl.link_length(id), -w / 2.0 - g, -w / 2.0)
-                {
-                    st.fills.push(Fill { link: i, ribbon });
-                }
                 st.pairs.push(Pair { a: i, b: j, gap: g });
             }
         }
 
-        // The markings, from the engine's dashboard geometry, in its order (§2.18.2).
         let nj = NetworkJson::from_config_with_network_data(net, data);
+
+        // The median noses, in `NetworkJson`'s order (§2.18.16).
+        for n in &nj.median_noses {
+            let polygon = open(&n.coords);
+            let mut triangles = Vec::new();
+            earcut.earcut(polygon.iter().copied(), &[] as &[u32], &mut triangles);
+            st.noses.push(Nose { polygon, triangles });
+        }
+
+        // The markings, from the engine's dashboard geometry, in its order (§2.18.2).
         let mut mark = |kind, link, lane, arrow: Option<&str>, polygon: Vec<[f64; 2]>| {
             let mut triangles = Vec::new();
             earcut.earcut(polygon.iter().copied(), &[] as &[u32], &mut triangles);
@@ -569,7 +541,7 @@ impl Streets {
         st
     }
 
-    /// The surface mesh's data: the junction surfaces, then the median fills.
+    /// The surface mesh's data: the junction surfaces, then the median noses.
     pub fn surface(&self) -> SurfaceData {
         let mut d = SurfaceData::default();
         for j in &self.junctions {
@@ -578,8 +550,11 @@ impl Streets {
                 .extend(j.polygon.iter().map(|p| [p[0], p[1], 0.0]));
             d.indices.extend(j.triangles.iter().map(|t| base + t));
         }
-        for f in &self.fills {
-            ribbon_mesh(&f.ribbon, 0.0, &mut d.positions, &mut d.indices);
+        for n in &self.noses {
+            let base = d.positions.len() as u32;
+            d.positions
+                .extend(n.polygon.iter().map(|p| [p[0], p[1], 0.0]));
+            d.indices.extend(n.triangles.iter().map(|t| base + t));
         }
         d
     }
@@ -651,24 +626,6 @@ fn cut(ring: &[[f64; 2]], link: &assimilator_config::network::LinkConfig) -> Vec
             vec![back(b), front(b), front(a), back(a)]
         })
         .collect()
-}
-
-/// A ribbon's 2 vertices a sample and 2 triangles a step, no vertex shared.
-fn ribbon_mesh(r: &Ribbon, z: f64, positions: &mut Vec<[f64; 3]>, indices: &mut Vec<u32>) {
-    let base = positions.len() as u32;
-    for (l, rr) in r.left.iter().zip(&r.right) {
-        positions.push([l[0], l[1], z]);
-        positions.push([rr[0], rr[1], z]);
-    }
-    for i in 0..(r.left.len() as u32).saturating_sub(1) {
-        let (l0, r0, l1, r1) = (
-            base + 2 * i,
-            base + 2 * i + 1,
-            base + 2 * i + 2,
-            base + 2 * i + 3,
-        );
-        indices.extend_from_slice(&[l0, r0, l1, r0, r1, l1]);
-    }
 }
 
 /// §2.17.10's `α` for a marking `width_m` wide where a pixel is `mpp` metres: 0 under

@@ -59,22 +59,9 @@ pub fn synthetic() -> Placement {
     Placement::new(cfg)
 }
 
-/// Each synthetic link as drawn: its trimmed start, its direction of travel, its length,
-/// and its cross axis (`y` for east–west links,
-/// `x` for north–south ones).
+/// Each synthetic link as drawn: its length.
 struct Line {
-    start: P,
-    dir: P,
     len: f64,
-}
-
-impl Line {
-    fn s(&self, p: P) -> f64 {
-        (p[0] - self.start[0]) * self.dir[0] + (p[1] - self.start[1]) * self.dir[1]
-    }
-    fn cross(&self, p: P) -> f64 {
-        if self.dir[0] != 0.0 { p[1] } else { p[0] }
-    }
 }
 
 /// The links of [`SYNTHETIC`], in link order: the junction's polygon reaches x ±6.5 and
@@ -83,49 +70,13 @@ fn lines() -> [Line; 6] {
     let ew = 43.5;
     let ns = 39.75;
     [
-        Line {
-            start: [-50.0, 0.0],
-            dir: [1.0, 0.0],
-            len: ew,
-        },
-        Line {
-            start: [-6.5, 0.0],
-            dir: [-1.0, 0.0],
-            len: ew,
-        },
-        Line {
-            start: [50.0, 0.0],
-            dir: [-1.0, 0.0],
-            len: ew,
-        },
-        Line {
-            start: [6.5, 0.0],
-            dir: [1.0, 0.0],
-            len: ew,
-        },
-        Line {
-            start: [0.0, 50.0],
-            dir: [0.0, -1.0],
-            len: ns,
-        },
-        Line {
-            start: [0.0, -10.25],
-            dir: [0.0, -1.0],
-            len: ns,
-        },
+        Line { len: ew },
+        Line { len: ew },
+        Line { len: ew },
+        Line { len: ew },
+        Line { len: ns },
+        Line { len: ns },
     ]
-}
-
-/// A ribbon's points.
-fn points(r: &streets::Ribbon) -> impl Iterator<Item = P> + '_ {
-    r.left.iter().chain(&r.right).copied()
-}
-
-/// `(min, max)` of `f` over a ribbon.
-fn range(r: &streets::Ribbon, f: impl Fn(P) -> f64) -> (f64, f64) {
-    points(r).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
-        (a.min(f(p)), b.max(f(p)))
-    })
 }
 
 fn shoelace(r: &[P]) -> f64 {
@@ -205,7 +156,7 @@ fn gate5_synthetic_crossing() {
         j.triangles.len() / 3
     );
 
-    // Pairs and fills.
+    // Pairs.
     assert_eq!(
         st.pairs,
         vec![
@@ -221,15 +172,7 @@ fn gate5_synthetic_crossing() {
             }
         ]
     );
-    assert_eq!(st.fills.len(), 2);
-    for f in &st.fills {
-        let line = &ls[f.link];
-        let (c0, c1) = range(&f.ribbon, |p| line.cross(p));
-        assert!(close(c0, -0.25) && close(c1, 0.25), "fill {c0} {c1}");
-        let (s0, s1) = range(&f.ribbon, |p| line.s(p));
-        assert!(close(s0, 0.0) && close(s1, line.len));
-    }
-    println!("gate 5: 1 surface, 2 pairs, 2 fills: PASS");
+    println!("gate 5: 1 surface, 2 pairs: PASS");
 }
 
 // ── Gate 9: the fade ─────────────────────────────────────────────────────────
@@ -307,8 +250,6 @@ fn ring_dist(p: P, r: &[P]) -> f64 {
 struct Expect {
     junctions: usize,
     pairs: usize,
-    fills: usize,
-    surface: (usize, usize),
 }
 
 fn gate6(dir: &str, e: Expect) {
@@ -327,32 +268,18 @@ fn gate6(dir: &str, e: Expect) {
     for (i, l) in net.links.iter().enumerate() {
         first.entry((&l.from_node.0, &l.to_node.0)).or_insert(i);
     }
-    let (mut pairs, mut fills) = (0, 0);
+    let mut pairs = 0;
     for (i, l) in net.links.iter().enumerate() {
         if let Some(&j) = first.get(&(l.to_node.0.as_str(), l.from_node.0.as_str()))
             && i < j
         {
             pairs += 1;
-            let g = (l.median_gap + net.links[j].median_gap) / 2.0;
-            fills += (g > 0.0) as usize;
         }
     }
-    let surface = st.surface();
-    let got = [st.junctions.len(), st.pairs.len(), st.fills.len()];
-    println!(
-        "gate 6 {dir}: surfaces {} pairs {} fills {}; surface {} vertices {} triangles",
-        got[0],
-        got[1],
-        got[2],
-        surface.positions.len(),
-        surface.indices.len() / 3
-    );
-    assert_eq!(got, [polys, pairs, fills], "independent counts");
-    assert_eq!(got, [e.junctions, e.pairs, e.fills], "predicted counts");
-    assert_eq!(
-        (surface.positions.len(), surface.indices.len() / 3),
-        e.surface
-    );
+    let got = [st.junctions.len(), st.pairs.len()];
+    println!("gate 6 {dir}: surfaces {} pairs {}", got[0], got[1]);
+    assert_eq!(got, [polys, pairs], "independent counts");
+    assert_eq!(got, [e.junctions, e.pairs], "predicted counts");
 
     // Against the engine's dashboard geometry (§2.17.2).
     let nj = NetworkJson::from_config_with_network_data(net, &pl.data);
@@ -386,8 +313,6 @@ fn gate6_midtown_counts() {
         Expect {
             junctions: 106,
             pairs: 29,
-            fills: 26,
-            surface: (10_510, 9_532),
         },
     );
 }
@@ -400,8 +325,6 @@ fn gate6_urban_grid_counts() {
         Expect {
             junctions: 9,
             pairs: 24,
-            fills: 24,
-            surface: (13_971, 13_842),
         },
     );
 }
@@ -603,10 +526,7 @@ fn gate8_synthetic_drawn() {
     let (bg, road) = (scene::BACKGROUND, scene::ROAD);
     // A world point, what is there, and its colour off and on.
     type Row = (f64, f64, &'static str, [u8; 3], [u8; 3]);
-    let table: [Row; 2] = [
-        (0.0, 0.0, "the junction", bg, road),
-        (-20.0, 0.0, "the median fill", bg, road),
-    ];
+    let table: [Row; 1] = [(0.0, 0.0, "the junction", bg, road)];
     for (x, y, what, want_off, want_on) in table {
         let (a, b) = (px(&off, x, y), px(&on, x, y));
         println!("gate 8 ({x}, {y}) {what}: off {a:?} on {b:?}");
