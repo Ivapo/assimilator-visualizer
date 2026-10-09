@@ -17,6 +17,7 @@ use assimilator_config::network::{
 use assimilator_config::types::{LaneIdx, LinkId};
 use assimilator_geometry::network_json::NetworkJson;
 use assimilator_video::place::Placement;
+use assimilator_video::render::Renderer;
 use assimilator_video::run::{self, LoadOptions, Run};
 use assimilator_video::scene;
 use assimilator_video::streets::{
@@ -1261,5 +1262,100 @@ fn gate7_urban_grid_first_stopped() {
             other: 0,
         },
         None,
+    );
+}
+
+// ── Gate 8: the synthetic crossing, drawn ────────────────────────────────────
+
+#[test]
+#[ignore = "renders through the GPU"]
+fn gate8_synthetic_drawn() {
+    let pl = synthetic();
+    let st = Streets::build(&pl);
+    let strips = scene::strips(&pl);
+    let cam = scene::Camera {
+        cx: 0.0,
+        cy: 0.0,
+        k: 0.05,
+        width: 1280,
+        height: 720,
+    };
+    let mut r = Renderer::new(&strips, cam, 1, None, None).unwrap();
+    let off = r.render(&[]).unwrap();
+    r.set_streets(Some(&st)).unwrap();
+    let on = r.render(&[]).unwrap();
+    let px = |f: &[u8], x: f64, y: f64| {
+        let (i, j) = cam.world_to_pixel(x, y);
+        let o = ((j.floor() as usize) * 1280 + i.floor() as usize) * 4;
+        [f[o], f[o + 1], f[o + 2]]
+    };
+    let (bg, road) = (scene::BACKGROUND, scene::ROAD);
+    let (dash, centre, stop, arrow, bar) = (
+        Kind::Dash.colour(),
+        Kind::Centre.colour(),
+        Kind::Stop.colour(),
+        Kind::Arrow.colour(),
+        Kind::DeadEnd.colour(),
+    );
+    // A world point, what is there, and its colour off and on.
+    type Row = (f64, f64, &'static str, [u8; 3], [u8; 3]);
+    #[rustfmt::skip]
+    let table: [Row; 30] = [
+        (0.0, 0.0, "the junction", bg, road),
+        (30.0, 0.0, "the 0.5 m fill, no line", bg, road),
+        (0.0, -15.0, "the 4 m fill, no line", bg, road),
+        (-30.0, 0.0, "L_WC's centre line", road, centre),
+        (0.0, 15.0, "L_NC's centre line", road, centre),
+        (-26.25, -3.5, "a dash", road, dash),
+        (-29.5, -3.5, "the gap after it", road, road),
+        (-12.2, -3.5, "a dash's end under L_WC's stop line", road, stop),
+        (-12.2, -5.0, "L_WC's stop line", road, stop),
+        (10.2, 2.0, "L_EC lane 0 at the edge", road, road),
+        (15.2, 2.0, "L_EC lane 0's line, 5 m back", road, stop),
+        (12.0, 3.75, "the connector", road, stop),
+        (-16.0, 1.75, "a departing through's shaft", road, arrow),
+        (12.8, 5.5, "an arriving through's head", road, arrow),
+        (13.5, 9.8, "right's head", road, arrow),
+        (12.8, 9.0, "where a through head would be", road, road),
+        (18.5, 1.2, "left's head", road, arrow),
+        (24.9, 1.4, "the separate u_turn's head", road, arrow),
+        (-16.9, -1.15, "the lone u_turn's head", road, arrow),
+        (-16.0, -4.45, "through_left's branch head", road, arrow),
+        (-14.8, -5.25, "through_left's straight head", road, arrow),
+        (-16.0, -9.55, "through_right's branch head", road, arrow),
+        (-0.95, 17.75, "through_left_right's left head", road, arrow),
+        (-2.55, 17.75, "through_left_right's right head", road, arrow),
+        (-1.75, 16.55, "through_left_right's straight head", road, arrow),
+        (-5.6, 16.45, "dead_end's bar", road, bar),
+        (-5.25, 17.5, "dead_end's shaft", road, arrow),
+        (2.95, -17.0, "left_right's left head", road, arrow),
+        (4.55, -17.0, "left_right's right head", road, arrow),
+        (3.75, -16.3, "where a straight head would be", road, road),
+    ];
+    for (x, y, what, want_off, want_on) in table {
+        let (a, b) = (px(&off, x, y), px(&on, x, y));
+        println!("gate 8 ({x}, {y}) {what}: off {a:?} on {b:?}");
+        assert_eq!((a, b), (want_off, want_on), "({x}, {y}) {what}");
+    }
+    let changed = off
+        .chunks(4)
+        .zip(on.chunks(4))
+        .filter(|(a, b)| a != b)
+        .count();
+    let exactly = |c: [u8; 3]| on.chunks(4).filter(|p| p[..3] == c).count();
+    let counts = [
+        exactly(centre),
+        exactly(dash),
+        exactly(stop),
+        exactly(arrow),
+        exactly(bar),
+    ];
+    println!(
+        "gate 8: {changed} pixels change; exactly {} centre, {} dash, {} stop, {} arrow, {} bar",
+        counts[0], counts[1], counts[2], counts[3], counts[4]
+    );
+    assert_eq!(
+        (changed, counts),
+        (243_827, [954, 2_166, 5_240, 6_546, 160])
     );
 }
