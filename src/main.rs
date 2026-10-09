@@ -70,8 +70,9 @@ enum Cmd {
         /// the buildings between the camera and the point it looks at are cut to stubs.
         #[arg(long)]
         no_see_through: bool,
-        /// Draw the roads as plain strips. Default: junctions filled, and lane lines, stop
-        /// lines and the yellow centre line, faded where they are under a pixel.
+        /// Draw the roads as plain strips. Default: junctions filled, and the engine
+        /// dashboard's markings (lane dashes, stop lines, lane arrows, a centre line where a
+        /// pair has no gap), faded where they are under a pixel.
         #[arg(long)]
         no_streets: bool,
     },

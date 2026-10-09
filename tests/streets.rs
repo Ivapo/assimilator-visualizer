@@ -10,8 +10,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use assimilator_config::network::{ControlType, NetworkConfig};
-use assimilator_config::types::{LaneIdx, LinkId};
+use assimilator_config::network::NetworkConfig;
 use assimilator_geometry::network_json::NetworkJson;
 use assimilator_video::camera::Pose;
 use assimilator_video::motion::Piece;
@@ -19,15 +18,11 @@ use assimilator_video::place::Placement;
 use assimilator_video::render::{Renderer, VehicleBox};
 use assimilator_video::run::{self, LoadOptions, Run};
 use assimilator_video::scene;
-use assimilator_video::streets::{
-    self, DASH_M, GAP_M, Kind, LINE_M, Pair, STOP_M, Streets, WHITE, YELLOW, colour, fade, mpp_at,
-};
+use assimilator_video::streets::{self, Pair, Streets, fade, mpp_at};
 use assimilator_video::view::state::Follow;
 use assimilator_video::view::{Fit, ViewInput, ViewState};
 
 type P = [f64; 2];
-/// A link's engine stop-line edges: each with its lane (`None`: the whole approach).
-type Edges = Vec<(Option<u32>, [P; 2])>;
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -65,14 +60,12 @@ pub fn synthetic() -> Placement {
 }
 
 /// Each synthetic link as drawn: its trimmed start, its direction of travel, its length,
-/// and its strip's centre and right of travel on the cross axis (`y` for east–west links,
+/// and its cross axis (`y` for east–west links,
 /// `x` for north–south ones).
 struct Line {
     start: P,
     dir: P,
     len: f64,
-    centre: f64,
-    right: f64,
 }
 
 impl Line {
@@ -81,10 +74,6 @@ impl Line {
     }
     fn cross(&self, p: P) -> f64 {
         if self.dir[0] != 0.0 { p[1] } else { p[0] }
-    }
-    /// The cross coordinate of lateral `l` (right of travel positive).
-    fn at(&self, l: f64) -> f64 {
-        self.centre + self.right * l
     }
 }
 
@@ -98,43 +87,31 @@ fn lines() -> [Line; 6] {
             start: [-50.0, 0.0],
             dir: [1.0, 0.0],
             len: ew,
-            centre: -3.75,
-            right: -1.0,
         },
         Line {
             start: [-6.5, 0.0],
             dir: [-1.0, 0.0],
             len: ew,
-            centre: 3.75,
-            right: 1.0,
         },
         Line {
             start: [50.0, 0.0],
             dir: [-1.0, 0.0],
             len: ew,
-            centre: 3.75,
-            right: 1.0,
         },
         Line {
             start: [6.5, 0.0],
             dir: [1.0, 0.0],
             len: ew,
-            centre: -3.75,
-            right: -1.0,
         },
         Line {
             start: [0.0, 50.0],
             dir: [0.0, -1.0],
             len: ns,
-            centre: 0.0,
-            right: -1.0,
         },
         Line {
             start: [0.0, -10.25],
             dir: [0.0, -1.0],
             len: ns,
-            centre: 0.0,
-            right: -1.0,
         },
     ]
 }
@@ -228,7 +205,7 @@ fn gate5_synthetic_crossing() {
         j.triangles.len() / 3
     );
 
-    // Pairs, fills and yellow lines.
+    // Pairs and fills.
     assert_eq!(
         st.pairs,
         vec![
@@ -252,146 +229,18 @@ fn gate5_synthetic_crossing() {
         let (s0, s1) = range(&f.ribbon, |p| line.s(p));
         assert!(close(s0, 0.0) && close(s1, line.len));
     }
-    let of = |k: Kind| st.markings.iter().filter(move |m| m.kind == k);
-    let yellow: Vec<_> = of(Kind::Yellow).collect();
-    assert_eq!(yellow.len(), 4);
-    let mut sides = Vec::new();
-    for (i, m) in yellow.iter().enumerate() {
-        assert_eq!(
-            m.link,
-            [0, 0, 2, 2][i],
-            "yellow only along each pair's first link"
-        );
-        assert_eq!((m.lane, m.width), (None, LINE_M));
-        let (c0, c1) = range(&m.ribbon, |p| p[1]);
-        let north = close(c0, 0.05) && close(c1, 0.20);
-        let south = close(c0, -0.20) && close(c1, -0.05);
-        assert!(north || south, "yellow at y {c0} … {c1}");
-        sides.push(north);
-        let xs = range(&m.ribbon, |p| p[0].abs());
-        assert!(
-            close(xs.0, 6.5) && close(xs.1, 50.0),
-            "yellow from the edge to the end"
-        );
-    }
-    assert!(
-        sides[0] != sides[1] && sides[2] != sides[3],
-        "one line each side of y 0 a pair"
-    );
-
-    // Lane-line dashes.
-    let dashes: Vec<_> = of(Kind::Lane).collect();
-    assert_eq!(dashes.len(), 24);
-    for (li, line) in ls.iter().enumerate() {
-        let mine: Vec<_> = dashes.iter().filter(|m| m.link == li).collect();
-        assert_eq!(mine.len(), 4, "4 dashes on link {li}");
-        // Each approach's dashes end at its stop lines; L_EC's at lane 0's, 5 m back.
-        let end = match li {
-            0 | 4 => line.len - STOP_M,
-            2 => line.len - 5.0 - STOP_M,
-            _ => line.len,
-        };
-        for (i, m) in mine.iter().enumerate() {
-            assert_eq!(m.lane, Some(0));
-            assert_eq!(m.width, LINE_M);
-            let (c0, c1) = range(&m.ribbon, |p| line.cross(p));
-            let c = line.at(0.0);
-            assert!(
-                close(c0, c - LINE_M / 2.0) && close(c1, c + LINE_M / 2.0),
-                "dash across {c0} {c1}"
-            );
-            let (s0, s1) = range(&m.ribbon, |p| line.s(p));
-            let a = i as f64 * (DASH_M + GAP_M);
-            assert!(
-                close(s0, a) && close(s1, (a + DASH_M).min(end)),
-                "dash {li}/{i}: {s0} {s1}"
-            );
-        }
-    }
-    let ec_last = dashes.iter().rfind(|m| m.link == 2).unwrap();
-    assert!(close(range(&ec_last.ribbon, |p| ls[2].s(p)).1, 37.9));
-
-    // Stop lines.
-    let stops: Vec<_> = of(Kind::Stop).collect();
-    let got: Vec<(usize, Option<u32>)> = stops.iter().map(|m| (m.link, m.lane)).collect();
-    assert_eq!(
-        got,
-        vec![
-            (0, Some(0)),
-            (0, Some(1)),
-            (2, Some(0)),
-            (2, Some(1)),
-            (4, Some(0)),
-            (4, Some(1))
-        ]
-    );
-    for m in &stops {
-        let line = &ls[m.link];
-        let k = m.lane.unwrap() as f64;
-        assert_eq!(m.width, STOP_M);
-        let (s0, s1) = range(&m.ribbon, |p| line.s(p));
-        let edge = if (m.link, m.lane) == (2, Some(0)) {
-            line.len - 5.0
-        } else {
-            line.len
-        };
-        assert!(
-            close(s1, edge) && close(s0, edge - STOP_M),
-            "stop line {s0} {s1}"
-        );
-        let (c0, c1) = range(&m.ribbon, |p| line.cross(p));
-        let (a, b) = (line.at(-3.5 + 3.5 * k), line.at(3.5 * k));
-        assert!(
-            close(c0, a.min(b)) && close(c1, a.max(b)),
-            "across its lane {c0} {c1}"
-        );
-    }
-    let x = |m: &streets::Marking| range(&m.ribbon, |p| p[0]);
-    assert!(
-        close(x(stops[0]).0, -7.1) && close(x(stops[0]).1, -6.5),
-        "L_WC at the edge"
-    );
-    assert!(
-        close(x(stops[2]).0, 11.5) && close(x(stops[2]).1, 12.1),
-        "L_EC lane 0, 5 m back"
-    );
-    assert!(
-        close(x(stops[3]).0, 6.5) && close(x(stops[3]).1, 7.1),
-        "L_EC lane 1"
-    );
-    let y4 = range(&stops[4].ribbon, |p| p[1]);
-    assert!(close(y4.0, 10.25) && close(y4.1, 10.85), "L_NC at the edge");
-    println!("gate 5: 1 surface, 2 pairs, 4 yellow, 2 fills, 24 dashes, 6 stop lines: PASS");
+    println!("gate 5: 1 surface, 2 pairs, 2 fills: PASS");
 }
 
 // ── Gate 9: the fade ─────────────────────────────────────────────────────────
-
-fn linear(c: u8) -> f32 {
-    let c = c as f64 / 255.0;
-    (if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }) as f32
-}
 
 #[test]
 fn gate9_fade() {
     assert_eq!(fade(0.15, 1.5), 0.0);
     assert!((fade(0.15, 0.5) - 0.5).abs() <= 1e-12);
     assert_eq!(fade(0.15, 0.3), 1.0);
-    let stop = fade(STOP_M, 1.6009);
-    assert!((stop - 0.767).abs() <= 0.001, "Midtown's stop line {stop}");
-    let ug = fade(LINE_M, 1.1481);
+    let ug = fade(0.15, 1.1481);
     assert!((ug - 0.017).abs() <= 0.001, "urban_grid's line {ug}");
-    for m in [WHITE, YELLOW] {
-        let (c0, c1) = (colour(m, 0.0), colour(m, 1.0));
-        for i in 0..3 {
-            assert_eq!(c0[i], linear(scene::ROAD[i]), "α 0 is the road");
-            assert_eq!(c1[i], linear(m[i]), "α 1 is the marking");
-        }
-        assert_eq!((c0[3], c1[3]), (1.0, 1.0));
-    }
     let (cx, cy) = (1234.5, -678.0);
     for h in [60.0, 500.0, 1800.0] {
         for hp in [720.0, 1080.0] {
@@ -420,9 +269,7 @@ fn gate9_fade() {
         f([cx, cy + 50.0, 0.0]) > f([cx, cy - 50.0, 0.0]),
         "the farther one is larger"
     );
-    println!(
-        "gate 9: fade 0, 0.5, 1; stop {stop:.4}; urban_grid {ug:.4}; colour's ends exact; mpp_at: PASS"
-    );
+    println!("gate 9: fade 0, 0.5, 1; urban_grid {ug:.4}; mpp_at: PASS");
 }
 
 // ── Gates 6 and 7: the fixtures ──────────────────────────────────────────────
@@ -461,13 +308,7 @@ struct Expect {
     junctions: usize,
     pairs: usize,
     fills: usize,
-    yellow: usize,
-    stops: usize,
-    stop_links: usize,
-    dashes: usize,
     surface: (usize, usize),
-    markings: (usize, usize),
-    corners: usize,
 }
 
 fn gate6(dir: &str, e: Expect) {
@@ -477,12 +318,6 @@ fn gate6(dir: &str, e: Expect) {
     let st = Streets::build(pl);
 
     // Independently, from the config.
-    let signal: HashSet<&str> = net
-        .junctions
-        .iter()
-        .filter(|j| j.control == ControlType::Signal)
-        .map(|j| j.node_id.0.as_str())
-        .collect();
     let polys = net
         .nodes
         .iter()
@@ -492,91 +327,32 @@ fn gate6(dir: &str, e: Expect) {
     for (i, l) in net.links.iter().enumerate() {
         first.entry((&l.from_node.0, &l.to_node.0)).or_insert(i);
     }
-    let (mut pairs, mut fills, mut yellow, mut stops, mut stop_links, mut dashes) =
-        (0, 0, 0, 0, 0, 0);
+    let (mut pairs, mut fills) = (0, 0);
     for (i, l) in net.links.iter().enumerate() {
-        let len = pl.link_length(&l.id.0);
         if let Some(&j) = first.get(&(l.to_node.0.as_str(), l.from_node.0.as_str()))
             && i < j
         {
             pairs += 1;
             let g = (l.median_gap + net.links[j].median_gap) / 2.0;
             fills += (g > 0.0) as usize;
-            yellow += if g >= 1.0 { 4 } else { 2 };
         }
-        let mut end = len;
-        if signal.contains(l.to_node.0.as_str()) {
-            stop_links += 1;
-            stops += l.lanes.len();
-            for k in 0..l.lanes.len() {
-                let off = pl
-                    .data
-                    .lane_stop_line_offset(&LinkId(l.id.0.clone()), LaneIdx(k as u32));
-                end = end.min(len - off - 0.6);
-            }
-        }
-        dashes += l.lanes.len().saturating_sub(1) * (end / 12.0).ceil().max(0.0) as usize;
     }
-    let count = |k: Kind| st.markings.iter().filter(|m| m.kind == k).count();
-    let links_with_stops: HashSet<usize> = st
-        .markings
-        .iter()
-        .filter(|m| m.kind == Kind::Stop)
-        .map(|m| m.link)
-        .collect();
     let surface = st.surface();
-    let markings = st.markings();
-    let got = [
-        st.junctions.len(),
-        st.pairs.len(),
-        st.fills.len(),
-        count(Kind::Yellow),
-        count(Kind::Stop),
-        links_with_stops.len(),
-        count(Kind::Lane),
-    ];
+    let got = [st.junctions.len(), st.pairs.len(), st.fills.len()];
     println!(
-        "gate 6 {dir}: surfaces {} pairs {} fills {} yellow {} stop lines {} ({} links) dashes {}; surface {} vertices {} triangles; markings {} vertices {} triangles",
+        "gate 6 {dir}: surfaces {} pairs {} fills {}; surface {} vertices {} triangles",
         got[0],
         got[1],
         got[2],
-        got[3],
-        got[4],
-        got[5],
-        got[6],
         surface.positions.len(),
-        surface.indices.len() / 3,
-        markings.positions.len(),
-        markings.indices.len() / 3
+        surface.indices.len() / 3
     );
-    assert_eq!(
-        got,
-        [polys, pairs, fills, yellow, stops, stop_links, dashes],
-        "independent counts"
-    );
-    assert_eq!(
-        got,
-        [
-            e.junctions,
-            e.pairs,
-            e.fills,
-            e.yellow,
-            e.stops,
-            e.stop_links,
-            e.dashes
-        ],
-        "predicted counts"
-    );
+    assert_eq!(got, [polys, pairs, fills], "independent counts");
+    assert_eq!(got, [e.junctions, e.pairs, e.fills], "predicted counts");
     assert_eq!(
         (surface.positions.len(), surface.indices.len() / 3),
         e.surface
     );
-    assert_eq!(
-        (markings.positions.len(), markings.indices.len() / 3),
-        e.markings
-    );
-    assert_eq!(markings.colours.len(), markings.positions.len());
-    assert_eq!(markings.widths.len(), markings.positions.len());
 
     // Against the engine's dashboard geometry (§2.17.2).
     let nj = NetworkJson::from_config_with_network_data(net, &pl.data);
@@ -595,80 +371,11 @@ fn gate6(dir: &str, e: Expect) {
             fill_worst = fill_worst.max(((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt());
         }
     }
-    let ends: Vec<P> = net
-        .links
-        .iter()
-        .map(|l| {
-            let e = pl
-                .place_lateral(&l.id.0, pl.link_length(&l.id.0), 0.0)
-                .unwrap();
-            [e.x, e.y]
-        })
-        .collect();
-    let nearest = |c: &[P]| -> usize {
-        let mid = [(c[1][0] + c[2][0]) / 2.0, (c[1][1] + c[2][1]) / 2.0];
-        let mut best = (f64::INFINITY, 0);
-        for (i, e) in ends.iter().enumerate() {
-            let d = ((e[0] - mid[0]).powi(2) + (e[1] - mid[1]).powi(2)).sqrt();
-            if d < best.0 {
-                best = (d, i);
-            }
-        }
-        best.1
-    };
-    // Per link, the engine's junction-facing edges with their lane (`None`: full width).
-    let mut eng: HashMap<usize, Edges> = HashMap::new();
-    let (mut left_out_unsignalised, mut connectors) = (0, 0);
-    for s in &nj.stop_lines {
-        let c = &s.coords;
-        if s.link_id.is_some() && s.lane.is_none() {
-            connectors += 1;
-            continue;
-        }
-        let li = match &s.link_id {
-            Some(id) => net.links.iter().position(|l| &l.id.0 == id).unwrap(),
-            None => nearest(c),
-        };
-        if !signal.contains(net.links[li].to_node.0.as_str()) {
-            left_out_unsignalised += 1;
-            continue;
-        }
-        eng.entry(li).or_default().push((s.lane, [c[1], c[2]]));
-    }
-    let (mut corners, mut stop_worst) = (0, 0.0f64);
-    for m in st.markings.iter().filter(|m| m.kind == Kind::Stop) {
-        let edges: Vec<_> = eng
-            .get(&m.link)
-            .map(|v| {
-                v.iter()
-                    .filter(|(l, _)| l.is_none() || *l == m.lane)
-                    .collect()
-            })
-            .unwrap_or_default();
-        assert!(
-            !edges.is_empty(),
-            "an engine stop line for {} lane {:?}",
-            m.link,
-            m.lane
-        );
-        for p in [
-            *m.ribbon.left.last().unwrap(),
-            *m.ribbon.right.last().unwrap(),
-        ] {
-            let d = edges
-                .iter()
-                .map(|(_, e)| seg_dist(p, e[0], e[1]))
-                .fold(f64::INFINITY, f64::min);
-            stop_worst = stop_worst.max(d);
-            corners += 1;
-        }
-    }
     println!(
-        "gate 6 {dir}: engine fills {} worst {fill_worst:.6} m; stop-line corners {corners} worst {stop_worst:.6} m (left out: {left_out_unsignalised} unsignalised, {connectors} connectors)",
+        "gate 6 {dir}: engine fills {} worst {fill_worst:.6} m",
         nj.junction_fills.len()
     );
-    assert!(fill_worst <= 0.01 && stop_worst <= 0.01);
-    assert_eq!(corners, e.corners);
+    assert!(fill_worst <= 0.01);
 }
 
 #[test]
@@ -680,13 +387,7 @@ fn gate6_midtown_counts() {
             junctions: 106,
             pairs: 29,
             fills: 26,
-            yellow: 88,
-            stops: 402,
-            stop_links: 188,
-            dashes: 2208,
             surface: (10_510, 9_532),
-            markings: (37_594, 32_198),
-            corners: 804,
         },
     );
 }
@@ -700,13 +401,7 @@ fn gate6_urban_grid_counts() {
             junctions: 9,
             pairs: 24,
             fills: 24,
-            yellow: 48,
-            stops: 71,
-            stop_links: 36,
-            dashes: 1105,
             surface: (13_971, 13_842),
-            markings: (36_292, 33_844),
-            corners: 142,
         },
     );
 }
@@ -774,12 +469,6 @@ struct Expect7 {
     centres: usize,
     strips_pct: f64,
     in_junction: usize,
-    episodes: usize,
-    rows: usize,
-    within: usize,
-    early: usize,
-    at_edge: usize,
-    other: usize,
 }
 
 fn gate7(dir: &str, e: Expect7) {
@@ -857,92 +546,6 @@ fn gate7(dir: &str, e: Expect7) {
     assert_eq!(on_road, total, "all on the drawn road");
     assert_eq!((in_j, in_j_on_surface), (e.in_junction, e.in_junction));
     assert!((pct - e.strips_pct).abs() < 0.0005, "on strips alone {pct}");
-
-    // The first stopped box at a stop line (§2.17.7).
-    let signal: HashSet<&str> = net
-        .junctions
-        .iter()
-        .filter(|j| j.control == ControlType::Signal)
-        .map(|j| j.node_id.0.as_str())
-        .collect();
-    let by_id: HashMap<&str, usize> = net
-        .links
-        .iter()
-        .enumerate()
-        .map(|(i, l)| (l.id.0.as_str(), i))
-        .collect();
-    // The upstream edge of the built stop line for each (link, lane).
-    let back: HashMap<(usize, u32), f64> = st
-        .markings
-        .iter()
-        .filter(|m| m.kind == Kind::Stop)
-        .map(|m| {
-            let id = &net.links[m.link].id.0;
-            let lane = m.lane.unwrap();
-            let s1 = pl.link_length(id)
-                - pl.data
-                    .lane_stop_line_offset(&LinkId(id.clone()), LaneIdx(lane));
-            ((m.link, lane), s1 - m.width)
-        })
-        .collect();
-    let fcd = &run.fcd;
-    let (mut rows, mut episodes) = (0, Vec::new());
-    let mut last: HashMap<u64, f64> = HashMap::new();
-    for snap in &fcd.snapshots {
-        let rs = &fcd.rows[snap.start..snap.end];
-        let mut lead: HashMap<(u32, u32), f64> = HashMap::new();
-        for r in rs {
-            let e = lead.entry((r.link, r.lane)).or_insert(f64::NEG_INFINITY);
-            *e = e.max(r.position);
-        }
-        for r in rs {
-            if r.speed >= 0.1 {
-                continue;
-            }
-            let li = by_id[fcd.links[r.link as usize].as_str()];
-            if !signal.contains(net.links[li].to_node.0.as_str())
-                || lead[&(r.link, r.lane)] > r.position
-            {
-                continue;
-            }
-            let g = back[&(li, r.lane)] - (r.position + r.length / 2.0);
-            if g.abs() > 5.0 {
-                continue;
-            }
-            rows += 1;
-            let prev = last.insert(r.vehicle_id, snap.time);
-            if prev.is_none_or(|p| snap.time - p > 1.5) {
-                episodes.push(g);
-            }
-        }
-    }
-    episodes.sort_by(f64::total_cmp);
-    let median = episodes[((episodes.len() - 1) as f64 * 0.5).round() as usize];
-    let within = episodes.iter().filter(|g| g.abs() <= 0.10).count();
-    let early = episodes
-        .iter()
-        .filter(|g| (1.35..=1.55).contains(*g))
-        .count();
-    // "At −0.600 m" is the probe's 0.1 m bucket (§2.17.15's histogram, `round(10·g)` −6):
-    // fronts at the junction's edge, or within 5 cm of it. Exactly −0.600 is printed too.
-    let at_edge = episodes
-        .iter()
-        .filter(|g| (*g * 10.0).round() == -6.0)
-        .count();
-    let exact = episodes
-        .iter()
-        .filter(|g| (*g + 0.6).abs() <= 0.0005)
-        .count();
-    let other = episodes.len() - within - early - at_edge;
-    println!(
-        "gate 7 {dir}: first stopped boxes {} episodes ({rows} rows), median gap {median:+.4} m; within 0.10 m {within}, 1.35–1.55 m {early}, at −0.600 m {at_edge} ({exact} within 0.5 mm of it), other {other}",
-        episodes.len()
-    );
-    assert_eq!(
-        (episodes.len(), rows, within, early, at_edge, other),
-        (e.episodes, e.rows, e.within, e.early, e.at_edge, e.other)
-    );
-    assert!((median - 0.042).abs() < 0.0005, "median {median}");
 }
 
 #[test]
@@ -955,12 +558,6 @@ fn gate7_midtown_strips_and_boxes() {
             centres: 201_256,
             strips_pct: 91.202,
             in_junction: 17_706,
-            episodes: 2_491,
-            rows: 48_899,
-            within: 2_441,
-            early: 27,
-            at_edge: 10,
-            other: 13,
         },
     );
 }
@@ -975,12 +572,6 @@ fn gate7_urban_grid_strips_and_boxes() {
             centres: 21_358,
             strips_pct: 94.236,
             in_junction: 1_231,
-            episodes: 129,
-            rows: 2_555,
-            within: 123,
-            early: 6,
-            at_edge: 0,
-            other: 0,
         },
     );
 }
@@ -1012,50 +603,15 @@ fn gate8_synthetic_drawn() {
     let (bg, road) = (scene::BACKGROUND, scene::ROAD);
     // A world point, what is there, and its colour off and on.
     type Row = (f64, f64, &'static str, [u8; 3], [u8; 3]);
-    let table: [Row; 13] = [
+    let table: [Row; 2] = [
         (0.0, 0.0, "the junction", bg, road),
         (-20.0, 0.0, "the median fill", bg, road),
-        (-20.0, 0.125, "the double yellow, north", bg, YELLOW),
-        (-20.0, -0.125, "the double yellow, south", bg, YELLOW),
-        (-8.0, 3.75, "a lane-line dash", road, WHITE),
-        (-14.0, 3.75, "between dashes", road, road),
-        (-6.8, -2.0, "L_WC's stop line", road, WHITE),
-        (6.8, 5.5, "L_EC lane 1's stop line", road, WHITE),
-        (6.8, 2.0, "L_EC lane 0 at the edge", road, road),
-        (11.8, 2.0, "L_EC lane 0's line, 5 m back", road, WHITE),
-        (0.0, 12.5, "the one-way's dash", road, WHITE),
-        (0.0, 16.0, "the one-way's gap", road, road),
-        (3.3, 14.0, "the one-way's left edge", road, road),
     ];
     for (x, y, what, want_off, want_on) in table {
         let (a, b) = (px(&off, x, y), px(&on, x, y));
         println!("gate 8 ({x}, {y}) {what}: off {a:?} on {b:?}");
         assert_eq!((a, b), (want_off, want_on), "({x}, {y}) {what}");
     }
-    let changed = off
-        .chunks(4)
-        .zip(on.chunks(4))
-        .filter(|(a, b)| a != b)
-        .count();
-    let white = on.chunks(4).filter(|p| p[..3] == WHITE).count();
-    let yellow = on.chunks(4).filter(|p| p[..3] == YELLOW).count();
-    let mut yellowish = 0;
-    for (i, p) in on.chunks(4).enumerate() {
-        let (x, y) = (
-            ((i % 1280) as f64 + 0.5 - 640.0) * 0.05,
-            -((i / 1280) as f64 + 0.5 - 360.0) * 0.05,
-        );
-        if x.abs() < 8.0 && y.abs() > 9.0 && p[0] as i32 - p[2] as i32 > 40 {
-            yellowish += 1;
-        }
-    }
-    println!(
-        "gate 8: {changed} pixels change; {white} white, {yellow} yellow; {yellowish} yellowish on the one-way's arms"
-    );
-    assert_eq!(
-        (changed, white, yellow, yellowish),
-        (112_608, 6_316, 6_120, 0)
-    );
 }
 
 // ── Gate 12: `M`, headless ───────────────────────────────────────────────────
