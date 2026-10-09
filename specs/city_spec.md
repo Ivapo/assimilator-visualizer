@@ -50,7 +50,7 @@ phases:
     by: null
   - name: "Phase 6 — Engine look and lane arrows: the dashboard's markings, from NetworkJson, by default"
     reviewed: 2026-10-09
-    shipped: null
+    shipped: 2026-10-09
     cut: null
     by: null
 
@@ -2040,7 +2040,8 @@ if they do not work.
    - junction surfaces flat, opaque, the road's grey.
 
    *(2026-10-08)* The markings in this decision are replaced by the engine dashboard's
-   when Phase 6 ships (§2.18.1, decision 2). The junction surfaces stay.
+   when Phase 6 ships (§2.18.1, decision 2). The junction surfaces stay. *(2026-10-09)*
+   Replaced: Phase 6 shipped 2026-10-09.
 4. **On by default** in `render` and `view`, orthographic and perspective.
    - An off flag gives today's frames, byte-identical;
    - a key toggles it in `view`, as see-through's `X` does (§2.15.6).
@@ -2060,16 +2061,19 @@ OQ-19, and three calls on the draft):
    stays. *(2026-10-09, changed by the user at gate 14)* The fill is replaced too when
    Phase 6 ships: a pair's gap shows the background, as with `--no-streets`, its junction
    ends rounded by `NetworkJson::median_noses` in the road's grey (§2.18.1, decision 5 as
-   changed; §2.18.16).
+   changed; §2.18.16). *(2026-10-09)* Both replaced: Phase 6 shipped 2026-10-09. Nothing of
+   this decision remains drawn.
 6. **Markings fade where they are under a pixel** (OQ-19's (a), §2.17.10).
 7. **`M` is the key** that shows and hides streets in `view` (§2.17.12).
 8. **Stop lines stay 0.60 m deep,** though the engine stops a vehicle's front 0.6 m
    behind the line's junction-facing edge, a standoff written for a 0.4 m line
    (§2.17.7). *(2026-10-08)* Replaced when Phase 6 ships: its stop lines are the
-   engine's, 0.4 m deep (§2.18.1, decision 2; §2.18.7).
+   engine's, 0.4 m deep (§2.18.1, decision 2; §2.18.7). *(2026-10-09)* Replaced: Phase 6
+   shipped 2026-10-09.
 9. **The engine's own street geometry for its dashboard was considered** and the draft
    draws its own; §2.17.2 says why and compares the two. *(2026-10-08)* Reversed when
    Phase 6 ships: it draws the dashboard's markings from that geometry (§2.18.2).
+   *(2026-10-09)* Reversed: Phase 6 shipped 2026-10-09.
 
 The rest of this section is the draft's proposal. It settles:
 - what the engine gives, and that no engine request and no crate is needed (§2.17.2);
@@ -2226,7 +2230,8 @@ user)* OQ-18 is answered (a), as drafted (decision 5).
 
 *(2026-10-09, changed by the user at gate 14)* Replaced when Phase 6 ships: no fill is
 drawn. The gap shows the background, as with `--no-streets`, rounded at its junction ends
-by the engine's median noses in the road's grey (§2.18.16).
+by the engine's median noses in the road's grey (§2.18.16). *(2026-10-09)* Replaced:
+Phase 6 shipped 2026-10-09.
 
 #### 2.17.6 The markings: widths, patterns and colours
 
@@ -2636,6 +2641,8 @@ call on the draft):
    - the centre line stays only on 0 m pairs.
 
    The reason: the gap reads as a gap, as on the dashboard. The design is §2.18.16.
+   *(2026-10-09, user, at the amended gate 14)* **Stands:** "yes, it looks great"; the
+   gaps read as gaps. Nothing drawn changes.
 
 *(2026-10-09, changed by the user at gate 14)* By §6.1 again: step 0, decision 5 changes.
 Phase 6 has not shipped, so it is amended in place, on its branch, before it ships; no
@@ -3760,6 +3767,8 @@ centre on the surfaces). The gap lies between two strips, where no lane is. Phas
     background, with its junction ends rounded by `NetworkJson::median_noses` in the
     road's grey, and no fill (§2.18.1, decision 5 as changed; §2.18.16). Nothing of (a)
     remains drawn.
+  - *(2026-10-09)* Both parts of (a) replaced: Phase 6 shipped 2026-10-09, after its
+    amended gate 14 passed.
 - **OQ-19** — How are markings drawn where they are under a pixel (§2.17.10)? **RESOLVED.**
   - *The facts:* a 0.15 m line is 0.09 px wide in Midtown's orthographic frame, 0.06 px
     in `view`'s launch fit, and 0.09–0.54 px through the city flight. Drawn at true
@@ -3816,6 +3825,8 @@ centre on the surfaces). The gap lies between two strips, where no lane is. Phas
     Gates 8, 9 and 14 were predicted with (a) and do not change (gate 5 asserts no
     colour).
   - *(2026-10-09, user, at gate 14)* Stands: the colours pass as they look.
+  - *(2026-10-09, user, at the amended gate 14)* Stands: gate 14 passed, and nothing drawn
+    changes.
 
 ## 4. Implementation phases
 
@@ -6246,6 +6257,11 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
         no gap, none in urban_grid; every other two-way street shows its gap dark.
 
       Then say whether the gaps now read as gaps.
+
+      *(2026-10-09, user)* **Passed:** "yes, it looks great", on the four pairs
+      (`scratch/out/look/` against `scratch/out/look-v1/`) and the `view` check. The gaps
+      read as gaps. Decision 5 as amended and OQ-20 stand; nothing drawn changes. Phase 6
+      shipped 2026-10-09.
   - **Predictions, old → new:**
 
     | What | First build | Amended | Gate |
