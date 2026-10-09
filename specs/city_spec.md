@@ -47,7 +47,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 6 — Engine look and lane arrows: the dashboard's markings, from NetworkJson, by default"
-    reviewed: null
+    reviewed: 2026-10-08
     shipped: null
     cut: null
     by: null
@@ -2052,7 +2052,10 @@ Decided by the user, 2026-10-05, on the draft, before review (the answers to OQ-
 OQ-19, and three calls on the draft):
 5. **The median gap is a painted median** (OQ-18's (a)): filled with the road's grey,
    with one double yellow line in a gap under 1 m and a double yellow line inside each
-   edge of a wider one (§2.17.5).
+   edge of a wider one (§2.17.5). *(2026-10-08)* The yellow lines are replaced when Phase
+   6 ships: a pair with a gap shows its grey fill and no line, and the engine's one
+   centre line is drawn only where the gap is 0 (§2.18.1, decision 5; §2.18.3). The fill
+   stays.
 6. **Markings fade where they are under a pixel** (OQ-19's (a), §2.17.10).
 7. **`M` is the key** that shows and hides streets in `view` (§2.17.12).
 8. **Stop lines stay 0.60 m deep,** though the engine stops a vehicle's front 0.6 m
@@ -2594,7 +2597,7 @@ look). Step 1 matches in part: the change contradicts part of a shipped phase, P
 US markings (§2.17.6, §2.17.8, the stop lines' depth in §2.17.7). That phase is not cut,
 since its surfaces, fills, fade, meshes, lifts, flag and key stay in use and are what this
 phase draws on, so it gets no `cut` and no `## 0.` note. The contradicted statements get
-dated notes in place instead (step 1's third bullet): §2.17.1's decisions 3, 8 and 9,
+dated notes in place instead (step 1's third bullet): §2.17.1's decisions 3, 5, 8 and 9,
 and OQ-18. Step 2: vis-002 owns the scene around the traffic and its roadmap names the
 item, so the new work is a phase appended here (decision 1). vis-001 is not edited.
 
@@ -2811,9 +2814,11 @@ bar 1.00 m wide and 0.40 m deep (l. 1396–1397).
   `through_left_right` (a straight arrow and two branches). `drawLeftRight`'s one path
   crosses itself, tracing the shared shaft twice; it is drawn as its two halves (left
   turn, right turn), whose union is the same filled set.
-- **The types `NetworkJson` emits at the pin** are these nine. The front end also knows
-  `u_turn_left` and `through_left_u_turn`, which the pin never emits; any type not in the
-  table draws as a straight arrow, as `drawLaneArrow`'s `else` does.
+- **The types `NetworkJson` emits at the pin** are these nine. The front end also draws
+  `u_turn_left` (`drawUTurnLeft`) and `through_left_u_turn` (as `drawThroughTurn`'s left
+  branch), which the pin never emits, so they are not copied. Here any type not in the
+  table draws as a straight arrow, as `drawLaneArrow`'s `else` does for an unknown type;
+  a pin move that starts emitting either is caught by §2.18.12's read of `arrow_type`.
 
 | Glyph | Outlines | Vertices | Triangles | Area (m²) | Extent along × across (m) |
 |---|---|---|---|---|---|
@@ -2860,8 +2865,13 @@ lane's centre, stays inside a 3 m lane.
     link and no lane, never given a guessed one; gate 6 asserts there is none;
   - **the cut points** lie on the ring's own two long edges, at lateral `offs[k] ±
     w_k/2` from the link's `lane_center_offsets()`, as a fraction `(l + W/2)/W` of the edge
-    from its left corner to its right. So the quads' union is the ring exactly, and each
-    quad's corners are on the ring's edges;
+    from its left corner to its right. The ring's corners, as `network_json.rs` builds them
+    (l. 1694–1717, with `p = (dir.y, −dir.x)` right of travel): `coords[0]` back right,
+    `coords[1]` front right, `coords[2]` front left, `coords[3]` back left. So the
+    junction-facing edge runs `coords[2]` → `coords[1]` and the back edge `coords[3]` →
+    `coords[0]`, left to right, and lane 0, the leftmost (`lane_center_offsets()` is
+    right-positive), is cut nearest `coords[2]`/`coords[3]`. The quads' union is the ring
+    exactly, and each quad's corners are on the ring's edges;
   - **per-lane rings** (`lane: Some`) carry their link and lane already; **connectors**
     (`link_id` set, `lane: None`: a 0.10 m strip along a lane boundary between two
     staggered lines) stay whole, kept with their link.
@@ -2912,12 +2922,16 @@ Two heights, as Phase 5 had (§2.17.9):
   urban_grid; a centre line under a stop line: **3** (Midtown). Both have the stop line
   0.01 m above them, as the dashboard paints stop lines last (l. 598). Arrows overlap
   nothing. A dead-end bar touches its shaft's end and does not overlap it.
-- **Same-colour overlaps tie, harmlessly, inside one mesh.** A connector overlaps its two
-  stop lines' corners, and a glyph's outlines overlap each other. Each is one colour (up
-  to the fade's spread across 3 m, §2.18.9). They are drawn by the one markings entity in
-  index order, and a GPU resolves equal depths in primitive order within one draw. Phase
-  5's lesson (vis-001 §2.12.1) is about ties between entities in Bevy's binned pass,
-  whose order is not kept, and there are none here.
+- **Overlaps at one lift tie, deterministically, inside one mesh.** A glyph's outlines
+  overlap each other, in one colour (up to the fade's spread across 3 m, §2.18.9). A
+  connector overlaps its two stop lines' corners: the same colour at full strength, but
+  under the fade they differ (widths 0.10 and 0.40 m), and the overlap shows the one the
+  depth test keeps by mesh order (one connector in urban_grid, sub-pixel where the fade
+  parts them). All are drawn by the one markings entity in index order, and a
+  GPU resolves equal depths in primitive order within one draw, so the result is the same
+  every frame. vis-001 Phase 6's lesson (vis-001 §2.12.1, as §2.17.9 cites it) is about
+  ties between entities in Bevy's binned pass, whose order is not kept, and there are
+  none here.
 - The lifts' depth precision is §2.17.9's, unchanged.
 
 #### 2.18.9 The fade for each kind
@@ -2981,7 +2995,8 @@ between looks. Phase 5's figure on a quiet machine was 60.00 (§2.17.11).
   removed: their constants (`LINE_M`, `DOUBLE_SPACE_M`, `DASH_M`, `GAP_M`, `STOP_M`,
   `FLUSH_MIN_M`, `WHITE`, `YELLOW`) and the yellow, lane-line and stop-line code in
   `Streets::build`. `--no-streets` needs none of it, since it draws today's frames.
-- **`src/draw.rs`, `src/render.rs`, `src/view/` and `src/main.rs` do not change.** They
+- **`src/draw.rs`, `src/render.rs`, `src/view/` and `src/main.rs` do not change,** but
+  for `src/main.rs`'s `--no-streets` help text, which names the US markings. They
   take `Streets::surface()` and `Streets::markings()` (positions, a colour and a width per
   vertex, indices) and fade by those, as now.
 - **Phase 5's tests** (`tests/streets.rs`), assertion by assertion:
@@ -2997,12 +3012,14 @@ between looks. Phase 5's figure on a quiet machine was 60.00 (§2.17.11).
 
   **Phase 5's old numbers stay as recorded:** in its phase (§4, Phase 5) and its gate
   run's record (`specs/reviews/vis-002.md`), both append-only and untouched. Phase 6's
-  gate run lists each assertion removed. The new tests are a file of their own,
+  gate run lists each assertion removed, and each kept line narrowed to drop a removed
+  value (Phase 6's scope, "Tests", says which may be). The new tests are a file of their own,
   `tests/look.rs`.
 - **Phase 5's scripts:** `scripts/gates-streets.sh` is not edited. Its gates 10 and 11
   still hold with Phase 6's markings (each render twice equal, each differing from its
   `--no-streets` reference). It writes into `scratch/out/streets/`, over Phase 5's videos,
-  so Phase 6 copies those first (gate 15 compares with the copies). The 29 `--no-streets`
+  so Phase 6 copies those first (gate 10 compares with the copies' `framemd5`, and gate 14
+  shows the copied videos). The 29 `--no-streets`
   lines in the four reference scripts stay as they are.
 
 #### 2.18.12 A pin move
@@ -3011,8 +3028,8 @@ The look changes only when the user moves the pin (vis-001 §2.2.2: the `rev` mo
 user in a commit of its own that re-runs the gates). Then:
 - **What follows by itself:** everything from `NetworkJson` and `NetworkData`: where each
   dash, centre line, stop line, connector and arrow is, how many there are, and each
-  arrow's type. Gates 6 and 7 compute their counts independently from the config and
-  assert the fixtures' numbers, so a changed engine rule shows as a failed count with
+  arrow's type. Gate 6 computes its counts independently from the config and asserts
+  the fixtures' numbers, and gate 7 its stopped-box figures, so a changed engine rule shows as a failed count with
   both numbers printed. Gate 10's renders show the changed frames against the old
   renders' `framemd5`.
 - **What does not:** the values copied from the front end. **A pin-move phase runs
@@ -3052,7 +3069,7 @@ that label lane conflict pairs, a debug item: nothing drawn would change.
 `assimilator-geometry`, a dependency since vis-001 and already called by Phase 5's gate 6;
 `earcut` triangulates the rings and glyphs. No engine request: `NetworkJson` is public and
 gives everything, and the colours and glyphs, which the engine keeps only in TypeScript,
-are copied (§2.18.12 says how they follow). One changed module, `src/streets.rs`.
+are copied (§2.18.12 says how they follow). One changed module, `src/streets.rs`, and the `--no-streets` help text in `src/main.rs`.
 
 #### 2.18.15 Measured while drafting (2026-10-08)
 
@@ -3077,13 +3094,16 @@ holds:
     buildings, the city flight with and without, and the orbit with buildings, **1800 of
     1800** equal (`ffprobe` as gate 10). Each differs from Phase 5's render of the same case
     (`scratch/out/streets/*.framemd5`) in every frame, and from its reference in every
-    frame. Wall times: Midtown 48.8–87.5 s, urban_grid 232–451 s, at load 11–66;
+    frame (checked for `ortho-city`, `default` and `orbit-on`). Wall times: Midtown 48.8–87.5 s, urban_grid 232–451 s, at load 11–66;
 - `view --bench 20` on Midtown with buildings (§2.18.10). (`bench.txt`).
 
 **Where the probe differs from the scope:** it keeps Phase 5's markings code and adds
 Phase 6's beside it; it composites the colours in `streets6::over` and looks them up per
-vertex, where the scope keeps a constant table; and its `Kind` names differ (`Median` for
-`Centre`). The mesh data it hands the drawing are the scope's.
+vertex, where the scope keeps a constant table; its `Kind` names differ (`Median` for
+`Centre`); its `glyph()` maps the two unemitted types (§2.18.5) its own way; and its
+markings interleave stop lines and connectors in `NetworkJson`'s order, where the scope
+groups each kind. The counts, vertices and triangles are the same either way; the mesh
+data it hands the drawing are otherwise the scope's.
 
 ## 3. Open questions
 
@@ -3539,7 +3559,8 @@ vertex, where the scope keeps a constant table; and its `Kind` names differ (`Me
     descriptions. Every count, position, mesh size and gate 7 hold either way.)*~~
   - *(answered 2026-10-08, user, before review)* **(a): the dark palette at the
     dashboard's opacities, over our road.** Recorded as §2.18.1's decision 4 and §2.18.4.
-    Gates 5, 8, 9 and 14 were predicted with (a) and do not change.
+    Gates 8, 9 and 14 were predicted with (a) and do not change (gate 5 asserts no
+    colour).
 
 ## 4. Implementation phases
 
@@ -5381,7 +5402,10 @@ gates below were drafted.
       `vertex_colours`, `FADE_FROM_PX` and `FADE_TO_PX`; the lifts' values, renamed
       `LIFT_LINES_M` 0.01 and `LIFT_TOP_M` 0.02 (§2.18.8).
     - **Copied from the front end, each with its file and line at `90b39292` in a
-      comment** (§2.18.12): the dark palette's six colours and five opacities (§2.18.4);
+      comment** (§2.18.12): the dark palette's five marking colours (`LANE_MARKING`,
+      `MEDIAN_LINE`, `STOP_LINE`, `ROAD_ARROW`, `DEAD_END_BAR`) and their five opacities
+      (§2.18.4); `ROAD_FILL` is not copied, since only §2.18.4's dashboard-road column
+      uses it and §2.18.12's diff reads it there;
       the glyph constants `LA_SW`, `LA_HW`, `LA_HL`, `LA_LEN`, `LA_TURN_SHAFT`,
       `LA_TURN_R`, the u-turn's radius and return leg, the fork and the dead-end bar
       (§2.18.5); and the glyph outlines, `glyph(arrow_type) -> (Vec<Vec<[f64; 2]>>,
@@ -5389,7 +5413,10 @@ gates below were drafted.
     - `Kind` becomes `Centre`, `Dash`, `Solid`, `Stop`, `Connector`, `Arrow`, `DeadEnd`.
       A `Marking` is its kind, its link (`Option<usize>`, in link order), its lane
       (`Option<u32>`), its arrow type (for an arrow or a bar), its polygon (no closing
-      copy) and its `earcut` triangles. Each kind's colour is the copied colour
+      copy) and its `earcut` triangles. Stop lines and connectors take their link and
+      lane as §2.18.6 gives them, and arrows and bars from their `LaneArrow`
+      (`link_id` → its index, `lane`); centre lines, dashes and solid lines, which
+      `NetworkJson` gives no link, have `None` for both. Each kind's colour is the copied colour
       composited over `scene::ROAD` at its opacity, rounded once (§2.18.4: `COLOURS`, a
       constant table, checked by gate 9), and each kind's fade width is §2.18.9's.
     - `Streets::build(&Placement)`: the surfaces, pairs and fills as now; then
@@ -5406,21 +5433,33 @@ gates below were drafted.
       the drawing does not change.
     - `colour(marking, α)`: the blend as now, from linear colours computed once for the
       road and the five marking colours.
-  - **Drawing, `render`, `view`, the CLI:** no change (§2.18.11). `--no-streets` and `M`
-    as Phase 5.
+  - **Drawing, `render`, `view`, the CLI:** no change (§2.18.11), but for one comment.
+    `--no-streets` and `M` as Phase 5. `src/main.rs`'s `--no-streets` doc comment, which
+    is its `--help` text and names "lane lines, stop lines and the yellow centre line",
+    is reworded to the dashboard's markings (lane dashes, stop lines, lane arrows, a
+    centre line where a pair has no gap); no other line of `src/main.rs` changes.
   - **Tests.**
     - `tests/look.rs` (new):
       - headless, not ignored: gates 5 and 9;
       - headless, needing the fixtures, so ignored: gates 6 and 7;
       - through the GPU, ignored: gate 8 (no fixture).
     - `tests/streets.rs`: the assertions of §2.18.11's table that test the US markings
-      are removed, and nothing else changes; every assertion it keeps passes with Phase
-      5's numbers.
+      are removed, with the code only they use. Kept assertions share statements with
+      removed ones, so a kept line may change, but only to drop what is removed:
+      `fade(LINE_M, 1.1481)` becomes `fade(0.15, 1.1481)` (`LINE_M` is gone from
+      `src/streets.rs`); gate 6's counter tuple, its `got` and expected arrays and its
+      `println!`s lose the removed counts (the yellow lines, stop lines, stop links,
+      dashes and the markings mesh); `fill_worst <= 0.01 && stop_worst <= 0.01` loses its
+      stop-line clause; gate 8's `[Row; 13]` becomes `[Row; 2]`; gate 5's and gate 9's
+      `println!`s lose the removed values; and names no longer used leave the `use` lines.
+      Nothing is added, and no kept value or tolerance changes. Every assertion it keeps
+      passes with Phase 5's numbers.
     - `scripts/gates-look.sh` (new, offline): gate 10, and the renders for gate 14, into
       `scratch/out/look/`: gate 10's first render of each case is kept as
       `look-ortho-city.mp4`, `look-city.mp4`, `look-orbit.mp4` and `look-ug-camera.mp4`.
     - **Not edited:** every other test file; every other script, `scripts/gates-streets.sh`
-      included; every source file but `src/streets.rs`; `Cargo.toml` and `Cargo.lock`.
+      included; every source file but `src/streets.rs` and the one doc comment in
+      `src/main.rs`; `Cargo.toml` and `Cargo.lock`.
 - **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
   on urban_grid and Midtown at engine `90b39292` (FCD SHA-1s `3ad76744…` and
   `01becc86…`), baseline, seed 42, with Midtown's Phase 2 cache
@@ -5466,9 +5505,12 @@ gates below were drafted.
        **1800 of 1800** each; `gates-streets.sh` gates 10 and 11 pass (seven cases twice,
        each pair equal and each differing from its `--no-streets` reference; `--streets`
        exits 2). All seven scripts pass.
-     - `git diff origin/main --stat -- src/` is `src/streets.rs` alone; `-- scripts/`
-       adds `gates-look.sh` alone; `-- tests/` adds `tests/look.rs`, and in
-       `tests/streets.rs` only removes: lines, and names from its `use` line.
+     - `git diff origin/main --stat -- src/` is `src/streets.rs` and `src/main.rs`, and
+       `src/main.rs`'s diff is the `--no-streets` doc comment alone; `-- scripts/` adds
+       `gates-look.sh` alone; `-- tests/` adds `tests/look.rs`, and in `tests/streets.rs`
+       every change is a removed line or a kept line narrowed as the scope's "Tests"
+       allows, read hunk by hunk and listed in the record: no added assertion, and no
+       kept value or tolerance changed.
   4. **Build cost** (§2.18.14). `git diff origin/main -- Cargo.toml Cargo.lock` is empty:
      **0 packages**, no feature.
   - **The markings — headless:**
@@ -5484,7 +5526,7 @@ gates below were drafted.
        - {id: E, point: [60, 0], type: endpoint}
        - {id: N, point: [0, 60], type: endpoint}
        - {id: S, point: [0, -60], type: endpoint}
-     links:   # every lane: {width: 3.5, speed_limit: 13.9}; geometry: the two nodes' points
+     links:   # lane k: {id: k, width: 3.5, speed_limit: 13.9}; geometry: the two nodes' points
        - {id: L_WC, from_node: W, to_node: C, median_gap: 0,   lanes: 3}
        - {id: L_CW, from_node: C, to_node: W, median_gap: 0,   lanes: 2}
        - {id: L_EC, from_node: E, to_node: C, median_gap: 0.5, lanes: 3}
@@ -5506,7 +5548,10 @@ gates below were drafted.
            # N_L L_NC→L_CE [0]→[0] left;  N_T L_NC→L_CS [0]→[0] through;  N_R L_NC→L_CW [0]→[1] right
            # S_L L_SC→L_CW [0]→[0] left;  S_R L_SC→L_CE [0]→[1] right
      ```
-     (The test writes each link and movement out in full; this is its content.) Lanes per
+     (The test writes each link and movement out in full; this is its content. Lanes are
+     `{id: 0, …}`, `{id: 1, …}` in order, and each movement is `{id, from_link, to_link,
+     from_lanes, to_lanes, type}` with `type` one of `u-turn`, `left`, `through`, `right`,
+     exactly as the probe's `scratch/vis002p6-probe/synth/network.yaml`.) Lanes per
      approach: `L_WC` u-turn / through+left / through+right; `L_EC` left+u-turn /
      through / right; `L_NC` all three / none; `L_SC` left+right. The predictions (the
      probe's, `scratch/vis002p6-probe/out/synth.txt`):
@@ -5533,7 +5578,12 @@ gates below were drafted.
        bar 1 (4, 2): **1,023 vertices, 781 triangles**;
      - **every drawn vertex** is a vertex of its `NetworkJson` ring or glyph placement
        exactly, or lies on that ring's edge within 1e-9 m (the cut points, the split
-       points), and the cut quads' areas sum to their ring's within 1e-9 of it.
+       points), and the cut quads' areas sum to their ring's within `1e-9 ×` its area
+       (relative, as Phase 5's gate 5);
+     - **each cut quad is its lane's:** `L_WC`'s lane 0 quad spans `y` −3.5 to 0 and
+       its lane 2 `y` −10.5 to −7; `L_NC`'s lane 0 spans `x` −3.5 to 0 and its lane 1
+       `x` −7 to −3.5 (lane 0 the leftmost, §2.18.6). A cut run from the wrong corner
+       swaps them.
 
      Every number is computed in the test with `==` where it is exact (the counts, the
      types, the links and lanes) and within 1e-9 m elsewhere. **Without the feature it
@@ -5542,10 +5592,19 @@ gates below were drafted.
   6. **The fixtures' counts, and against the engine** (`tests/look.rs`, ignored: needs both
      fixtures). Each count is also computed independently in the test from
      `NetworkConfig` and `NetworkData`: arrows per lane of each link at least 8 m long
-     (its effective length from `NetworkJson::links`), the departing ones on links of
-     25 m or more, each type from the lane's movements; stop lines per lane of each link
-     into a signal, plus the lanes into an unsignalised junction with a path that is not
-     transparent (`NetworkData::is_transparent_lane_path`).
+     (the arc length of its `NetworkJson::links[].coords`, the offset polyline the
+     engine measures, not `LinkData.length`), the departing ones on links of 25 m or
+     more, each type from the lane's movements; stop lines by the engine's whole rule
+     (`network_json.rs` l. 1553–1693 at the pin, §2.18.2): no waypoint; every lane of
+     every approach to a signal; at a priority junction the approaches with a minor
+     movement, and at any other unsignalised junction those with a lane path that is not
+     transparent (`NetworkData::is_transparent_lane_path`), each then only on its lanes
+     with such a path; no approach under 1 m long, and no ring, full-width or per lane,
+     whose centre would fall before the link's start (`s_center < 0`, l. 1690 and
+     1746–1749). Neither fixture has a
+     priority junction or a waypoint, so those branches give 0 here and are copied for a
+     pin move. The per-type arrow counts are `NetworkJson`'s (§2.18.3); the probe did not
+     count types independently, so this test is the first to.
 
      | | Midtown | urban_grid |
      |---|---|---|
@@ -5609,7 +5668,8 @@ gates below were drafted.
      Over the whole frame: **243,827** pixels change; exactly **954** centre, **2,166**
      dash, **5,240** stop (stop lines and the connector), **6,546** arrow and **160** bar
      pixels. Lines here are 2–8 px wide (k 0.05), so the fade leaves them whole. Without
-     the feature every "on" above but the junction's and the fills' fails.
+     the feature every coloured "on" above (centre, dash, stop, arrow, bar) fails, and so
+     does every pixel count; the "on"s that are road pass either way.
   9. **The colours and the fade** (`tests/look.rs`, not ignored):
      - each kind's colour, composited from the copied hex and opacity over `scene::ROAD`,
        equals §2.18.4's table (`==` per channel), and `colour` at `α` 0 is the road's and
@@ -5708,35 +5768,46 @@ gates below were drafted.
   | Copied values at their lines | each holds | 11 |
   | `view --bench` with streets and buildings | ≥ 30 fps | 13 |
 - **Not predicted, and so not gated:**
-  - the look: the colours (OQ-20, answered (a)), the arrows' size on screen, the fade's widths, for the
-    user at gate 14;
+  - the look: the colours (OQ-20, answered (a)), the arrows' size on screen, how the
+    fade's widths look (their values are gate 9's), for the user at gate 14;
+  - solid lane lines: drawn by the same path as the centre lines (a ring, its edges split
+    at `STRIP_STEP`), but no lane in either fixture or the synthetic crossing has
+    `no_change_left`/`right`, so no gate draws one;
   - render times (gate 12), and `view`'s frame rate above 30 (gate 13).
 - **Close-out (standing plan steps, the methodology's §3):**
   - **Commit plan:** one branch (`vis-002-phase-6`), one push. The commits:
-    - `src/streets.rs`, `tests/look.rs`'s headless gates (5, 6, 7, 9) and the removals
-      in `tests/streets.rs`;
-    - `tests/look.rs`'s GPU gate 8 and `scripts/gates-look.sh` (gates 1–4 and 8–13). The
-      look changes here, so gates 1–3 run after this commit;
+    - `src/streets.rs`, `src/main.rs`'s doc comment, `tests/look.rs`'s headless gates
+      (5, 6, 7, 9) and the removals in `tests/streets.rs`. The look changes here, since
+      streets are on by default and the drawing is untouched;
+    - `tests/look.rs`'s GPU gate 8 and `scripts/gates-look.sh` (gate 10 and gate 14's
+      renders). Gates 1–4 and 8–13 run after this commit (8 through cargo, 11 and 13 by
+      hand);
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
     - **`rules/streets.md`** (`max_lines: 40`, kept) is corrected: "What is built" names
       `NetworkJson` and its five fields, the cut, the split and the glyphs; "The two
       meshes" the new kinds, lifts and colours; the fade's widths per kind. Its `sources`
-      and `covers` gain the copied front-end values (the `covers` line), not new files;
+      and `covers` gain the copied front-end values (the `covers` line), not new files.
+      It is at its cap (40 of 40); the US markings' lines it drops make the room, and it
+      is cut to fit rather than the cap raised;
     - `rules/render.md`, `rules/view.md` and `rules/camera.md`: none needed. Each says
       "streets (junctions, median fills, markings)" or "the two street meshes", which
       stays true;
     - `rules/see-through.md`, `rules/buildings.md`, `rules/parts.md`, `rules/credit.md`,
       `rules/inputs.md`, `rules/motion.md` and `rules/slider.md`: none needed;
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
-    - **the README**: its streets paragraph says the markings are the engine dashboard's
-      (dashes, centre line, stop lines, lane arrows) from `NetworkJson`, not US ones, and
-      gains `scripts/gates-look.sh` and `cargo test --release --test look --
-      --include-ignored --test-threads=1`;
+    - **the README**: its streets paragraph, and the summary sentence "Its Phase 5 draws
+      the streets: junctions filled in grey, and US road markings" (l. 16–17), say the
+      markings are the engine dashboard's (dashes, centre line, stop lines, lane arrows)
+      from `NetworkJson`, not US ones, and gains `scripts/gates-look.sh` and `cargo test
+      --release --test look -- --include-ignored --test-threads=1`. The note on
+      `scripts/gates-streets.sh` (l. 246, "Phase 5 gates 10, 11 and the gate 15
+      renders") says its renders now show Phase 6's markings;
+    - `src/main.rs`'s `--no-streets` help text: reworded in the scope (above);
     - `CLAUDE.md`: none needed, since no stanza changes;
     - status artifact: none needed, since this repo has none.
   - Record the gate results in `specs/reviews/vis-002.md`, with any missed prediction and
     its cause, and the assertions removed from `tests/streets.rs`.
-  - Write this phase's `shipped` date, and turn §2.17.1's and OQ-18's dated notes from
-    "when it ships" to the date.
+  - Write this phase's `shipped` date, and turn §2.17.1's (decisions 3, 5, 8 and 9) and
+    OQ-18's dated notes from "when it ships" to the date.
