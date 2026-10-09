@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# vis-002 Phase 6 exit gate 10 (specs/city_spec.md), on urban_grid's fixture of
+# `scripts/fixture.sh` and the Midtown fixture of `scripts/fixture.sh midtown`, and the
+# renders the user watches at gate 14, into scratch/out/look/. Gates 5–9 are
+#   cargo test --release --test look -- --include-ignored --test-threads=1 --nocapture
+# Gates 1 and 2 are scripts/gates.sh (its --camera frames compared by hand),
+# gates-ties.sh, gates-see-through.sh and gates-parts.sh with --no-streets; gate 3 re-runs
+# the other test files and scripts; gate 4 is git diff; gate 11 is read by hand; gate 13
+# is `view --bench`, recorded by hand. Gate 10 compares each first render with Phase 5's
+# of the same case, copied to scratch/out/streets-p5/ before Phase 6 was built, and with
+# scratch/ref-pin90b39292-*.framemd5, made by vis-001 Phase 7 gate 5, only to count the
+# frames the look changes. As amended at gate 14 (§2.18.16), it also compares each first
+# render with the first build's of the same case, copied to scratch/out/look-v1/ before
+# the amendment was built.
+# Offline. Needs ffmpeg/ffprobe and python3.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+MID="$ROOT/scratch/midtown"
+UG="$ROOT/scratch/urban_grid"
+OUT="$ROOT/scratch/out/look"
+P5="$ROOT/scratch/out/streets-p5"
+V1="$ROOT/scratch/out/look-v1"
+CACHE="$MID/buildings.geojson"
+CITY="$ROOT/tests/city-flight.toml"
+ORBIT="$ROOT/tests/see-through-flight.toml"
+mkdir -p "$OUT"
+cargo build --release --quiet --bin assimilator-video || exit 1
+BIN="$ROOT/target/release/assimilator-video"
+FAIL=0
+fail() { echo "FAIL: $*"; FAIL=1; }
+now() { python3 -c 'import time; print(f"{time.time():.3f}")'; }
+
+render() { # <frames> <project> <tag> [extra args…]; Midtown renders its 300–360 s window
+    local n=$1 proj=$2 tag=$3 t0 t1 probe code window=()
+    shift 3
+    [ "$proj" = "$MID" ] && window=(--from 300 --to 360 --speedup 1)
+    rm -f "$OUT/$tag.mp4" "$OUT/$tag.framemd5"
+    t0=$(now)
+    "$BIN" render --project "$proj" --scenario baseline --seed 42 ${window[@]+"${window[@]}"} \
+        --out "$OUT/$tag.mp4" "$@" 2> "$OUT/$tag.stderr"
+    code=$?
+    t1=$(now)
+    echo "gate10 $tag: exit $code in $(python3 -c "print(f'{$t1 - $t0:.1f}')") s, load $(sysctl -n vm.loadavg), last line $(tail -1 "$OUT/$tag.stderr")"
+    [ "$code" = 0 ] || { fail "gate10 $tag exited $code"; return; }
+    probe=$(ffprobe -v error -select_streams v:0 -count_frames \
+        -show_entries stream=width,height,r_frame_rate,nb_read_frames -of csv=p=0 "$OUT/$tag.mp4")
+    echo "gate10 $tag: ffprobe $probe (expected 1920,1080,30/1,$n)"
+    [ "$probe" = "1920,1080,30/1,$n" ] || fail "gate10 $tag ffprobe"
+    ffmpeg -y -v error -i "$OUT/$tag.mp4" -f framemd5 "$OUT/$tag.framemd5"
+}
+same() { # <frames> <framemd5 a> <framemd5 b>
+    python3 - "$2" "$3" "$1" <<'PY' || fail "gate10 $(basename "$2") vs $(basename "$3")"
+import sys
+a = [l for l in open(sys.argv[1]) if not l.startswith("#")]
+b = [l for l in open(sys.argv[2]) if not l.startswith("#")]
+eq = sum(x == y for x, y in zip(a, b))
+print(f"gate10 {sys.argv[1].rsplit('/', 1)[1]} vs {sys.argv[2].rsplit('/', 1)[1]}: {eq} of {len(a)} frames equal ({len(b)})")
+assert eq == len(a) == len(b) == int(sys.argv[3])
+PY
+}
+differs() { # <earlier framemd5> <framemd5>: the look changes at least one frame
+    python3 - "$1" "$2" <<'PY' || fail "gate10 $(basename "$2") equals $(basename "$1")"
+import sys
+a = [l for l in open(sys.argv[1]) if not l.startswith("#")]
+b = [l for l in open(sys.argv[2]) if not l.startswith("#")]
+d = sum(x != y for x, y in zip(a, b))
+print(f"gate10 {sys.argv[2].rsplit('/', 1)[1]} vs {sys.argv[1].rsplit('/', 1)[1]}: {d} of {len(b)} frames differ")
+assert len(a) == len(b) and d >= 1
+PY
+}
+case_() { # <frames> <project> <tag> <Phase 5's tag> <reference> [extra args…]
+    local n=$1 proj=$2 tag=$3 p5=$4 ref=$5
+    shift 5
+    render "$n" "$proj" "$tag" "$@"
+    render "$n" "$proj" "$tag-2" "$@"
+    same "$n" "$OUT/$tag.framemd5" "$OUT/$tag-2.framemd5"
+    differs "$P5/$p5.framemd5" "$OUT/$tag.framemd5"
+    differs "$ROOT/scratch/ref-pin90b39292-$ref.framemd5" "$OUT/$tag.framemd5"
+    differs "$V1/$tag.framemd5" "$OUT/$tag.framemd5"
+}
+
+# ── Gate 10: on, deterministic, not Phase 5's and not the first build's ──────
+case_ 8700 "$UG" look-ug-default streets-ug-default default
+case_ 8700 "$UG" look-ug-camera streets-ug-camera camera --camera "$ROOT/tests/flight.toml"
+case_ 1800 "$MID" look-ortho-city streets-ortho-city ortho-city --buildings "$CACHE"
+case_ 1800 "$MID" look-ortho-roads streets-ortho-roads ortho-roads
+case_ 1800 "$MID" look-city streets-city city-on --buildings "$CACHE" --camera "$CITY"
+case_ 1800 "$MID" look-city-roads streets-city-roads flight-roads1 --camera "$CITY"
+case_ 1800 "$MID" look-orbit streets-orbit orbit-on --buildings "$CACHE" --camera "$ORBIT"
+
+echo "gate14 videos: $OUT/look-ortho-city.mp4 $OUT/look-city.mp4 $OUT/look-orbit.mp4 $OUT/look-ug-camera.mp4"
+[ $FAIL = 0 ] && echo "vis-002 Phase 6 gate 10: PASS" || echo "vis-002 Phase 6 gate 10: FAIL"
+exit $FAIL

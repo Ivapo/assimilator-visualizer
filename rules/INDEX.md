@@ -14,13 +14,13 @@
   How each vehicle's FCD rows become a position at any time: Hermite along links, junction spans on the engine's turn paths, lane slides, when a vehicle is drawn, and the motion report.
 - **[parts](parts.md)** — generated 2026-10-04 · 6 sources · 40/40 lines
   Building parts and bases: the cache's parts and its form without them, the query by `building_id`, `--source`, `--no-parts`, the report's `raised` and `parts`, the reader's checks, the volumes and their mesh, `Building::top` and the cut.
-- **[render](render.md)** — generated 2026-10-06 · 8 sources · 60/60 lines
+- **[render](render.md)** — generated 2026-10-09 · 8 sources · 60/60 lines
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg output and the CLI contract of `assimilator-video render`.
 - **[see-through](see-through.md)** — generated 2026-10-04 · 7 sources · 40/40 lines
   See-through: which buildings stand between the camera and the point it looks at, the heights they are drawn at, how the building mesh is rebuilt, where it is on by default, `--no-see-through` and `view`'s `X`.
 - **[slider](slider.md)** — generated 2026-09-30 · 3 sources · 35/40 lines
   `view`'s time slider: the bar's geometry, x ↔ t, the ticks, how a press on the bar scrubs and what it takes from the camera and the clock, and how the window draws it.
-- **[streets](streets.md)** — generated 2026-10-06 · 7 sources · 40/40 lines
-  Streets: the junction surfaces, the two-way pairs and their median fills, the US markings and their constants, the stop lines, the lifts, the fade, the two meshes, the default, `--no-streets` and `view`'s `M`.
+- **[streets](streets.md)** — generated 2026-10-09 · 7 sources · 40/40 lines
+  Streets: the junction surfaces, the two-way pairs, the median noses, the engine dashboard's markings drawn from `NetworkJson` (centre lines, dashes, solid lines, stop lines cut per lane, connectors, lane arrows), the colours and glyphs copied from its front end at 90b39292, the lifts, the fade, the two meshes, the default, `--no-streets` and `view`'s `M`.
 - **[view](view.md)** — generated 2026-10-06 · 5 sources · 60/60 lines
   The `assimilator-video view` window over a finished run: its CLI and checks, the wall-clock view clock, the camera (orbit and tilt, pan, zoom, centre bound), picking and following, the readout, the keyframe line and the hidden `--bench`. The time slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.

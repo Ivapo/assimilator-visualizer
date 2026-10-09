@@ -6,7 +6,7 @@
 //! is the orthographic path's. vis-002 adds the buildings: one lit mesh, a sun and the
 //! orthographic eye's rule, and, for `render` only, the credit line's UI tree (§2.14.5).
 //! See-through (vis-002 §2.15.5) rebuilds the buildings' mesh with lowered heights.
-//! Streets (vis-002 §2.17.11) add two meshes: the junction surfaces and median fills,
+//! Streets (vis-002 §2.17.11) add two meshes: the junction surfaces and median noses,
 //! and the markings, recoloured as the fade follows the camera.
 
 use std::collections::HashSet;
@@ -721,7 +721,7 @@ fn markings_mesh(d: &MarkingsData, colours: Vec<[f32; 4]>, (fx, fy): (f64, f64))
     .with_inserted_indices(Indices::U32(d.indices.clone()))
 }
 
-/// Spawn the streets (vis-002 §2.17.11): the junction surfaces and median fills with the
+/// Spawn the streets (vis-002 §2.17.11): the junction surfaces and median noses with the
 /// road's material, and the markings with per-vertex colours faded at `mpp` (metres per
 /// pixel at a world point) on one unlit white material that does not cull, never
 /// frustum-culled. A mesh with no triangle is not spawned (§2.17.12).

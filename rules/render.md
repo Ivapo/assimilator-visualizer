@@ -13,7 +13,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-10-06
+generated: 2026-10-09
 ---
 
 # Render
@@ -36,7 +36,7 @@ generated: 2026-10-06
 - **Roads.** One flat mesh at height 0, in link order: each link a strip `total_width`
   wide, its centreline sampled with `interpolate_with_lateral(link, s, 0.0)` at `s = L·i/n`,
   `n = ceil(L / 1 m)`, edges offset along the right normal `(cos h, −sin h)`. Streets
-  (junctions, median fills, markings) are drawn over them unless `--no-streets` (`rules/streets.md`).
+  (junctions, median noses, markings) are drawn over them unless `--no-streets` (`rules/streets.md`).
 - **Road material** is unlit and not culled. **Vehicles** in `vehicle_id` order (where:
   `rules/motion.md`): a pool of unit cuboids orthographic, one shaded mesh in perspective.
   - Each box is length × 1.8 m × 1.5 m on the placed point, lifted 0.01 m per rank (0.001 m

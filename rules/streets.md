@@ -9,11 +9,13 @@ sources:
   - src/view/mod.rs
   - src/main.rs
 covers: >
-  Streets: the junction surfaces, the two-way pairs and their median fills, the US
-  markings and their constants, the stop lines, the lifts, the fade, the two meshes, the
-  default, `--no-streets` and `view`'s `M`.
+  Streets: the junction surfaces, the two-way pairs, the median noses, the engine
+  dashboard's markings drawn from `NetworkJson` (centre lines, dashes, solid lines, stop
+  lines cut per lane, connectors, lane arrows), the colours and glyphs copied from its
+  front end at 90b39292, the lifts, the fade, the two meshes, the default, `--no-streets`
+  and `view`'s `M`.
 max_lines: 40
-generated: 2026-10-06
+generated: 2026-10-09
 ---
 
 # Streets
@@ -21,37 +23,37 @@ generated: 2026-10-06
 **What is true right now.** Corrected freely against the sources above.
 
 ## What is built (`Streets::build`, no Bevy types)
-- Nodes, links and lanes in network order; the engine's maps are only looked up.
+- Network order, `NetworkJson`'s order in its fields; every map is only looked up.
 - **Junction surfaces:** each node's `NetworkData::junction_polygons` entry, in node order,
   a closing copy of the first vertex dropped, under 3 vertices skipped, `earcut` triangles.
 - **Pairs:** `B` is `A`'s twin when `B.from = A.to` and `B.to = A.from` (the first such link);
-  drawn once along `A`, the one first in link order. `g = (g_A + g_B)/2`; the gap lies
-  between laterals `−w_A/2 − g` and `−w_A/2`. A gap over 0 is filled (a ribbon, road grey).
-- **Yellow** (`LINE_M` 0.15, `DOUBLE_SPACE_M` 0.10), the pair's whole length: under
-  `FLUSH_MIN_M` (1 m) one double line about the gap's middle; else a double line inside
-  each edge, its outer line flush (a flush median).
-- **Stop lines** only where a link ends at a `control: signal` junction: one per lane,
-  across its width, from `s1 = L − lane_stop_line_offset(link, k)` back `STOP_M` (0.60).
-- **Lane lines** between lanes `k`, `k+1`, at `offs[k] + w_k/2 + gap_after/2`: `DASH_M` 3 m
-  every 12 m (`GAP_M` 9) from `s` 0 to the furthest-back stop line, a cut dash drawn short.
-- A ribbon takes `max(1, ceil((s1 − s0)/1 m))` steps on `place_lateral(link, s, 0)`, offset
-  along the right normal: 2 vertices a sample, 2 triangles a step, nothing shared.
+  kept at `A`, first in link order, `g = (g_A + g_B)/2`; not drawn: a gap shows the background.
+- **Median noses:** `NetworkJson::median_noses` in its order, closing copy dropped, `earcut`.
+- **Markings:** `NetworkJson` built once; its `median_lines` (only on a 0 m gap),
+  `lane_marking_dashes`, `solid_lane_lines`, `stop_lines`, `lane_arrows`, closing copies
+  dropped, `earcut`; centre and solid lines' edges split at `STRIP_STEP` (1 m).
+- **Stop lines:** a full-width ring is matched to the link whose `place_lateral(L −
+  stop_line_offset)` lies nearest its front edge's midpoint (`[1]`–`[2]`), within 1 mm,
+  and cut on its own edges into one quad per lane (lane 0 leftmost); unmatched, it is kept
+  whole with no link. Per-lane rings keep their link and lane; connectors stay whole.
+- **Arrows:** `glyph` copies `networkRenderer.ts`'s nine glyphs as simple polygons (and
+  `dead_end`'s red bar), any other type straight; `place` puts them at `(x, y, heading)`.
 
 ## The two meshes (`Streets::surface`, `markings`; `draw::spawn_streets`)
-- **Surface:** junctions then fills, height 0, the road's own material (a tie with the
-  strips gives the same colour). **Markings:** yellow, lane, stop, each in link order;
-  yellow at `LIFT_YELLOW_M` 0.01, white at `LIFT_WHITE_M` 0.02, under every box's base.
-  Per-vertex colour on one unlit white material, `cull_mode: None`, `NoFrustumCulling`.
-- `WHITE` (235, 235, 235), `YELLOW` (230, 170, 20); a mesh with no triangle is not spawned.
+- **Surface:** junctions then noses, height 0, the road's own material. **Markings:** by
+  kind (centre, dash, solid at `LIFT_LINES_M` 0.01; stop, connector, arrow, bar at
+  `LIFT_TOP_M` 0.02), each in build order, under every box's base. Per-vertex colour on
+  one unlit white material, `cull_mode: None`, `NoFrustumCulling`; none if empty.
+- Colours (`COLOURS`): the dark palette of `colors.ts` composited at its opacities over
+  `scene::ROAD`, rounded once: lines (174, 176, 180), centre (199, 167, 77), stop (239,
+  239, 240), arrow (190, 191, 195), bar (217, 72, 73). Each copy names its line there.
 
 ## The fade (`fade`, `colour`, `mpp_at`) and where it is on
-- `α = smoothstep((w/mpp − FADE_FROM_PX)/(FADE_TO_PX − FADE_FROM_PX))`, 0.1 → 0.5 px, with
-  `w` the line's width (0.60 for a stop line). Colour `(1 − α)·road + α·marking` in linear
-  `f32`, from three linear colours computed once; opaque.
-- `mpp` is `k` orthographic (once), or `|p − eye|·2·tan 22.5°/H` per vertex at a pose;
-  `draw::set_street_colours` replaces the markings' mesh when a colour changes.
-- `render`: `Job::set_streets(true)` after `prepare_with` unless `--no-streets`;
-  `Renderer::set_streets` spawns and settles again; each `set_pose` recolours. `prepare*`
-  leave it off. `--no-streets` builds and spawns nothing: today's frames.
-- `view`: built at launch; `M` (by position) flips `streets_shown` (on unless
-  `--no-streets`) and nothing else. While shown, colours follow the pose (every `--bench` frame).
+- `α = smoothstep((w/mpp − 0.1)/(0.5 − 0.1))`, `w` by kind (`Kind::width`): lines 0.15,
+  stop and bar 0.40, arrow 0.30 (its shaft), connector 0.10. `(1 − α)·road + α·marking`
+  in linear `f32`, from six linear colours computed once; opaque.
+- `mpp`: `k` orthographic, or `|p − eye|·2·tan 22.5°/H` per vertex at a pose (`view`: each
+  frame); `draw::set_street_colours` replaces the markings' mesh when a colour changes.
+- `render`: `Job::set_streets(true)` unless `--no-streets` (today's frames, nothing built);
+  `Renderer::set_streets` spawns and settles again; each `set_pose` recolours.
+- `view`: built at launch; `M` flips `streets_shown` (on unless `--no-streets`), only.

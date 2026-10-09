@@ -13,8 +13,9 @@ vis-002 (`specs/city_spec.md`) Phase 1 puts the real buildings around an importe
 network: Overture footprints, fetched once into a cache and drawn as grey, sunlit blocks.
 Its Phase 2 draws the data's credit line in the corner of every frame of an imported
 network's video. Its Phase 3 cuts the buildings between the camera and the point it looks
-at down to stubs, so the traffic there shows. Its Phase 5 draws the streets: junctions
-filled in grey, and US road markings.
+at down to stubs, so the traffic there shows. Its Phase 5 draws the streets, junctions
+filled in grey, and its Phase 6 marks them as the engine's dashboard does: lane dashes,
+stop lines and lane arrows, straight from the engine's `NetworkJson`.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
@@ -45,14 +46,16 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   nothing is cut: the orthographic render, which is never cut, and a render without
   buildings.
 - **Streets.** Every network's roads are drawn as streets by default: each junction is
-  filled in the road's grey, the gap between a two-way street's halves is filled too, and
-  the markings are US ones: white broken lines between lanes (3 m every 12 m), a white stop
-  line across each lane where the engine stops traffic at a signal, and a double yellow
-  line down the middle of every two-way street (two, one inside each edge, on a median
-  1 m or wider). A line narrower than half a pixel on screen fades into the road's grey,
-  and is gone under a tenth of a pixel, so a far or high camera shows no speckle; it fades
-  back in smoothly as the camera comes closer. `--no-streets` draws the plain strips, the
-  video exactly as before Phase 5.
+  filled in the road's grey, the gap between a two-way street's halves shows dark, as on
+  the engine's dashboard, its ends at each junction rounded in grey by the engine's median
+  noses, and the markings are the dashboard's, taken from the engine's own `NetworkJson`:
+  grey lane dashes (2.5 m every 6.5 m), a 0.4 m white stop line across each lane of every
+  approach the engine marks, an arrow in each lane before the stop line and after a
+  junction, and an amber centre line only on a two-way street with no median gap, all in
+  the dashboard's colours. A line narrower than half a pixel on screen fades into the
+  road's grey, and is gone under a tenth of a pixel, so a far or high camera shows no
+  speckle; it fades back in smoothly as the camera comes closer. `--no-streets` draws the
+  plain strips, the video exactly as before Phase 5.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
   bottom-right corner of every frame, with or without `--buildings`, crediting its data
   (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
@@ -243,8 +246,10 @@ scripts/gates-see-through.sh      # Phase 3 gates 2, 7, 10 (CLI) and the gate 14
 cargo test --release --test see_through -- --include-ignored --test-threads=1   # Phase 3 gates 5, 6, 8, 9, 11
 scripts/gates-parts.sh            # Phase 4 gates 2, 5, 9, 11 (CLI) and the gate 15 renders, offline
 cargo test --release --test parts -- --include-ignored --test-threads=1 --nocapture       # Phase 4 gates 6–8, 10–12
-scripts/gates-streets.sh          # Phase 5 gates 10, 11 and the gate 15 renders, offline
+scripts/gates-streets.sh          # Phase 5 gates 10, 11 and its renders (now with Phase 6's markings), offline
 cargo test --release --test streets -- --include-ignored --test-threads=1 --nocapture     # Phase 5 gates 5–9, 12
+scripts/gates-look.sh             # Phase 6 gate 10 and the gate 14 renders, against scratch/out/look-v1/, offline
+cargo test --release --test look -- --include-ignored --test-threads=1 --nocapture        # Phase 6 gates 5–9
 ```
 
 Streets are on by default, so the renders that `scripts/gates.sh`, `gates-ties.sh`,
