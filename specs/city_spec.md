@@ -3205,7 +3205,9 @@ corners at each junction end.
 **Its colour here is our background,** `scene::BACKGROUND` (18, 22, 30), not the
 dashboard's `CANVAS_BG` `#040810`. It is what `--no-streets` shows there, and nothing is
 drawn in the gap. The noses take the road's grey: they are in the surface mesh, with the
-road's own material, as the junction surfaces.
+road's own material, as the junction surfaces. *(2026-10-09, user, on the amendment)*
+**Confirmed:** the gap shows our background (18, 22, 30), not the dashboard's `#040810`. It
+is the same as the rest of the scene and `--no-streets`, with nothing drawn in the gap.
 
 **The median noses** (`network_json.rs` l. 1353–1471 at the pin):
 - they walk `config.links` in file order, and their dedup set (`seen_nose`, one nose pair
@@ -3289,10 +3291,20 @@ centre on the surfaces). The gap lies between two strips, where no lane is. Phas
     `Streets::noses` in `NetworkJson`'s order, and the junction surfaces, then the noses,
     in `Streets::surface`;
   - `Pair` and `Streets::pairs` stay. Nothing draws from them now, but Phase 5's gates 5
-    and 6 count them, and they cost nothing.
+    and 6 count them, and they cost nothing. *(2026-10-09, user, on the amendment)*
+    **They stay,** as the spec has it: Phase 5's gates 5 and 6 count them, and nothing
+    more is removed.
 - **Nothing else changes in the code:** the drawing, `render`, `view`, the CLI, the
   markings and their mesh. The `--no-streets` help text ("junctions filled, and the
   engine dashboard's markings") stays true.
+
+**The user's answers on the amendment** *(2026-10-09, user, on the amendment)*:
+1. **The amendment gets a review round before it is built:** `/review-spec` next, which
+   sets `reviewed`. Until it converges, the amendment is not cleared to build.
+2. **`Pair` and `Streets::pairs` stay,** as above: no extra removals from
+   `tests/streets.rs`.
+3. **The gap shows our background** (18, 22, 30), not the dashboard's `#040810`: the same
+   as the rest of the scene and `--no-streets`, with nothing drawn in the gap.
 
 **Measured while amending** (2026-10-09), with a throwaway probe:
 - **The probe:** `scratch/vis002p6a-probe/`, a `git archive` of the branch's head
@@ -6035,6 +6047,12 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
   `NetworkJson::median_noses` in the road's grey, and no median fill. The design is
   §2.18.16. Phase 6 is amended on `vis-002-phase-6` before it ships. Everything above
   stands except what this item replaces.
+  - **The user's answers** *(2026-10-09, user, on the amendment)*:
+    - **review first:** the amendment gets a review round (`/review-spec`, which sets
+      `reviewed`) before it is built;
+    - **`Pair` and `Streets::pairs` stay**, with no extra removals;
+    - **the gap shows our background** (18, 22, 30), not `#040810`, as the rest of the
+      scene and `--no-streets` do, with nothing drawn in it.
   - **What the amendment produces:** the run's video as above, with each two-way street's
     median gap dark between its two directions and rounded at each junction, where the
     first build drew it grey. With `--no-streets`, today's frames (gates 1 and 2,
@@ -6047,7 +6065,8 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
         and `Streets::noses`, from `NetworkJson::median_noses` in its order, read from
         the one `NetworkJson` that `build` already makes;
       - `Streets::surface`: the junction surfaces, then the noses, at height 0;
-      - `Pair` and `pairs` are kept, though nothing draws from them;
+      - `Pair` and `pairs` are kept, though nothing draws from them (the user's answer,
+        2026-10-09);
       - the module doc says so.
     - **`tests/look.rs`** (Phase 6's own):
       - gate 5's fill assertion becomes the noses' (below);
