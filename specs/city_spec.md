@@ -49,7 +49,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 6 — Engine look and lane arrows: the dashboard's markings, from NetworkJson, by default"
-    reviewed: 2026-10-08
+    reviewed: 2026-10-09
     shipped: null
     cut: null
     by: null
@@ -2584,6 +2584,8 @@ arrows. This phase draws the markings as the dashboard does, from the engine's o
 `NetworkJson`, with the dashboard's colours and arrow glyphs copied from its front end.
 It changes no box, building, camera, credit line, road strip, junction surface or median
 fill. The numbers below come from a probe run while drafting (§2.18.15).
+*(2026-10-09, changed by the user at gate 14)* But for the median fills: they are removed,
+and the engine's median noses are drawn in their place (§2.18.16).
 
 #### 2.18.1 The user's decisions (decision, recorded)
 
@@ -2612,6 +2614,9 @@ phase draws on, so it gets no `cut` and no `## 0.` note. The contradicted statem
 dated notes in place instead (step 1's third bullet): §2.17.1's decisions 3, 5, 8 and 9,
 and OQ-18. Step 2: vis-002 owns the scene around the traffic and its roadmap names the
 item, so the new work is a phase appended here (decision 1). vis-001 is not edited.
+*(2026-10-09, changed by the user at gate 14)* The fills no longer stay in use (decision 5
+as changed). Phase 5's surfaces, fade, meshes, lifts, flag and key still do, so it is
+still not cut.
 
 Decided by the user, 2026-10-08, on the draft, before review (the answer to OQ-20, and a
 call on the draft):
@@ -2767,7 +2772,8 @@ double yellow line on each. OQ-18's yellow part is replaced (its dated note), an
 shows it. *(2026-10-08, user)* Kept as drafted, after seeing the dashboard's dark gap with
 rounded noses and the grey fill with one engine yellow line down it (§2.18.1, decision 5):
 the fill stays, a pair with a gap shows no line, and the centre line is drawn only where
-the gap is 0.
+the gap is 0. *(2026-10-09, changed by the user at gate 14)* Replaced by the paragraph
+below: the gap no longer stays filled.
 
 **What the centre line means now, as amended.** *(2026-10-09, changed by the user at gate
 14)*
@@ -3131,6 +3137,8 @@ that label lane conflict pairs, a debug item: nothing drawn would change.
   phases.
 - **No generic road arrows** (the front end's own, on links under 8 m; none in either
   fixture), **no median noses** (inside the fill), and no debug item.
+  *(2026-10-09, changed by the user at gate 14)* But for the median noses, which are
+  drawn now (§2.18.16).
 - **No change to the junction surfaces, the fills, the strips, the boxes, the fade's
   thresholds, `--no-streets` or `M`.** *(2026-10-09, changed by the user at gate 14)* But
   for the fills, which are removed (§2.18.16).
@@ -3200,7 +3208,14 @@ stays as written; the amended build's gate run gets a record of its own.
 `90b39292`): the road polygons, the median noses and the junction fills in one fill, in
 `ROAD_FILL`, over its canvas background. The road polygons stand `median_gap` apart, as
 our strips do (§2.17.5), so the gap shows the canvas. The noses round the gap's two
-corners at each junction end.
+corners at each junction end. *(2026-10-09, review round 1)* Corrected: at the pin the
+dashboard never paints `CANVAS_BG`. It is defined in `colors.ts` and used nowhere else.
+`renderer.ts` l. 33 clears the canvas, and the dashboard sits over a MapLibre basemap
+(`BasemapMode`, `'streets'` by default). So on the dashboard the gap shows whatever lies
+under the canvas. What is copied stands: the gap is left unpainted inside the one road
+fill. What shows there is our choice, and the user made it (below). §2.18.4's "over
+`#040810`" road and its "Dark over the dashboard's road" column are reference only, and
+assume the same unpainted background; nothing drawn or gated uses them.
 
 **Its colour here is our background,** `scene::BACKGROUND` (18, 22, 30), not the
 dashboard's `CANVAS_BG` `#040810`. It is what `--no-streets` shows there, and nothing is
@@ -3216,11 +3231,25 @@ is the same as the rest of the scene and `--no-streets`, with nothing drawn in t
 - they come only on a link with a twin and a `median_gap` of 0.01 m or more, at each end
   of that link that is a junction, drawn once per pair by the pair's link that comes
   first in link order. Their radius is that link's own `median_gap / 2`;
+  *(2026-10-09, review round 1)* More exactly:
+  - the engine also skips a link with fewer than 2 effective points or under 1 m long;
+  - "the link that comes first" is the first of the pair to pass those tests and the
+    0.01 m one, so with twins of different gaps the radius can come from the second.
+
+  No pair in either fixture or the synthetic crossing has twins of different gaps (0 of
+  29, 0 of 24). We draw `NetworkJson::median_noses` as given, so any such case matches the
+  dashboard by construction;
 - each is a quarter-circle crescent between a gap corner and a fillet arc: corner, tangent
   point, 7 arc points, gap centre, and a closing copy. Its first arc point repeats the
   tangent point, and its last repeats the gap centre, so with the closing copy dropped it
   is 10 vertices, 8 of them distinct, and `earcut` gives 6 triangles. Their area equals
-  the triangles' within 5.1e-9 relative.
+  the triangles' within 5.1e-9 relative. *(2026-10-09, review round 1)* "Repeats" and "8
+  distinct" are geometric, not bit for bit. The last arc point can miss the gap centre
+  by an ulp: the probe has (10.0, 1.53e-17) against (10.0, 0.0). The tangent point and
+  the first arc point are summed in different orders, so they can differ too. Bit for
+  bit, a nose can have 9 distinct vertices. `earcut` still gives 6 triangles, since the
+  near-repeat is collinear. No test applies a bitwise distinct-vertex count, like gate
+  5's for the junction polygon, to a nose; the nose gates count vertices and triangles.
 
 | | Midtown | urban_grid | Synthetic (gate 5) |
 |---|---|---|---|
@@ -3238,8 +3267,8 @@ So the noses change nothing outside the gap, and inside it they are the only roa
 **The meshes and the draw order.**
 - **The surface mesh** is the junction surfaces, then the noses, in `NetworkJson`'s order,
   at height 0, in the road's own material.
-- **No visible tie:** a nose overlaps the strips and junction surfaces it meets (half of
-  each nose's vertices lie on them). Where a nose, a strip and a junction surface tie in
+- **No visible tie:** a nose meets the strips and junction surfaces along shared edges
+  (half of each nose's vertices lie on them; its area lies in the gap). Where a nose, a strip and a junction surface tie in
   depth, all three are the same material at the same height with the same normal. So
   whichever the depth test keeps, the pixel is the same colour, as with Phase 5's fills
   (§2.17.9).
@@ -3282,6 +3311,10 @@ centre on the surfaces). The gap lies between two strips, where no lane is. Phas
   the two directions, ending at each crossing in two rounded grey corners: the noses,
   0.25 m in radius on a 0.5 m gap and 1.75–2 m on a wide one;
 - the amber centre line shows only on Midtown's 3 gapless pairs.
+- *(2026-10-09, review round 1)* a gap ends with no nose where its pair ends at a node
+  that is not a junction, at the network's edge. Midtown has 5 such ends (26 gapped
+  pairs, 52 ends, 47 with noses) and urban_grid 12 (48 ends, 36 with noses). There the
+  gap runs open to the strips' ends, as on the dashboard.
 
 **What changes, against the first build:**
 - `src/streets.rs`:
@@ -3296,7 +3329,10 @@ centre on the surfaces). The gap lies between two strips, where no lane is. Phas
     more is removed.
 - **Nothing else changes in the code:** the drawing, `render`, `view`, the CLI, the
   markings and their mesh. The `--no-streets` help text ("junctions filled, and the
-  engine dashboard's markings") stays true.
+  engine dashboard's markings") stays true. *(2026-10-09, review round 1)* But for three
+  doc comments, which say "median fills" and become "median noses": `src/draw.rs`'s
+  module doc (l. 9), `draw::spawn_streets`'s doc (l. 724), and `src/render.rs`'s module
+  doc (l. 8). Behaviour does not change there.
 
 **The user's answers on the amendment** *(2026-10-09, user, on the amendment)*:
 1. **The amendment gets a review round before it is built:** `/review-spec` next, which
@@ -6068,6 +6104,9 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
       - `Pair` and `pairs` are kept, though nothing draws from them (the user's answer,
         2026-10-09);
       - the module doc says so.
+    - **`src/draw.rs` and `src/render.rs`** *(2026-10-09, review round 1)*: three doc
+      comments only, "median fills" → "median noses": `src/draw.rs` l. 9 (module doc)
+      and l. 724 (`spawn_streets`), `src/render.rs` l. 8 (module doc). No code line.
     - **`tests/look.rs`** (Phase 6's own):
       - gate 5's fill assertion becomes the noses' (below);
       - gate 6 adds the noses and the surface mesh;
@@ -6082,7 +6121,8 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
           fills.` becomes `// Pairs.`;
         - the `println!` loses "2 fills";
       - gate 6:
-        - the `fills` counter leaves the tuple, and its line goes;
+        - the `fills` counter leaves the tuple, and its line goes, with `let g = …`
+          (l. 336), which only it read *(2026-10-09, review round 1)*;
         - `got`, both expected arrays and the `println!` lose the fill count;
         - `Expect` loses `fills` and `surface`, and the two literals lose those lines;
         - the surface-mesh assertion goes, since its values included the fills (the new
@@ -6093,10 +6133,14 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
       - names no longer used leave the `use` lines.
 
       Nothing is added, and no kept value or tolerance changes. Gate 7 (strip ends, box
-      centres) is untouched: it never counted the fills.
+      centres) is untouched: it never counted the fills. *(2026-10-09, review round 1)*
+      `cargo fmt` may rejoin a kept line whose neighbours went (each `Line { … }`
+      initialiser, once `start` and `dir` go). That is an allowed narrowing, and the gate
+      run records each one.
     - **`scripts/gates-look.sh`** (Phase 6's own): gate 10 also compares each first render
       with the first build's copy in `scratch/out/look-v1/` (below).
-    - **Not edited:** as above.
+    - **Not edited:** as above, but for the three doc comments in `src/draw.rs` and
+      `src/render.rs` (above) *(2026-10-09, review round 2)*.
   - **Exit gate, as amended.** The same machine, fixtures, pin, FCDs and cache.
     - **The baseline is the branch's head when the amendment's build starts**, whose
       `src/`, `tests/` and `scripts/` equal `8db1742`'s. It runs as the
@@ -6108,6 +6152,9 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
       record their SHA-256s. `gates-look.sh` writes into `scratch/out/look/`, so the
       first build's renders would be overwritten. Every `scratch/ref-*`,
       `scratch/out/streets-p5/` and `scratch/out/look-v1/` stays as it is.
+      *(2026-10-09, review round 1)* The baseline's own `gates-look.sh` run then gives
+      each of the fourteen `*.framemd5` equal to its copy in `look-v1/`. That shows the
+      copy is the build at `8db1742`.
     - Gates 1, 2, 4, 7, 9, 11, 12 and 13 are unchanged.
     - The others change as follows:
     - **Gate 3, what the amendment does not touch:**
@@ -6117,7 +6164,9 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
         numbers that remain: surfaces 106 / 9, pairs 29 / 24, `junction_fills` worst
         0.000000 m, strip ends, box centres, fade, `mpp_at`, gate 12;
       - the self-compared renders give equal pairs, and all eight scripts pass;
-      - `git diff 8db1742 --stat -- src/` is `src/streets.rs`; `-- scripts/` is
+      - `git diff 8db1742 --stat -- src/` is `src/streets.rs`, plus `src/draw.rs` and
+        `src/render.rs` with the three doc-comment lines alone *(2026-10-09, review
+        round 1)*; `-- scripts/` is
         `gates-look.sh`; `-- tests/` is `tests/look.rs` and `tests/streets.rs`, the
         latter read hunk by hunk against the list above.
     - **Gate 5, the synthetic crossing,** in addition to the first build's predictions:
@@ -6131,11 +6180,18 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
         and their mesh are as before.
 
       Without the amendment it fails: the first build has 2 fills and no nose.
+      *(2026-10-09, review round 1)* "No fill" is not a run-time assertion, since
+      `Streets::fills` is removed. It is checked by the surface mesh's counts, here and
+      in gate 6.
     - **Gate 6, the fixtures,** in addition: noses **94** (940 vertices, 564 triangles)
       and **72** (720, 432); the surface mesh **5,344 and 4,042** and **1,107 and 738**;
       no fill. Every marking vertex lies on the drawn road, now the strips, junction
       surfaces and noses: worst **0.0063 m** in Midtown (325 stop-line vertices just off)
-      and **0.0000 m** in urban_grid. Built twice, equal.
+      and **0.0000 m** in urban_grid. Built twice, equal. *(2026-10-09, review round 1)*
+      The nose counts are asserted against `NetworkJson::median_noses` and the literals,
+      not recomputed from `NetworkConfig`: the noses are the engine's, drawn as given.
+      The 325 is printed and recorded, as the first build's per-kind counts are; the
+      assertion stays the worst distance.
     - **Gate 8, the synthetic crossing, drawn.** The table's rows change:
 
       | Point (m) | What | Off | On |
@@ -6160,13 +6216,14 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
       markings, the arrows, the bars, the stopped boxes, the fade, `view`'s `M`) are
       looked at again only for change. What changes:
       - **Midtown, orthographic with buildings (`look-ortho-city.mp4` against
-        `look-v1/look-ortho-city.mp4`), throughout:** along the 15 wide two-way streets
-        a dark band, 2–3 px, runs between the two directions where the first build
-        showed grey. Along the 11 with a 0.5 m gap, a thin dark line. Each stops at the
-        crossings, which stay grey. The rest is as the first build.
+        `look-v1/look-ortho-city.mp4`), throughout:** along the 15 two-way pairs (blocks)
+        with a 3.5–4 m gap, a dark band, 2–3 px, runs between the two directions where
+        the first build showed grey. Along the 11 with a 0.5 m gap, a thin dark line.
+        Each stops at the crossings, which stay grey, or runs open at the network's
+        edge (§2.18.16). The rest is as the first build.
       - **The city flight with buildings (`look-city.mp4`):**
-        - from 0:00 to 0:10, high up, as the orthographic video: thin dark lines along
-          the wider streets;
+        - from 0:00 to 0:10, high up, as the orthographic video: dark bands along the
+          wide-gap streets and thin dark lines along the 0.5 m ones;
         - from 0:25 to 0:35, low over the cross street in the lower middle of the frame:
           a dark strip between its two directions, ending at each crossing in two
           rounded grey corners. No amber line in it;
@@ -6206,20 +6263,25 @@ changes are this phase's last item, "Amended at gate 14"; the design is §2.18.1
     | `view --bench 20`, streets on | ≥ 30 fps | **≥ 30 fps** (probe: 60.00 fps, median 16.66 ms, with streets on and with `--no-streets`, at a load of 7–8) | 13 |
   - **Close-out of the amendment (standing plan steps, the methodology's §3):**
     - **Commit plan:** the same branch, one push. The commits:
-      - `src/streets.rs`, `tests/look.rs`'s gates 5, 6 and 8, the removals in
-        `tests/streets.rs`, and `gates-look.sh`'s comparison with `look-v1`;
+      - `src/streets.rs`, the three doc comments in `src/draw.rs` and `src/render.rs`,
+        `tests/look.rs`'s gates 5, 6 and 8, the removals in `tests/streets.rs`, and
+        `gates-look.sh`'s comparison with `look-v1`;
       - the amendment's gate run and its record;
       - the close-out.
     - **Reconciliation:**
       - `rules/streets.md` (cap 40, kept): the fills go and the noses come, in "What is
-        built" and "The two meshes", and its `covers`;
+        built" and "The two meshes", and its `covers`. It is at 40 of 40, so the swap is
+        line-neutral and the cap is not raised *(2026-10-09, review round 1)*;
       - `rules/render.md` l. 39, "(junctions, median fills, markings)", becomes
         "(junctions, median noses, markings)";
       - the README's streets paragraph loses "the gap between a two-way street's halves
         is filled too" and says the gap shows dark with rounded ends, as on the
         dashboard;
+      - the README's `gates-look.sh` line (l. 250) names `scratch/out/look-v1/`, the
+        first build's renders it compares with *(2026-10-09, review round 1)*;
       - `spec-lint --write-index`;
-      - `CLAUDE.md`: none needed.
+      - `CLAUDE.md`: none needed;
+      - status artifact: none needed, since this repo has none.
     - Record the amendment's gate run in `specs/reviews/vis-002.md` as its own entry,
       with the `tests/streets.rs` hunks. Then gate 14. Then `shipped`, and the "when it
       ships" notes of §2.17.1 (decisions 3, 5, 8, 9), §2.17.5 and OQ-18 dated.
