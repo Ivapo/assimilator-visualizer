@@ -9,12 +9,12 @@ note: >
   are replayed with the engine's own signal code at the pin, stepped once through the
   run into a timeline, and checked against the run's FCD. A HUD and link colours are
   roadmap.
-status: draft
+status: accepted
 last_updated: 2026-10-09
 
 phases:
   - name: "Phase 1 — Signals: the engine's signal states as dots at the stop lines, by default"
-    reviewed: null
+    reviewed: 2026-10-09
     shipped: null
     cut: null
     by: null
@@ -96,7 +96,9 @@ Decided by the user, 2026-10-09 (§2.2, decision 1), and checked against the met
   come from the engine's code, replayed. A default changes too: every render of a network
   with a signal draws dots.
 - **Step 1:** nothing shipped is removed or contradicted. `--no-signals` gives today's
-  frames byte for byte (gates 1 and 2).
+  frames byte for byte (gates 1 and 2). *(2026-10-09, round 1)* One default does change,
+  for a kind of run no gate here has drawn: a meso run is refused with signals on, and
+  renders as today with `--no-signals` (§2.13, OQ-3, gate 15).
 - **Step 2:** vis-001 owns rendering one run's files, and its roadmap item 5, "Data"
   (vis-001 §2.7: "links colored by speed or flow; HUD with clock, legend, one chart;
   signal states from the plans"), names this work. By subject alone vis-001 could take a
@@ -138,7 +140,15 @@ user before the answers:
    as drafted, §2.12).
 6. **The key is `L`** (§2.13, as drafted, confirmed).
 
-OQ-2 and OQ-3 stay open as drafted: deferred, and no answer was asked.
+OQ-2 and OQ-3 stay open as drafted: deferred, and no answer was asked. *(2026-10-09,
+round 1)* Both are still open, and each gained facts in review: OQ-2 what forces it, OQ-3
+its class (a design call, the user's) and the shape of a meso run's row.
+
+Decided by the user, 2026-10-09, after the review converged (the answer on OQ-3):
+7. **A meso run with signals on is refused in Phase 1,** as the spec has it (§2.13), with
+   `--no-signals` as the way through. The user takes this as deferring: **OQ-3 stays open
+   for meso dots,** to take up when a meso fixture exists. No scope, gate or prediction
+   changes.
 
 The rest of this section is the draft's proposal. It settles:
 - the replay and its clock (§2.4–§2.6), and a check of it against the FCD (§2.7);
@@ -170,7 +180,8 @@ Checked on both fixtures at engine `90b39292`, read-only:
   `trips` 828, every other table empty. urban_grid: `runs` 1, `trips` 91,
   `detector_intervals` 75. No table holds a phase or a colour.
 - **The FCD** has `time`, `vehicle_id`, `link_id`, `lane`, `position`, `speed`,
-  `acceleration`, `vehicle_class` and `vehicle_length` (vis-001 §2.1). No signal column.
+  `acceleration`, `vehicle_class` and `vehicle_length` (vis-001 §2.1 and §2.2.2,
+  `rules/inputs.md`). No signal column.
 - **The plans** are in the scenario's resolved network: each signalised junction's
   `signal_plan`, with `cycle_time`, `offset` and its `phases`. Each phase has a green
   `duration`, `amber_time`, `all_red_time`, `green_movements` and `permitted_movements`.
@@ -180,6 +191,10 @@ Checked on both fixtures at engine `90b39292`, read-only:
   `{"scenario": …, "sim_params": {"duration", "random_seed", "timestep", "warm_up"}}`,
   written by `crates/output/src/runner.rs:run_to_results_db`. Midtown: duration 1200,
   timestep 0.1, warm_up 180. urban_grid: 300, 0.1, 30. `runs.mode` is `micro` in both.
+  `runs` has `PRIMARY KEY (scenario, seed)`, so a run has one row.
+- **A meso run's row is another shape.** `crates/output/src/runner.rs:run_meso` writes
+  `{"scenario": …, "mode": "meso", "sim_params": {"duration", "warm_up", "random_seed"},
+  "meso": …}`, with **no `sim_params.timestep`**, and `runs.mode` `meso` (§2.13).
 
 | | Midtown | urban_grid |
 |---|---|---|
@@ -231,7 +246,7 @@ This is the engine's behaviour, and the replay follows it because it is the engi
 A replay written from the plan (the seed brief's "signal state can be rebuilt from time")
 would honour the offsets and get urban_grid wrong: measured, it puts **90 of urban_grid's
 422 junction entries under a red that lasted the whole second before them**, where the
-engine's own code puts none (§2.7). This repo needs nothing from the engine here. The user
+engine's own code puts none (§2.7, which states how the offsets were applied). This repo needs nothing from the engine here. The user
 may want to tell the engine's sessions that the offsets are not applied.
 
 *(2026-10-09)* The engine's `main` at `6400b9aa` (2026-10-09) still reads neither `offset`
@@ -250,6 +265,8 @@ again. Every movement at those two junctions is in that phase, protected or perm
 **all their approaches are green, amber and red together**, every 30 s. Measured: no
 approach in either fixture is red for the whole run, and Midtown's red runs are 32 s (a
 two-phase plan's other phase plus its own all-red) or 2 s (these two junctions' all-red).
+The one exception is the red a second-phase approach starts the run with: 30 s, the first
+phase alone (91 approaches in Midtown, 18 in urban_grid).
 
 #### 2.5.3 The switching times are the engine's steps, not the plan's seconds
 
@@ -257,7 +274,8 @@ The state changes only at a step, and `elapsed` carries a float sum. Stepping th
 code shows where that matters:
 - **Both fixtures' plans** (25 + 3 + 2 at 0.1 s) switch exactly on the plan's seconds,
   through the whole run: every green lasts 250 steps, every amber 30, every red 320 (or
-  20, at Midtown's two one-phase junctions).
+  20, at Midtown's two one-phase junctions), but for a second-phase approach's first red,
+  from step 0, which lasts 300.
 - **A synthetic plan of 20 + 3 + 2 and 15 + 3 + 2** (gate 5) does not: its second phase
   turns amber at step 401 (40.1 s), not 400, and the first phase's green comes back at
   step 451 (45.1 s), not 450. The sum of 0.1 s steps falls a hair short of 15 s, so the
@@ -274,20 +292,25 @@ steps until `time ≥ duration − 1e-9`, and writes an FCD snapshot after a ste
 - **after step `k`**, the clock reads `T_k`, the engine's own float sum of `k` timesteps
   (`T_0 = 0`), and the signals are in state `S_k`, the state after `k` calls to
   `advance`, the one the vehicles perceived during step `k`;
-- **an FCD row at time `T_k`** shows the vehicles after step `k`, under `S_k`. The
-  dashboard's frame at `T_k` shows `S_k` too
-  (`crates/geometry/src/frame_collect.rs:collect_frame` reads the state after the step);
+- **an FCD row at time `T_k`** shows the vehicles after step `k`, under `S_k`, the state
+  they perceived in that step;
+- *(2026-10-09, round 1; the draft said the dashboard's frame at `T_k` shows `S_k` too)*
+  **the dashboard pairs them one step apart.** Its loops call `step_decide`, then
+  `crates/geometry/src/frame_collect.rs:collect_frame`, then `step_execute` (the server's
+  sim loop in `crates/server/src/server.rs`, and the wasm front end's `step_n`). So its
+  frame carries the clock `T_{k−1}`, the vehicles after step `k − 1`, and `S_k`. The rule
+  below keeps the FCD's pairing, the vehicles with the state they obeyed: §2.7 checks it
+  and every gate is keyed to it. A dot here turns amber at 25.0 s of the clock, where the
+  dashboard's clock reads 24.9 s;
 - measured, **every FCD time is bit-equal to a `T_k`** summed here as the engine sums
   it: 1,199 of 1,199 in Midtown (1.0999999999999999 to 1199.100000000005) and 291 of 291 in
   urban_grid. The `warm_up` changes nothing for the signals.
 
 **The rule: at sim time `t`, a frame shows `S_k` for the last step with `T_k ≤ t + 1e-6`**
-(`S_0` before the first step), as the dashboard does between its frames. At an FCD time it
-is that row's state. With both fixtures' plans the colours change exactly on the plan's
+(`S_0` before the first step), held between steps. At an FCD time it is that row's state. With both fixtures' plans the colours change exactly on the plan's
 seconds: an approach turns amber at 25.0 s, not 24.9 s. The `1e-6` is vis-001's snapshot
 tolerance (`rules/inputs.md`). Between steps, the state shown is up to 0.1 s behind the one
-the vehicles are reacting to, which is under 3 frames at 30 fps and 1× and is the
-dashboard's own lag.
+the vehicles are reacting to, which is under 3 frames at 30 fps and 1×.
 
 **The proposal: a timeline built once.** When a render or `view` starts:
 - `SignalState::new(&placement.data)` and `signalized_approach_links()`;
@@ -304,24 +327,32 @@ how signals step changes the timeline with it (§2.16).
 |---|---|---|
 | Steps; approaches | 12,000; 188 | 3,000; 36 |
 | Changes kept | 11,708 (94 KB) | 576 (5 KB) |
-| Build, median of 9 in one process (fastest – slowest) | **259 ms** (245–261) | **22 ms** (21.6–21.8) |
-| of which `advance` alone | 18 ms | 1.1 ms |
+| Build, median of 9 in one process (fastest – slowest) | **261 ms** (251–272) | **21 ms** (21.4–21.7) |
+| of which `advance` alone | 25 ms | 0.8 ms |
 | A frame's colours: 1,800 frames × every approach | 10.2 ms in all (5.6 µs a frame) | 2.4 ms |
 | Approach-steps green / amber / red | 42.6 / 5.1 / 52.3 % | 41.7 / 5.0 / 53.3 % |
 
 **The alternative: step a `SignalState` with the frames.** It needs no list, and a
 render's frames go forward in time, so each frame would step from the last one. But `view`
-goes back: the slider, `Shift+←` and a restart at `from` (vis-001 §2.10). Each step back
-would build a new state and step it from 0 to `t`: 18 ms on Midtown at its end, more than
+goes back: the slider, `Shift+←` and a restart at `from` (vis-001 §2.9.1, §2.10). Each step
+back would build a new state and step it from 0 to `t`: 25 ms on Midtown at its end, more than
 a frame at 60 fps, on every frame of a backward scrub, and more on a longer or larger run
 (it grows with steps × junctions). The
 timeline answers any `t` in microseconds, both ways, and `render` and `view` share it.
 
 **Its cost is paid once,** before the first frame: a quarter of a second on Midtown, whose
 renders take 48–88 s (vis-002 §2.18.15). Most of it is `link_signal_color` called for every
-approach at every step. A cheaper build is possible, re-evaluating a junction's approaches
-only on a step where its sub-state changed, but measured it is slower here (355 ms on
-Midtown, through `junction_phase_info`, which allocates), so it is not proposed.
+approach at every step. A cheaper build is possible: one `junction_phase_info` per junction
+per step, re-evaluating a junction's approaches only on a step where its sub-state
+changed. Measured, it keeps the same changes in 224 ms on Midtown and 14 ms on
+urban_grid. It is not proposed: it saves 37 ms once per render, and the build above asks
+`link_signal_color` itself, the function the vehicles perceive (§2.7), at every step, with
+no second reading of the phase.
+
+*(2026-10-09, round 1)* The draft gave 259 ms (245–261) and 22 ms for the build, 18 and
+1.1 ms for `advance`, and 355 ms for the cheaper build, "slower". The probe's kept output
+(`out/stats-midtown.txt`, `out/stats-urban_grid.txt`) has the numbers given here, and they
+replace the draft's. No gate is keyed to any of them.
 
 ### 2.7 The check against the FCD
 
@@ -372,20 +403,29 @@ at each episode's first row, and the colour at the vehicle's next row after the 
   5 m back, and 3 are already in the junction, held there, with their entry in an earlier
   window.
 
-**The check bites.** The same counts with the replay shifted, or with the plans' offsets
-applied as a replay from the plan would:
+**The check bites.** The same counts with the replay shifted, and with the plans' offsets
+applied. *(2026-10-09, round 1: the method, stated; the draft's "early" and "late" were the
+wrong way round.)*
+- **Shifted by `s` steps:** `S_{k+s}` is read wherever the check reads `S_k`, the index
+  clamped to the run's steps. With `s` above 0 the dots switch early, with `s` below 0
+  late.
+- **The offsets applied:** for a junction with `offset` `o`, `S_{k − round(o/dt)}` is read,
+  clamped at `S_0`: the engine's timeline delayed by the plan's offset, as a replay that
+  honoured the offsets would have it. (Wrapped round the cycle and not clamped, the count
+  is the same 90: not in the probe's `out/shifts.txt`, but found by two reviewers'
+  own implementations in rounds 1 and 2. No gate is keyed to it.)
 
 For each: junction entries on red throughout; first stopped boxes whose next row is under
 red; the most common delay from green to moving off (with its count).
 
 | Replay | Midtown | urban_grid |
 |---|---|---|
-| **The engine's (as proposed)** | **0; 7; 1.10 s (2,194)** | **0; 0; 0.10 s (96)** |
-| 0.5 s early (−5 steps) | 0; 7; 0.60 s (2,194) | **6**; **96**; none twice |
-| 1 s early (−10 steps) | 0; 7; 0.10 s (2,194) | **6**; **96**; none twice |
-| 0.5 s late (+5 steps) | 0; 7; 1.60 s (2,194) | 0; 0; 0.60 s (96) |
-| 1 s late (+10 steps) | **70**; 7; 2.10 s (2,194) | 0; 0; 1.10 s (96) |
-| Half a cycle late (+300 steps) | **7,221**; **2,388**; — | **422**; **107**; — |
+| **The engine's (`s` = 0, as proposed)** | **0; 7; 1.10 s (2,194)** | **0; 0; 0.10 s (96)** |
+| `s` = −5 (the dots 0.5 s late) | 0; 7; 0.60 s (2,194) | **6**; **96**; 2.60 s (2) |
+| `s` = −10 (1 s late) | 0; 7; 0.10 s (2,194) | **6**; **96**; 2.10 s (2) |
+| `s` = +5 (0.5 s early) | 0; 7; 1.60 s (2,194) | 0; 0; 0.60 s (96) |
+| `s` = +10 (1 s early) | **70**; 7; 2.10 s (2,194) | 0; 0; 1.10 s (96) |
+| `s` = +300 (half a cycle) | **7,221**; **2,388**; 1.10 s (22) | **422**; **107**; none |
 | The offsets applied (0, 5, 10 s) | (Midtown's are all 0) | **90**; **46**; 0.10 s (53) |
 
 So a mis-wired clock shows as entries on red, as queues moving off under red, or as a
@@ -428,7 +468,9 @@ As the dashboard places it (`crates/geometry/src/frame_collect.rs:collect_signal
 
 **On the drawn streets** (vis-002 Phase 6), measured: **188 of 188** of Midtown's dots and
 **35 of 36** of urban_grid's lie at the midpoint of their approach's lane-0 stop line's
-junction-facing edge, within 0.000000 m. The 36th is the approach whose lane 0 has a 5 m
+junction-facing edge, within 0.000000 m. That midpoint is the centroid of the approach's
+one `Kind::Stop` marking for `(link, lane 0)` in `Streets::build`, moved 0.2 m (half the
+line's 0.4 m) along the link's heading at its end. The 36th is the approach whose lane 0 has a 5 m
 stop-line delta (vis-002 §2.17.7): its dot is 5.0000 m ahead of lane 0's own line, on the
 edge of the other lanes' line, as on the dashboard.
 
@@ -437,7 +479,7 @@ edge of the other lanes' line, as on the dashboard.
 | Dots (approach links); none left out | **188** | **36** |
 | Approaches per signalised junction | 2 at 62, 3 at 20, 4 at 1 | 4 at 9 |
 | Closest two dots | 6.537 m | 17.553 m |
-| Pairs of dots closer than 17.6 m (they overlap in the orthographic frame, §2.11) | **107** | **0** |
+| Pairs of dots that overlap in the orthographic frame: closer than a dot's width there (§2.10), 17.6 m in Midtown and 12.6 m in urban_grid | **107** | **0** |
 
 ### 2.10 How a dot looks (OQ-1)
 
@@ -486,7 +528,7 @@ is answered (a), as drafted (decision 4), after the probe's 1080p videos with do
 A dot is a disc in the 3D scene, rebuilt every frame, whose world radius is chosen so that
 it covers exactly its pixel radius on screen. Each disc is 32 segments: a fan of 32
 triangles for the fill and a ring of 32 quads for the outline, 97 vertices and 96
-triangles. A 32-gon is within 0.05 px of the circle at 2160p.
+triangles. A 32-gon is within 0.053 px of the circle at 2160p (11 px, the outer ring).
 
 **Orthographic** (`render` without `--camera`): flat on the road, at `LIFT_M` = **0.03 m**,
 radius `4.5·s·k` and `5.5·s·k` metres. Every dot is exactly the copied circle.
@@ -511,7 +553,7 @@ GPU with MSAA ×4: the pixels of exactly its fill colour or black, and the box t
 
 | Frame | Orthographic, `k` 0.05 | Perspective, pitch 30, 64–82 m away | Pitch 90, 72 m | Pitch 25, 474–493 m |
 |---|---|---|---|---|
-| 1280×720 | 24 (24 fill, 0 black) | 21–23, 5×5 to 5×6 px | 21–23, 5×5 to 6×5 | 21–23, 5×5 to 6×5 |
+| 1280×720 | 24 (24 fill, 0 black) | 21–23, 5×5 to 5×6 px | 21–23, 5 or 6 each way | 21–23, 5×5 to 6×5 |
 | 1920×1080 | 60 (52 fill, 8 black) | 60–64, 10×10 to 10×11 | 61–63, 10×10 | 60–63, 9 to 11 each way |
 | 3840×2160 | 308 (232 fill, 76 black) | 307–313, 21×21 | 311–315, 21×21 to 22×21 | 312–318, 21×21 to 22×21 |
 
@@ -522,6 +564,11 @@ GPU with MSAA ×4: the pixels of exactly its fill colour or black, and the box t
   at 1080p and pitch 25–30, and within 0.1 px of it at pitch 90.
 - **At 720p the outline ring is 0.67 px wide,** so no pixel of it is pure black: it shows
   as a dark rim. At 1080p it is 1 px, at 2160p 2 px.
+- **In metres a perspective dot grows with its distance:** `ρ ≈ R·z/f`, which at 1080
+  lines (`f` = 1,303.7 px) is 0.3 m at 72 m and 2.1 m at 490 m. A far dot is a disc some
+  metres across standing over its stop line, so a box or a wall beside the line, not only
+  one in front of it, can cut into it. Nothing is done about that (§2.17); gate 14 is
+  worded with it.
 
 ### 2.12 Depth, ties and determinism
 
@@ -572,33 +619,54 @@ GPU with MSAA ×4: the pixels of exactly its fill colour or black, and the box t
 
 - **On by default** (decision 2) in `render` and `view`, in both cameras, on every network
   with a signalised junction. A network with none draws nothing and reads nothing more.
-- **`--no-signals`** on `render` and `view`. With it, nothing about signals is read or
-  built and nothing is spawned, so `render` gives today's frames, byte for byte (gates 1
-  and 2). The name follows `--no-streets` and `--no-see-through`.
+- **`--no-signals`** on `render` and `view`. The name follows `--no-streets` and
+  `--no-see-through`.
+  - **On `render`:** nothing about signals is read or built and nothing is spawned, so it
+    gives today's frames, byte for byte (gates 1 and 2).
+  - **On `view`:** the dots start hidden. *(2026-10-09, round 1: the draft said nothing is
+    read or built under the flag in `view` too, which left `L` nothing to show.)* The
+    timeline is still built at launch, so that `L` can show them. **If it cannot be
+    built** (the run is not micro, or its clock is not readable: the two errors below),
+    `view --no-signals` opens as today, with no error and no timeline, and `L` does
+    nothing. Without the flag, the same failure is the error below, before the window.
+- **A network with a signal** is one where `signalized_approach_links()` is not empty: a
+  junction with a `signal_plan` and a movement. `control: signal` without a plan is not
+  one (`tests/look.rs`'s crossing), as in the engine, whose `SignalState::new` takes only
+  junctions with a plan.
 - **`L`** in `view` (signal *lights*; by position, `KeyCode::KeyL`, unbound today) hides
   and shows the dots, as `M` does the streets. `view --no-signals` starts with them hidden,
   and `L` shows them. `S`, the obvious letter, is `WASD`'s pan. The keyframe line does not
-  carry it. In the frame order it comes after `M` (`rules/view.md`). *(2026-10-09, user)*
-  Confirmed: the key is `L` (decision 6).
+  carry it. In the frame order it comes after `M` (`rules/view.md`). On a network with no
+  signal, or with no timeline, `L` flips its flag and nothing is drawn. *(2026-10-09,
+  user)* Confirmed: the key is `L` (decision 6).
 - **`--signals` is not a flag:** clap rejects it, exit 2, as it rejects `--streets`.
 - **The library keeps today's default.** `Job::prepare*` build every job with signals off,
   as with streets, so every test that builds a job draws as today. `src/main.rs` turns them
-  on with `Job::set_signals(true)` unless `--no-signals` is given.
+  on with `Job::set_signals(true)?` unless `--no-signals` is given.
 
 **What signals read, and their errors.** With signals on and a signalised junction in the
 network, after `run::load`'s checks and the files' (`rules/inputs.md`), before the first
-frame, `results.db`'s run row (the one `run::load` found, read-only and `immutable=1`)
-must give:
-- **`resolved_config`** as a JSON object with a finite `sim_params.timestep` above 0, and
-  a finite `duration` (the `runs` column) above 0. Otherwise:
-  `error: <results.db>: the run's timestep is not readable (runs.resolved_config): <why>;
-  --no-signals renders without signals`.
-- **`mode` = `micro`.** Otherwise: `error: <results.db>: the run is <mode>; signals are
-  replayed only for micro runs (vis-003 OQ-3); --no-signals renders without signals`.
+frame, the run's row in `results.db` (the completed row for the scenario and seed, the one
+`require_completed_run` accepts; read-only and `immutable=1`) must give, **in this
+order**:
+1. **`mode` = `micro`** (the `runs` column). Otherwise: `error: <results.db>: the run is
+   <mode>; signals are replayed only for micro runs (vis-003 OQ-3); --no-signals renders
+   without signals`, with `<mode>` the column's text, or `not recorded` for a NULL.
+2. **A clock:** `resolved_config` as a JSON object with a finite `sim_params.timestep`
+   above 0, and a finite `duration` (the `runs` column) above 0. Otherwise:
+   `error: <results.db>: the run's timestep is not readable (runs.resolved_config): <why>;
+   --no-signals renders without signals`, where `<why>` names what failed (the query, a
+   NULL, the JSON, `sim_params.timestep`, or `runs.duration`).
+
+*(2026-10-09, round 1)* The mode comes first because a meso run's `resolved_config` has no
+`timestep` (§2.4): checked the other way round, every real meso run would get the second
+message and never the first. `inputs::run_clock` raises both, so both are tested without
+a `Job` (gate 5), and through the CLI on an edited copy of a fixture (gate 15).
 
 Each is one line, exit 1, no output file and no window, as every input error
-(vis-001 §2.4). Under `--no-signals`, or on a network with no signal, neither is read, so
-no run that renders today fails tomorrow with that flag.
+(vis-001 §2.4). On a network with no signal neither is read. Under `render --no-signals`
+neither is read, and under `view --no-signals` a failure is not an error (above). So no
+run that renders or opens today fails tomorrow with that flag.
 
 **The credit line stays as it is.** It is UI drawn over the 3D image, so where a dot lies
 under the bottom-right corner, the credit line covers it, as it covers the boxes. Nothing
@@ -613,11 +681,15 @@ Every CLI render in `scripts/` that is compared with a `ref-pin90b39292` file to
 - `scripts/gates-see-through.sh` gate 2's seven and gate 7's five (12);
 - `scripts/gates-parts.sh` gate 2's five and gate 9's six (11).
 
-These 29 lines are the ones carrying `--no-streets` now. The other renders in scripts
-compare only with each other, or count frames that differ: `gates-ties.sh` gate 9,
-`gates-city.sh` gate 13, `gates-credit.sh` gate 14, `gates-streets.sh` gates 10 and 11 and
-`gates-look.sh` gate 10. They are not edited, now draw dots, and must still give equal
-pairs and still differ where they differed (gate 3). `gates-look.sh` writes into
+These 29 are every `render` line carrying `--no-streets` now. A thirtieth line with the
+flag, `gates-streets.sh`'s `view --no-streets --bench 1`, is not a render and is not
+edited. The other renders in scripts compare only with each other, or count frames that
+differ: `gates-ties.sh` gate 9, `gates-city.sh` gate 13, `gates-credit.sh` gate 14,
+`gates-streets.sh` gates 10 and 11 and `gates-look.sh` gate 10; and `gates.sh`'s
+`explicit` render is checked by `ffprobe` and its stderr only. They are not edited, now
+draw dots, and must still give equal pairs and still differ where they differed (gate 3).
+The header comments of `gates-streets.sh` and `gates-look.sh`, which say the reference
+scripts run "with --no-streets", are those phases' records and stay as they are. `gates-look.sh` writes into
 `scratch/out/look/`, over Phase 6's renders, so Phase 1 copies those first (gate 2).
 The `view` runs in scripts check only an exit and a JSON line.
 
@@ -635,8 +707,10 @@ need to yet:
 - **no forced run writes what the visualizer reads.** `results.db` and the FCD are written
   by `crates/output/src/runner.rs:run_to_results_db` (and its meso twin), which never calls
   `force_phase`. The Python bindings write neither (no `ResultsDbWriter` or FCD writer in
-  `crates/python/src`). So every run the visualizer can open is a fixed-time run, and the
-  replay is the engine's.
+  `crates/python/src`). The dashboard server's sim loop (`crates/server/src/server.rs`) is
+  a third writer of both: it never calls `force_phase` either, and its runs are micro with
+  a `timestep`. So every run the visualizer can open is a fixed-time run, and the replay
+  is the engine's.
 
 **What would show it.** A forced run's FCD would put junction entries under a replayed red
 that lasted their whole window: §2.7's check counts them, and the engine's own fixed-time
@@ -671,7 +745,13 @@ commit of its own that re-runs the gates. Then:
   - in `frame_collect.rs`, `collect_signal_state`: which approaches, which `s`, which lane.
 
   Each change found is copied with its new line, and gates 5, 8 and 9 are predicted again.
-  With none, the copy stands, and the record says so. The new module names `90b39292`
+  With none, the copy stands, and the record says so.
+- *(2026-10-09, round 2)* **Nor does the shape of the run's row:** what `run_clock` reads
+  (`runs.mode`, `runs.duration`, `resolved_config`'s `sim_params.timestep`) and the two
+  rows written out in gate 5 and gate 15, a micro run's and a meso run's. The same phase
+  adds `crates/output/src/runner.rs` to that diff and reads `run_to_results_db`'s and
+  `run_meso`'s `resolved_json`; a change there changes `run_clock` and those two gates'
+  rows. The new module names `90b39292`
   beside each copied value, so the diff has a place to land.
 
 At the engine's HEAD today, those three files are not read here: the pin is what is drawn.
@@ -679,13 +759,15 @@ At the engine's HEAD today, those three files are not read here: the pin is what
 ### 2.17 What it does not do
 
 - **No colour on the stop lines.** vis-002 kept its stop lines per `(link, lane)` so that
-  "the data item" could colour them (vis-002 §2.17.7, §2.18.6, §2.18.13). Decision 2 draws
+  "the data item" could colour them (vis-002 §2.17.7, §2.17.13, §2.18.2, §2.18.6,
+  §2.18.13). Decision 2 draws
   dots instead, as the dashboard does, and the stop lines stay white. The quads stay per
   lane; nothing uses that now. vis-002 gets a dated note saying so in Phase 1's close-out.
 - **No per-lane, per-movement or protected/permitted distinction** (§2.8).
 - **No dot at an unsignalised junction,** where the engine has none either; vis-002's 38
   stop lines at unsignalised approaches stay as they are.
 - **No fade.** A dot keeps its pixel size at any distance, so it never thins below a pixel.
+- **No cap on a far dot's size in metres** (§2.11): it is as many pixels as a near one.
 - **No dot under see-through's control:** stubs uncover what they uncover, no more.
 - **No pick or follow** of a dot, and no change to pick, pan or zoom.
 - **Nothing in the keyframe file.** A flight's video shows dots unless `--no-signals`.
@@ -724,8 +806,16 @@ A throwaway probe in gitignored `scratch/vis003p1-probe/`:
   synthetic frames; **`frames/`**: stills for gate 14's wording.
 
 **Where the probe differs from the scope:** it reads the run's clock from the first
-completed `runs` row rather than the one `run::load` found; it has no `--no-signals`, no
-`L` and no mode check; its dots are always on in `view`, and set every frame there.
+completed `runs` row rather than the scenario's and seed's; its `run_clock` is in
+`src/signals.rs`, and its `Job::set_signals` takes the `results.db` path; it has no
+`--no-signals`, no `L` and no mode check; its dots are always on in `view`.
+
+*(2026-10-09, round 1)* Measured for gate 15, with `origin/main`'s binary: a copy of
+`scratch/urban_grid` whose `results.db` was edited with `sqlite3` (`PRAGMA journal_mode =
+DELETE`, then `mode` set to `meso` and `resolved_config` to the meso runner's shape) reads
+back so through `immutable=1`, and `render --from 10 --to 20 --speedup 1` on it exits 0
+with `1920,1080,30/1,300`: today's `render` does not read `mode`. `render --signals` is
+rejected by clap today.
 
 ## 3. Open questions
 
@@ -756,7 +846,9 @@ completed `runs` row rather than the one `run::load` found; it has no `--no-sign
     and its OQ-4 on FCD in agent runs). The visualizer would then draw the recorded states
     and keep the replay for older runs.
   - *(needs-input: engine; deferred by evidence: no producer of forced runs writes FCD or
-    `results.db` at the pin.)*
+    `results.db` at the pin. It blocks no gate of Phase 1. What forces it: the first phase,
+    here or in vis-001's harness item, that draws a run not written by
+    `run_to_results_db` or the dashboard server.)*
 - **OQ-3** — Meso runs (§2.13).
   - *The facts:* the meso engine steps the same `SignalState` once a step
     (`crates/meso/src/engine.rs`, `advance(self.dt)` at the start of `step`), but with
@@ -765,7 +857,19 @@ completed `runs` row rather than the one `run::load` found; it has no `--no-sign
     drawn a meso run at all.
   - *Recommendation:* refuse with signals on in Phase 1, with the error of §2.13 and
     `--no-signals` as the way through; take it up when a meso fixture exists.
-  - *(deferred by evidence: no meso fixture; blocks nothing in Phase 1.)*
+  - *More facts (2026-10-09, round 1):* a meso run's `resolved_config` has no
+    `sim_params.timestep` (§2.4), so the refusal reads `runs.mode` first (§2.13). Today's
+    `render` does not read `mode` and would draw a meso run's FCD if it has the columns;
+    none has been tried.
+  - *(design call: the user; deferred by evidence: no meso fixture. Phase 1 builds the
+    recommendation, which changes one default: a meso run that `render` or `view` takes
+    today is refused tomorrow without `--no-signals` (§2.1 step 1). Gates 5 and 15 check
+    the refusal and the way through; nothing else in Phase 1 waits on it.)*
+  - *(answered for Phase 1, 2026-10-09, user, after the review converged)* **Refuse, as
+    the spec has it.** A meso run with signals on is refused in Phase 1. The user takes
+    this as deferring, so **this question stays open for meso dots,** to take up when a
+    meso fixture exists. Recorded as §2.2 decision 7. No scope, gate or prediction
+    changes.
 - **OQ-4** — Dots under buildings in the orthographic render (§2.12). **RESOLVED.**
   - *As drafted:* a dot is part of the scene, under a roof that stands over its road, as
     a box is: 7 of Midtown's 188 with `--buildings`.
@@ -806,39 +910,60 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
       `Signals { approaches, t: Vec<f64> }`;
     - `Signals::build(&Placement, dt, duration) -> Signals`: §2.6's timeline, stepping
       `SignalState` from `new` while `time < duration − 1e-9`, as the engine's loop;
+    - `Signals::for_run(&Placement, results, scenario, seed) -> Result<Option<Signals>>`:
+      `None`, with nothing read, on a network with no signal (§2.13); otherwise
+      `inputs::run_clock` and `build`. `Job::set_signals` and `view` both call it;
     - `Signals::colours_at(t) -> Vec<Colour>`: §2.6's rule, in approach order;
     - `scale(w, h)`, and `dots(&Signals, &[Colour], camera, w, h) -> DotsData` (positions
       in world metres, an sRGB colour per vertex, indices), where `camera` is the
       orthographic `k` or a `Pose` (§2.11). Per dot: the ring (32 inner, 32 outer vertices,
       64 triangles), then the fill (a centre and 32 rim vertices, 32 triangles), dots in
       approach order; a perspective dot with `f·ρ/R ≤ 0.1` is left out.
-  - **`src/inputs.rs`:** `run_clock(results, scenario, seed) -> Result<(f64, f64, String)>`,
-    the run's `timestep`, `duration` and `mode` from the row `require_completed_run`
-    accepts, read-only and `immutable=1`; the errors of §2.13.
+  - **`src/inputs.rs`:** `run_clock(results, scenario, seed) -> Result<(f64, f64)>`, the
+    run's `timestep` and `duration` from the completed row for the scenario and seed (the
+    one `require_completed_run` accepts), read-only and `immutable=1`. It raises both
+    errors of §2.13 itself, the mode's first.
   - **`src/draw.rs`:** `spawn_dots` (one entity, one unlit white material with
     `cull_mode: None`, `NoFrustumCulling`, hidden until set) and `set_dots` (replace its
     mesh, linear vertex colours from sRGB as the markings', hidden when empty), about the
     bake origin `(fx, fy)` as every mesh.
   - **`src/render.rs`:** `Renderer::set_signals(on)` spawns or despawns the entity and
     settles again, as `set_streets`; `Renderer::set_dots(&DotsData)`.
-  - **`src/lib.rs`:** `Job` keeps an `Option<Signals>`; `Job::set_signals(on)` reads the
-    run clock and builds the timeline (on), or drops both (off); every `prepare*` builds a
-    job with signals off; `render_at(t)` sets the dots for `t` and the frame's pose (or
-    `k`) before the boxes. `Job::signals()` gives the timeline to the gates.
-  - **`src/view/mod.rs`, `src/view/state.rs`:** the timeline built at launch unless the
-    network has no signal; `signals_shown` (on unless `--no-signals`); `L`
-    (`KeyCode::KeyL`) flips it after `M`; while shown, `set_dots` every frame for `t`, the
-    pose and the window's logical size; while hidden, the entity hidden. `--bench` sets
-    them every frame, as it does the markings.
+  - **`src/lib.rs`:**
+    - `Job` keeps the run's `results.db` path, scenario and seed, which it drops today:
+      `prepare_inner` takes them from `inputs::RunPaths::new` on the same options
+      `run::load` took. `src/run.rs` is not edited;
+    - `Job` keeps an `Option<Signals>`; `Job::set_signals(on) -> Result<()>` calls
+      `Signals::for_run` and tells the renderer (on), or drops the timeline and the entity
+      (off); every `prepare*` builds a job with signals off;
+    - `render_at(t)` sets the dots for `t` and the frame's pose (or `k`) before the boxes.
+    - *(2026-10-09, round 1)* The draft's `Job::signals()`, "for the gates", is dropped:
+      no gate needs a `Job`'s timeline (gates 6–8 build theirs with `run::load`,
+      `inputs::run_clock` and `Signals::build`, headless).
+  - **`src/view/mod.rs`, `src/view/state.rs`:**
+    - `ViewOptions` gains `signals` (true unless `--no-signals`), as `streets`;
+    - at launch, before the window: `Signals::for_run`, with the `results.db` path,
+      scenario and seed from `inputs::RunPaths::new` on `o.load`, as `Job` takes them.
+      With `signals` on, its error is `view`'s error. With `--no-signals`, an error is dropped and there is no timeline
+      (§2.13);
+    - `signals_shown` in the state, off at `ViewState::new`, set from `signals` at launch;
+      `Pressed` gains `l`, and `L` (`KeyCode::KeyL`) flips `signals_shown` after `M`;
+    - while shown and there is a timeline, `set_dots` every frame for `t`, the pose and the
+      window's logical size, in `--bench` too; otherwise the entity is hidden.
   - **`src/main.rs`:** `--no-signals` on `render` and `view`, with help text; `render`
-    calls `job.set_signals(true)` unless it is given. No other flag or default changes.
+    calls `job.set_signals(true)?` unless it is given; `view` passes it to `ViewOptions`.
+    No other flag or default changes.
   - **Tests.** `tests/signals.rs` (new):
-    - headless, not ignored: gates 5 and 8's synthetic part;
-    - headless, needing the fixtures, so ignored: gates 6, 7 and 8's fixture part;
+    - headless, not ignored: gates 5 and 8's synthetic part, and gate 15's `L`;
+    - headless, needing the fixtures, so ignored: gates 6, 7 and 8's fixture part, each
+      from `run::load`, `inputs::run_clock` on the fixture's `results.db`, and
+      `Signals::build`;
     - through the GPU, ignored: gate 9 (no fixture).
-  - **Scripts.** `scripts/gates-signals.sh` (new, offline): gates 2 and 10, and the renders
-    for gate 14, into `scratch/out/signals/`. The 29 lines of §2.14 gain `--no-signals`,
-    and the comment above them in each of the four scripts says so.
+  - **Scripts.** `scripts/gates-signals.sh` (new, offline): gates 2 and 10, gate 15's CLI
+    cases, and the renders for gate 14, into `scratch/out/signals/`. It is the first
+    script to need the `sqlite3` CLI (`/usr/bin/sqlite3` on the development machine), and
+    its header says so. The 29 lines of §2.14
+    gain `--no-signals`, and the comment above them in each of the four scripts says so.
   - **Not edited:** every other test file and script; every source file not named above;
     `Cargo.toml` and `Cargo.lock`.
 - **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
@@ -881,7 +1006,8 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
      - The renders that compare only with each other still give equal pairs:
        `gates-ties.sh` gate 9, `gates-city.sh` gate 13 and `gates-credit.sh` gate 14,
        **1800 of 1800** each; `gates-streets.sh` gates 10 and 11 and `gates-look.sh` gate 10
-       pass (equal pairs, each differing where it differed). All nine scripts pass.
+       pass (equal pairs, each differing where it differed). All eight existing scripts
+       pass; the ninth, `gates-signals.sh`, is gates 2, 10 and 15.
      - `git diff origin/main --stat -- src/` adds `src/signals.rs` and changes
        `src/draw.rs`, `src/render.rs`, `src/lib.rs`, `src/inputs.rs`, `src/main.rs`,
        `src/view/mod.rs` and `src/view/state.rs`; `-- scripts/` adds `gates-signals.sh` and
@@ -902,7 +1028,8 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
          - {id: P1, duration: 20, green_movements: [W_T, W_R, E_T, E_R], permitted_movements: [W_L, E_L], amber_time: 3, all_red_time: 2}
          - {id: P2, duration: 15, green_movements: [N_T, N_R, S_R], permitted_movements: [N_L, S_L], amber_time: 3, all_red_time: 2}
      ```
-     The predictions (the probe's `out/synth.txt`):
+     The predictions (the probe's `out/synth.txt` for the approaches, steps and colours;
+     `out/synth1080.txt` for the mesh and the perspective dot):
      - **4 approaches**, in this order, and their dots: `L_EC` (10, 2), `L_NC` (−1.75,
        13.75), `L_SC` (3.75, −13.5), `L_WC` (−12, −1.75), each within 1e-9 m. `L_EC`'s is at
        its link's end, 5 m ahead of its lane 0's own line (its 5 m delta);
@@ -911,6 +1038,13 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
        `L_SC`: red 0, green **250**, amber **401**, red **431**, green 700, amber **851**,
        red **881**. So 40.1, 45.1, 85.1 and 90.1 s, not the plan's 40, 45, 85 and 90
        (§2.5.3); and green again at 45.1 s, not at 60 + 7;
+     - **another timestep** (*2026-10-09, round 1*: so that a build which ignores the `dt`
+       it is given fails): the same plan with `dt` 0.25, which is exact in binary, and
+       `duration` 100 is 400 steps, and the changes fall on the plan's seconds. `L_EC` and
+       `L_WC`: green 0, amber **80**, red **92**, green **180**, amber 260, red 272, green
+       360; `L_NC` and `L_SC`: red 0, green **100**, amber **160**, red **172**, green 280,
+       amber 340, red 352. (Not from the probe: from a re-implementation of `advance`'s
+       arithmetic, which gives the 0.1 s steps above exactly.)
      - **`colours_at`** at 0, 10, 19.95, 20, 22.99, 23, 24, 25, 39.99, 40, 43, 44.99, 45,
        46, 60 and 61 s: `[G, R, R, G]` ×3, `[A, R, R, A]` ×2, `[R, R, R, R]` ×2,
        `[R, G, G, R]` ×3, `[R, A, A, R]`, `[R, R, R, R]` ×2, `[G, R, R, G]` ×3;
@@ -921,8 +1055,15 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
        every vertex projects (`camera::project`) within 1e-6 px of a circle of 4.5 or
        5.5 px about the centre's projection, and the lowest vertex is 0.03 m above the
        road, within 1e-9 m;
-     - **errors:** a `resolved_config` with no `timestep`, one of 0, and a `mode` of
-       `meso`, each give §2.13's message (a temporary `results.db` written by the test).
+     - **`run_clock`,** on a temporary `results.db` the test writes with `rusqlite`, one
+       completed row each:
+       - a micro row with `timestep` 0.1 and `duration` 100: `(0.1, 100.0)`;
+       - a micro row whose `resolved_config` has no `sim_params.timestep`, and one where
+         it is 0: §2.13's timestep message;
+       - **a row as the meso runner writes it** (`mode` `meso`; `resolved_config`
+         `{"scenario": …, "mode": "meso", "sim_params": {"duration", "warm_up",
+         "random_seed"}}`, with no `timestep`): §2.13's **mode** message, "the run is
+         meso", and not the timestep one.
 
      Every number is `==` where exact (the counts, steps, colours) and within the stated
      tolerance elsewhere. **Without the feature it fails:** there are no dots, no timeline
@@ -935,11 +1076,20 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
      | Signalised junctions; phases per plan | **83**; 2 at 81, 1 at 2 | **9**; 2 at 9 |
      | Approaches = dots; none left out | **188** | **36** |
      | Steps; changes kept | **12,000; 11,708** | **3,000; 576** |
-     | Green, amber, red runs between changes (s) | 25; 3; 2 and 32 | 25; 3; 32 |
+     | Run lengths (s): green; amber; red after an amber; the red an approach starts the run with | 25; 3; 2 and 32; **30, at 91 approaches** | 25; 3; 32; **30, at 18** |
      | FCD times bit-equal to a `T_k` | **1,199 of 1,199** | **291 of 291** |
      | `colours_at` against a second `SignalState` stepped alongside, at every FCD time and 0.05 and 0.5 s after it | **676,236 equal, 0 differ** | **31,428, 0** |
      | Dots at their lane-0 stop line's front midpoint (within 1 mm) | **188 of 188** | **35 of 36**; the 36th at 5.0000 m |
      | (approach, phase) pairs: green by permitted alone; green with a movement in no list | 0 of 372; **2** | 0 of 72; 0 |
+
+     The timestep and duration come from `inputs::run_clock` on each fixture's
+     `results.db` (0.1 and 1200; 0.1 and 300). A run length is the time from one entry of
+     an approach's `changes` to the next, so each approach's last run, cut off by the
+     run's end, is not counted; the red from step 0 is the fourth figure *(2026-10-09,
+     round 1: the draft's row left it out)*. The stop line's front midpoint is §2.9's (the `Kind::Stop` quad's centroid,
+     0.2 m along the heading). The probe's kept `out/stats-*.txt` predate that row's
+     line: they hold "dots off lane 0's own stop line: 0" for Midtown and the one 5 m
+     delta for urban_grid, which say the same.
 
      Also printed and recorded, not asserted: the build time of the timeline (§2.6).
   7. **The replay against the FCD** (`tests/signals.rs`, ignored), §2.7's check on each
@@ -950,8 +1100,10 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
        amber / green **2,301 / 27 / 162**, next row green / amber / red / none **2,406 /
        10 / 7 / 67**, **2,194** moving off 1.10 s after green; urban_grid **129** (2,555),
        **118 / 0 / 11**, **107 / 0 / 0 / 22**, **96** moving off 0.10 s after green;
-     - **the control:** with the replay 1 s late (+10 steps), Midtown has **70** entries on
-       red throughout; with urban_grid's offsets applied, **90**.
+     - **the control,** by §2.7's two formulas: with `S_{k+10}` read in place of `S_k`
+       (the dots 1 s early), Midtown has **70** entries on red throughout; with each
+       junction's offset applied (`S_{k − round(offset/dt)}`, clamped at `S_0`), urban_grid
+       has **90**. (With `S_{k−10}`, the wrong sign, Midtown has 0.)
   8. **The colours and the place** (`tests/signals.rs`): each copied colour is its
      `colors.ts` hex (`==`), `Colour` maps `"green"`, `"amber"`, `"red"` and anything else
      to red; `scale` is 2/3, 1 and 2 at 1280×720, 1920×1080 and 3840×2160; and (ignored,
@@ -964,11 +1116,17 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
      dots, then with them at `t` = 10, 21 and 30. At each dot's centre pixel, its colour
      exactly (green, red, red, green; amber, red, red, amber; red, green, green, red).
      Over the frame: **448** pixels change at each `t`; exactly **104** of each of its two
-     fill colours and **32** black. Then `Renderer::new_perspective` at the pose of gate 5
-     (pitch 30), at pitch 90, and at `height_m` 400 and pitch 25: each dot's pixels of its
-     exact fill or black **60–64**, in a box of **10×10 or 10×11** px whatever its
-     distance (64 to 493 m). Without the feature, no pixel changes. These are OQ-1's (a)
-     numbers (answered 2026-10-09, decision 4).
+     fill colours and **32** black (four dots of 52 and 8; the other 208 are MSAA blends at
+     the rims, and no two dots overlap at this `k`). Then `Renderer::new_perspective`,
+     with `t` = 10's colours and **each dot drawn alone** (a `DotsData` of that one dot),
+     at three poses: gate 5's (`cx` 0, `cy` 0, `height_m` 60, yaw 30, pitch 30); the same
+     with pitch 90; the same with `height_m` 400 and pitch 25. Each of the twelve: the
+     pixels of its exact fill or black number **60–64**, in a box **9 to 11 px each way**,
+     whatever its distance (64 to 493 m). *(2026-10-09, round 1: the draft's "10×10 or
+     10×11" was the pitch-30 pose's alone; the probe's `out/synth1080.txt` has 10×10 at
+     pitch 90, and 11×10, 10×10, 11×9 and 10×10 at pitch 25, as §2.11's table.)* Without
+     the feature, no pixel changes. These are OQ-1's (a) numbers (answered 2026-10-09,
+     decision 4).
   - **The dots — renders:**
   10. **On, deterministic** (`scripts/gates-signals.sh`). Each twice, each pair equal:
       urban_grid's default and `--camera tests/flight.toml` **8700 of 8700**; Midtown's
@@ -1009,30 +1167,35 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
         about 11 px across with a thin dark rim, at the crossing's edge where the
         approaching lanes meet it: two at most crossings, a few with three or four,
         touching or overlapping. From 0:00 each crossing shows one green and one red (or
-        more); at 0:25 every green dot in the frame turns amber at once, at 0:28 red, and
-        for two seconds there is no green anywhere but at two crossings, whose dots are
-        all green from 0:00 to 0:25 and from 0:30 to 0:55; at 0:30 every dot that had
-        been red turns green at once. The tiny boxes queue behind the red dots and pass
-        the green ones; where they reach a dot they show over it. A few dots, about one
-        crossing in twelve, lie partly or wholly under a roof (OQ-4, answered as drafted).
-        Nothing else differs from Phase 6's video.
+        more), but for two crossings whose dots are all green. At 0:25 every green dot in
+        the frame turns amber at once, at 0:28 red, and **for two seconds every dot in the
+        frame is red**, those two crossings' too (§2.5.2). At 0:30 every dot that was red
+        before 0:25 turns green at once, and the two crossings' dots turn green again with
+        them. The tiny boxes queue behind the red dots and pass the green ones; where they
+        reach a dot they show over it. A few dots, 7 of the 188, lie under a roof, and 2
+        more partly (OQ-4, answered as drafted). Nothing else differs from Phase 6's video.
       - **The city flight with buildings (`signals-city.mp4`).** From 0:00 to 0:10, high and
         straight down: as the orthographic video. Then, as the camera comes down and tilts,
         the streets grow but every dot stays the same size: at the top of the frame, far
         off, the dots of a crossing are as big as those of the crossing below the camera.
-        A dot behind a tower is hidden and appears as the camera passes. The same switch at
+        A dot behind a tower is hidden and appears as the camera passes; a far dot, which
+        is metres across there (§2.11), may be cut by a box or a wall beside it. The same switch at
         0:25, 0:28 and 0:30. From about 0:40 the camera looks across the park's dark
         ground, and few dots are in the frame.
       - **The orbit with buildings (`signals-orbit.mp4`), the crossing in the middle of the
-        frame.** Four dots, one at each approach's white bar, on its side nearest the
-        middle of the street, standing a little above the bar. From 0:00 to 0:25, the two
-        on the street that runs up the frame at 0:00 are green and the two on the cross
-        street red, with the cross street's cars waiting behind the red ones. At 0:25 the
-        greens turn amber, at 0:28 red. At 0:30 the cross street's dots turn green, and its
-        first waiting box moves off about a second later. As the camera circles, each dot
-        stays round and the same size; it is hidden only where a box or a building stands
-        in front of it. The crossings farther up the street, in the top of the frame, show
-        their dots as small as the near ones.
+        frame.** *(2026-10-09, round 1: the draft said four dots, two green and two red.
+        The crossing is N523, 25 m from the flight's look-at point, and it has three
+        signalised approaches: the one-way avenue's, and the cross street's two. The
+        probe's `frames/orbit-crop-5.png` shows them.)* **Three dots,** one at each
+        approach's white bar, standing a little above it. From 0:00 to 0:25, the one on
+        the avenue is green and the two on the cross street red, with the cross street's
+        cars waiting behind the red ones. At 0:25 the green turns amber, at 0:28 red. At
+        0:30 the cross street's two dots turn green, and its first waiting box moves off
+        about a second later. As the camera circles, each dot stays round and the same
+        size; it is hidden where a box or a building stands in front of it, or, about 2.5 m
+        across at this distance (§2.11), is cut by one beside it. The
+        crossings farther off, in the top of the frame, show their dots as small as the
+        near ones.
       - **urban_grid's `--camera` render (`signals-ug-camera.mp4`).** 0:00 is 9.1 s of the
         run; the switches come at **0:15.9** (amber), **0:18.9** (red), **0:20.9** (the
         others green), then every 30 s on the same pattern (0:45.9, 0:48.9, 0:50.9, …).
@@ -1050,6 +1213,44 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
 
       Then say whether OQ-1's and OQ-4's answers (the size, and the dots under roofs) stand
       as they look.
+  - **The flag and the key** (*2026-10-09, round 1*; numbered after gate 14 so that no
+    gate is renumbered; it runs with gates 5 and 10, before the user's check):
+  15. **Their edges.**
+      - **`L`, headless** (`tests/signals.rs`, not ignored), written as `tests/streets.rs`'s
+        `gate12_m` with `l` for `m`: `signals_shown` is off at `ViewState::new`; a frame
+        with `l` pressed turns it on, and another turns it off; then playing and
+        following with `K` pressed in the same frame, through a right-button orbit, a
+        drag and a scrub of the slider, every other field of the state equals that of a
+        twin stepped without `l`.
+      - **The CLI** (`scripts/gates-signals.sh`). Each `view` runs under `perl -e 'alarm
+        60; exec @ARGV'`, as `gates-streets.sh` gate 11's.
+        - `render … --signals`: exit 2, and no video. (So it is today: the case guards
+          against the flag being added, not against the feature being absent.)
+        - `view --no-signals --bench 1` on urban_grid: exit 0, and the bench JSON on the
+          last line of stderr.
+        - Two copies of `scratch/urban_grid` in `scratch/out/signals/`, each with its
+          `results.db` edited by `sqlite3` (`PRAGMA journal_mode = DELETE;` first: the
+          fixture is in WAL mode, and an `immutable=1` reader does not read a `-wal`. Its
+          `-wal` is empty and `sqlite3` checkpoints on close, so the edit shows without
+          the pragma too; it is kept so that nothing rests on that):
+          - **`meso/`**: `UPDATE runs SET mode = 'meso', resolved_config =
+            '{"scenario":"baseline","mode":"meso","sim_params":{"duration":300.0,"warm_up":30.0,"random_seed":42}}'`,
+            the meso runner's shape (§2.4) less its `meso` key, which nothing here
+            reads;
+          - **`noclock/`**: `UPDATE runs SET resolved_config =
+            '{"scenario":"baseline","sim_params":{"duration":300.0,"warm_up":30.0,"random_seed":42}}'`,
+            `mode` left `micro`.
+        - `render` on `meso/`: exit 1, stderr's one line is §2.13's mode error ("the run
+          is meso"), and no video. `render` on `noclock/`: exit 1, the timestep error, no
+          video.
+        - `render --no-signals --from 10 --to 20 --speedup 1` on `meso/`: exit 0 and
+          `ffprobe` `1920,1080,30/1,300` (§2.19: so it is today).
+        - `view --bench 1` on `meso/`: exit 1 and the mode error. `view --no-signals
+          --bench 1` on `meso/`: exit 0 and the bench JSON.
+
+      Without the feature: `--no-signals` is itself rejected, and `render` on `meso/`
+      exits 0. With the two checks in the draft's order, `render` on `meso/` gives the
+      timestep error and fails the case.
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
@@ -1058,28 +1259,36 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
   | `--no-signals`: Phase 6's seven cases | 8700 / 1800 of 1800 against `look-p6` | 2 |
   | Other tests and scripts; diff | baseline numbers; equal pairs; the listed files | 3 |
   | Packages | 0 | 4 |
-  | Synthetic: approaches, dots, change steps, colours, mesh | 4; as listed; 200/230/451…, 250/401/431…; 388 and 384 | 5 |
-  | Fixtures: junctions, dots, steps, changes, FCD times, against `SignalState` | 83 / 9; 188 / 36; 12,000 / 3,000; 11,708 / 576; all bit-equal; 0 differ | 6 |
+  | Synthetic: approaches, dots, change steps (at `dt` 0.1; at 0.25), colours, mesh | 4; as listed; 200/230/451…, 250/401/431…; 80/92/180…, 100/160/172…; 388 and 384 | 5 |
+  | `run_clock`: a micro row; no timestep, or 0; a row as the meso runner writes it | (0.1, 100); the timestep message; the mode message | 5 |
+  | Fixtures: junctions, dots, steps, changes, approaches that start red, FCD times, against `SignalState` | 83 / 9; 188 / 36; 12,000 / 3,000; 11,708 / 576; 91 / 18, for 30 s; all bit-equal; 0 differ | 6 |
   | Junction entries on red throughout; first stops; control | 0 of 7,536 / 0 of 422; 2,490 / 129 as listed; 70 and 90 | 7 |
   | Colours, `scale`, the dots' place | the copied hex; 2/3, 1, 2; bit for bit | 8 |
   | Synthetic pixels: changed, fill, black; perspective | 448; 104 + 104; 32; 60–64 px a dot, 9–11 px across | 9 |
   | Seven renders twice; against Phase 6 | equal; differ in ≥ 1 frame | 10 |
   | Copied values at their lines | each holds | 11 |
   | `view --bench 20` with signals | ≥ 30 fps | 13 |
+  | `L`; `--signals`; a meso row and one with no timestep; the meso row with `--no-signals` | flips only its flag; exit 2; exit 1 with its own message; exit 0 (`render`: 300 frames) | 15 |
 - **Not predicted, and so not gated:**
   - the look: OQ-1's size and OQ-4's dots under roofs as answered, the dot's colours
     beside the slow boxes', and how overlapping dots read, for the user at gate 14;
   - render times (gate 12), and `view`'s frame rate above 30 (gate 13);
-  - a meso run and a forced run: refused, or not readable, at the pin (OQ-2, OQ-3).
+  - which of two overlapping dots is on top in the orthographic frame (§2.12: the later
+    in approach order; seen in the probe at `k` 3, and gated only as equal pairs, gate 10);
+  - a real meso run: none exists here, and gate 15's is a micro run's files with an
+    edited row; a forced run: not readable at the pin (OQ-2, OQ-3).
 - **Close-out (standing plan steps, the methodology's §3):**
   - **Commit plan:** one branch (`vis-003-phase-1`), one push. The commits:
     - `src/signals.rs`, `run_clock` in `src/inputs.rs`, `src/draw.rs`, `src/render.rs`,
-      `src/lib.rs`, `src/main.rs`'s flag, `tests/signals.rs`'s headless gates (5–8), and
-      the 29 lines of §2.14 with their comments. The look changes here, since signals are
-      on by default, and the reference scripts keep passing in the same commit;
-    - `view`: `src/view/mod.rs`, `src/view/state.rs` (`L`, the dots, `--no-signals`);
-    - `tests/signals.rs`'s GPU gate 9 and `scripts/gates-signals.sh` (gates 2 and 10, and
-      gate 14's renders). Gates 1–4 and 9–13 run after this commit;
+      `src/lib.rs`, `src/main.rs`'s `render` flag, `tests/signals.rs`'s headless gates
+      (5–8), and the 29 lines of §2.14 with their comments. The look changes here, since
+      signals are on by default, and the reference scripts keep passing in the same
+      commit: they need `render`'s flag only;
+    - `view`: `src/view/mod.rs`, `src/view/state.rs` and `src/main.rs`'s `view` flag (`L`,
+      the dots, `--no-signals`), and gate 15's `L` test;
+    - `tests/signals.rs`'s GPU gate 9 and `scripts/gates-signals.sh` (gates 2, 10 and
+      15's CLI cases, and gate 14's renders). Gates 1–4, 9–13 and 15 run after this
+      commit;
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
@@ -1094,20 +1303,26 @@ confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were
       order `L` after `M`; cut to fit;
     - `rules/camera.md` (60 of 60): "What each path draws" names the dots (flat in the
       orthographic path, facing the camera in perspective); cut to fit;
-    - `rules/inputs.md` (50 of 50): the checks gain the run clock's, with signals on;
+    - `rules/inputs.md` (50 of 50): the checks gain the run's mode and clock, with signals
+      on; cut to fit;
     - `rules/streets.md`, `rules/buildings.md`, `rules/see-through.md`, `rules/parts.md`,
       `rules/credit.md`, `rules/motion.md`, `rules/slider.md`: none needed, since nothing
       they say changes;
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
-    - **the README:** the summary gains a sentence on vis-003's dots; the `render` usage
-      block gains `[--no-signals]`; a **Signals** bullet after **Streets** says what is
-      drawn, that it is the engine's own signal code replayed, and `--no-signals`;
-      `view`'s keys gain `L`; the gate list gains `scripts/gates-signals.sh` and `cargo
-      test --release --test signals -- --include-ignored --test-threads=1`;
+    - **the README:** the summary gains a sentence on vis-003's dots; the `render` and the
+      `view` usage blocks each gain `[--no-signals]`; a **Signals** bullet after
+      **Streets** says what is drawn, that it is the engine's own signal code replayed,
+      `--no-signals`, and the two errors a run can now give with signals on (not micro;
+      no readable timestep); `view`'s keys gain `L`; the gate list gains
+      `scripts/gates-signals.sh` (which needs `sqlite3`) and `cargo test --release
+      --test signals -- --include-ignored --test-threads=1`; the paragraph after it ("Streets are on by
+      default, so the renders … pass `--no-streets`") says the same of signals and
+      `--no-signals`;
     - **vis-001 §2.7 item 5:** one dated note: narrowed to vis-003 (signals, Phase 1; a
       HUD and link colours, its roadmap; the legend and chart not planned);
-    - **vis-002 §2.17.7, §2.18.6 and §2.18.13:** a dated note each: the data item draws
-      dots at the stop lines, as the dashboard does, and the stop lines stay white;
+    - **vis-002 §2.17.7, §2.17.13, §2.18.2, §2.18.6 and §2.18.13:** a dated note each,
+      where it says a signal colour will paint the stop lines: the data item draws dots at
+      the stop lines, as the dashboard does, and the stop lines stay white;
     - `CLAUDE.md`: none needed, since no stanza changes;
     - status artifact: none needed, since this repo has none.
   - Record the gate results in `specs/reviews/vis-003.md`, with any missed prediction and
