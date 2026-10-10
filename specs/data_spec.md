@@ -128,14 +128,26 @@ Decided by the user, 2026-10-09, before drafting:
 3. **The states are replayed with the engine's own signal code at the pin,** so the
    fixtures' runs need no engine request.
 
+Decided by the user, 2026-10-09, on the draft, before review (the answers to OQ-1 and
+OQ-4, and one confirmation). The probe's 1080p videos with dots (`runs/on-orbit.mp4`,
+`on-city.mp4` and `on-ortho-city.mp4` in `scratch/vis003p1-probe/`, §2.19) were put to the
+user before the answers:
+4. **The dot is the dashboard's size, scaled with the frame** (OQ-1's (a), §2.10): a fill
+   of 4.5 px and a ring to 5.5 px at 1080 lines.
+5. **In the orthographic render a dot under a roof stays hidden,** as the boxes are (OQ-4,
+   as drafted, §2.12).
+6. **The key is `L`** (§2.13, as drafted, confirmed).
+
+OQ-2 and OQ-3 stay open as drafted: deferred, and no answer was asked.
+
 The rest of this section is the draft's proposal. It settles:
 - the replay and its clock (§2.4–§2.6), and a check of it against the FCD (§2.7);
 - what the link-level colour means, permitted movements included (§2.8);
-- where each dot is (§2.9), how it looks (§2.10, OQ-1), and how it keeps its size in both
-  cameras (§2.11);
-- depth, ties and determinism (§2.12);
-- the flag, the key and their errors (§2.13), and the scripts that read references
-  (§2.14);
+- where each dot is (§2.9), how it looks (§2.10, OQ-1, answered (a)), and how it keeps its
+  size in both cameras (§2.11);
+- depth, ties and determinism (§2.12; OQ-4, answered as drafted);
+- the flag, the key (`L`, confirmed) and their errors (§2.13), and the scripts that read
+  references (§2.14);
 - a run whose signals were forced (§2.15, OQ-2), and a pin move (§2.16).
 
 ### 2.3 Roadmap (not yet phases)
@@ -221,6 +233,13 @@ would honour the offsets and get urban_grid wrong: measured, it puts **90 of urb
 422 junction entries under a red that lasted the whole second before them**, where the
 engine's own code puts none (§2.7). This repo needs nothing from the engine here. The user
 may want to tell the engine's sessions that the offsets are not applied.
+
+*(2026-10-09)* The engine's `main` at `6400b9aa` (2026-10-09) still reads neither `offset`
+nor `cycle_time` in `crates/core/src/systems/signal.rs` (checked read-only): the file is
+the pin's, byte for byte (the same git blob, `a4d71ecc`). `offset` is not named in it, and
+`cycle_time` only where `junction_phase_info` copies the plan's value into its snapshot
+for the dashboard's panel; no step and no colour uses either. A fact, not a question: the
+replay is the pin's code either way, and a pin move is §2.16.
 
 #### 2.5.2 Midtown's two 30 s plans
 
@@ -459,7 +478,8 @@ black ring to `5.5·s` pixels, in the dark palette's sRGB values exactly, opaque
   the vehicles have their own palette. These are the user's decided colours (decision 2),
   shown at gate 14.
 
-The size is the user's to judge (OQ-1). Recommended: as above.
+The size is the user's to judge (OQ-1). Recommended: as above. *(2026-10-09, user)* OQ-1
+is answered (a), as drafted (decision 4), after the probe's 1080p videos with dots.
 
 ### 2.11 A fixed size on screen, in both cameras
 
@@ -524,7 +544,8 @@ GPU with MSAA ×4: the pixels of exactly its fill colour or black, and the box t
   dots under the roof, as it shows the boxes there. In a flight, a dot behind a building is
   hidden, and see-through's stubs (vis-002 §2.15) clear the way to the look-at point as
   they do for the boxes. No other of Midtown's dots has more than a sliver under a
-  footprint (9 touch one).
+  footprint (9 touch one). *(2026-10-09, user)* OQ-4 is answered as drafted: in the
+  orthographic render a dot under a roof stays hidden, as the boxes are (decision 5).
 - **No depth tie across entities.** The dots are one mesh, one entity. Nothing else lies at
   0.03 m, and in perspective a dot lies in a plane facing the camera, which no other
   surface shares. (vis-001 §2.12.1: Bevy's binned pass keeps no order between entities, so a tie
@@ -557,7 +578,8 @@ GPU with MSAA ×4: the pixels of exactly its fill colour or black, and the box t
 - **`L`** in `view` (signal *lights*; by position, `KeyCode::KeyL`, unbound today) hides
   and shows the dots, as `M` does the streets. `view --no-signals` starts with them hidden,
   and `L` shows them. `S`, the obvious letter, is `WASD`'s pan. The keyframe line does not
-  carry it. In the frame order it comes after `M` (`rules/view.md`).
+  carry it. In the frame order it comes after `M` (`rules/view.md`). *(2026-10-09, user)*
+  Confirmed: the key is `L` (decision 6).
 - **`--signals` is not a flag:** clap rejects it, exit 2, as it rejects `--streets`.
 - **The library keeps today's default.** `Job::prepare*` build every job with signals off,
   as with streets, so every test that builds a job draws as today. `src/main.rs` turns them
@@ -708,6 +730,7 @@ completed `runs` row rather than the one `run::load` found; it has no `--no-sign
 ## 3. Open questions
 
 - **OQ-1** — The dot's size: the dashboard's, scaled with the frame, or larger (§2.10)?
+  **RESOLVED.**
   - *(a) As drafted:* a fill of 4.5 px and a ring to 5.5 px at 1080 lines, scaled by
     `min(H, 9W/16)/1080`: the dashboard at one device pixel per CSS pixel. 17.6 m across in
     Midtown's overview; 107 overlapping pairs there.
@@ -716,7 +739,12 @@ completed `runs` row rather than the one `run::load` found; it has no `--no-sign
   - *(c) Fixed in pixels at every size:* the 1080p dot in a 4K video is half the size.
   - *Recommendation:* (a). The user sees it at gate 14; changing it changes gate 9's and
     gate 14's numbers only.
-  - *(design call: the user; blocks gates 9 and 14's numbers, not the design.)*
+  - ~~*(design call: the user; blocks gates 9 and 14's numbers, not the design.)*~~
+  - *(answered 2026-10-09, user, before review)* **(a): the dashboard's size, scaled with
+    the frame.** A fill of 4.5 px and a ring to 5.5 px at 1080 lines. The probe's 1080p
+    videos with dots (`runs/on-orbit.mp4`, `on-city.mp4`, `on-ortho-city.mp4`) were put to
+    the user before the answer. Recorded as §2.2 decision 4 and §2.10. Gates 9 and 14 were
+    predicted with (a), and their numbers do not change.
 - **OQ-2** — An engine request: record the signal states in the run's outputs (§2.15).
   - *Why:* a run whose signals were forced (`set_signal`) would not replay, and nothing in
     `results.db` or the FCD says that it was. At the pin no such run writes what the
@@ -738,14 +766,17 @@ completed `runs` row rather than the one `run::load` found; it has no `--no-sign
   - *Recommendation:* refuse with signals on in Phase 1, with the error of §2.13 and
     `--no-signals` as the way through; take it up when a meso fixture exists.
   - *(deferred by evidence: no meso fixture; blocks nothing in Phase 1.)*
-- **OQ-4** — Dots under buildings in the orthographic render (§2.12).
+- **OQ-4** — Dots under buildings in the orthographic render (§2.12). **RESOLVED.**
   - *As drafted:* a dot is part of the scene, under a roof that stands over its road, as
     a box is: 7 of Midtown's 188 with `--buildings`.
   - *The alternative:* draw dots over everything in the orthographic render. They would
     then also cover the boxes, which the dashboard does not do, and a dot would show
     through a roof the boxes under it do not.
   - *Recommendation:* as drafted.
-  - *(design call: the user; blocks nothing but gate 14's wording.)*
+  - ~~*(design call: the user; blocks nothing but gate 14's wording.)*~~
+  - *(answered 2026-10-09, user, before review)* **As drafted.** In the orthographic render
+    a dot under a roof stays hidden, as the boxes are. Recorded as §2.2 decision 5 and
+    §2.12. Gate 14 was worded with it and does not change.
 
 ## 4. Implementation phases
 
@@ -759,7 +790,9 @@ byte-identical to today's (gates 1 and 2).*
 
 Drafted 2026-10-09; the design is §2, and the user's decisions are §2.2. Phase 1 builds on
 vis-002 Phase 6 (shipped 2026-10-09) at engine `90b39292`. With `--no-signals` it changes
-no output. With signals on it adds one mesh and changes nothing else drawn.
+no output. With signals on it adds one mesh and changes nothing else drawn. OQ-1 (the
+dot's size) is answered (a) and OQ-4 (dots under roofs) as drafted, and the key `L` is
+confirmed (§2.2, decisions 4–6, 2026-10-09), as the scope and every gate were predicted.
 
 - **Scope:**
   - **`src/signals.rs`** (new; no Bevy types):
@@ -934,7 +967,8 @@ no output. With signals on it adds one mesh and changes nothing else drawn.
      fill colours and **32** black. Then `Renderer::new_perspective` at the pose of gate 5
      (pitch 30), at pitch 90, and at `height_m` 400 and pitch 25: each dot's pixels of its
      exact fill or black **60–64**, in a box of **10×10 or 10×11** px whatever its
-     distance (64 to 493 m). Without the feature, no pixel changes.
+     distance (64 to 493 m). Without the feature, no pixel changes. These are OQ-1's (a)
+     numbers (answered 2026-10-09, decision 4).
   - **The dots — renders:**
   10. **On, deterministic** (`scripts/gates-signals.sh`). Each twice, each pair equal:
       urban_grid's default and `--camera tests/flight.toml` **8700 of 8700**; Midtown's
@@ -980,8 +1014,8 @@ no output. With signals on it adds one mesh and changes nothing else drawn.
         all green from 0:00 to 0:25 and from 0:30 to 0:55; at 0:30 every dot that had
         been red turns green at once. The tiny boxes queue behind the red dots and pass
         the green ones; where they reach a dot they show over it. A few dots, about one
-        crossing in twelve, lie partly or wholly under a roof (OQ-4). Nothing else differs
-        from Phase 6's video.
+        crossing in twelve, lie partly or wholly under a roof (OQ-4, answered as drafted).
+        Nothing else differs from Phase 6's video.
       - **The city flight with buildings (`signals-city.mp4`).** From 0:00 to 0:10, high and
         straight down: as the orthographic video. Then, as the camera comes down and tilts,
         the streets grow but every dot stays the same size: at the top of the frame, far
@@ -1014,7 +1048,8 @@ no output. With signals on it adds one mesh and changes nothing else drawn.
         and forth, they follow the time both ways at once; `L` hides them and shows them;
         `view --no-signals` opens without them, and `L` shows them.
 
-      Then say whether OQ-1's size and OQ-4's dots under roofs stand as they look.
+      Then say whether OQ-1's and OQ-4's answers (the size, and the dots under roofs) stand
+      as they look.
 - **Predictions at a glance:**
 
   | What | Prediction | Gate |
@@ -1032,8 +1067,8 @@ no output. With signals on it adds one mesh and changes nothing else drawn.
   | Copied values at their lines | each holds | 11 |
   | `view --bench 20` with signals | ≥ 30 fps | 13 |
 - **Not predicted, and so not gated:**
-  - the look: the dot's size (OQ-1), its colours beside the slow boxes', how overlapping
-    dots read, dots under roofs (OQ-4), for the user at gate 14;
+  - the look: OQ-1's size and OQ-4's dots under roofs as answered, the dot's colours
+    beside the slow boxes', and how overlapping dots read, for the user at gate 14;
   - render times (gate 12), and `view`'s frame rate above 30 (gate 13);
   - a meso run and a forced run: refused, or not readable, at the pin (OQ-2, OQ-3).
 - **Close-out (standing plan steps, the methodology's §3):**
