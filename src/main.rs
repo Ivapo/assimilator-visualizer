@@ -118,6 +118,9 @@ enum Cmd {
         /// default.
         #[arg(long)]
         no_streets: bool,
+        /// Start with the signals hidden; `L` shows them, as they are by default.
+        #[arg(long)]
+        no_signals: bool,
         /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
         #[arg(long, hide = true)]
         bench: Option<f64>,
@@ -203,6 +206,7 @@ fn run(cli: Cli) -> Result<()> {
             buildings,
             no_see_through,
             no_streets,
+            no_signals,
             bench,
         } => view::run(&ViewOptions {
             load: LoadOptions {
@@ -217,6 +221,7 @@ fn run(cli: Cli) -> Result<()> {
             buildings,
             see_through: !no_see_through,
             streets: !no_streets,
+            signals: !no_signals,
             width,
             height,
             bench,

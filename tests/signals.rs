@@ -1,9 +1,9 @@
-//! vis-003 Phase 1 exit gates 5, 6, 7 and 8 (`specs/data_spec.md`): the signals replayed
-//! with the engine's own code on a synthetic crossing and on both fixtures, checked
-//! against a second `SignalState` and against the run's FCD, and their dots placed and
-//! meshed. The headless ones without a fixture run in plain `cargo test`. Those that need
-//! the fixtures of `scripts/fixture.sh` and `scripts/fixture.sh midtown` are ignored;
-//! run everything with
+//! vis-003 Phase 1 exit gates 5, 6, 7, 8 and 15's `L` (`specs/data_spec.md`): the
+//! signals replayed with the engine's own code on a synthetic crossing and on both
+//! fixtures, checked against a second `SignalState` and against the run's FCD, their dots
+//! placed and meshed, and `L`. The headless ones without a fixture run in plain
+//! `cargo test`. Those that need the fixtures of `scripts/fixture.sh` and
+//! `scripts/fixture.sh midtown` are ignored; run everything with
 //! `cargo test --release --test signals -- --include-ignored --test-threads=1 --nocapture`.
 //! Gates 2, 10 and 15's CLI cases are `scripts/gates-signals.sh`.
 
@@ -17,9 +17,12 @@ use assimilator_core::systems::signal::SignalState;
 use assimilator_video::camera::{self, Pose};
 use assimilator_video::inputs;
 use assimilator_video::place::Placement;
+use assimilator_video::render::VehicleBox;
 use assimilator_video::run::{self, LoadOptions, Run};
 use assimilator_video::signals::{AMBER, Colour, Eye, GREEN, OUTLINE, RED, Signals, dots, scale};
 use assimilator_video::streets::{Kind, Streets};
+use assimilator_video::view::state::Follow;
+use assimilator_video::view::{Fit, ViewInput, ViewState};
 
 use Colour::{Amber as A, Green as G, Red as R};
 
@@ -947,4 +950,146 @@ fn gate8_midtown_place() {
 #[ignore = "needs scratch/urban_grid (scripts/fixture.sh)"]
 fn gate8_urban_grid_place() {
     gate8_place("urban_grid");
+}
+
+// ── Gate 15: `L`, headless ───────────────────────────────────────────────────
+
+const W: f64 = 1280.0;
+const H: f64 = 720.0;
+const DT: f64 = 1.0 / 60.0;
+
+/// vis-001 Phase 3's `plain_state`: `[0, 300]`, centre (0, 0), `k` = 1, 1280×720.
+fn plain_state() -> ViewState {
+    let fit = Fit {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        rect: (-1e4, -1e4, 1e4, 1e4),
+        size: (W, H),
+    };
+    ViewState::new(0.0, 300.0, vec![], fit)
+}
+
+fn at(c: (f64, f64)) -> ViewInput {
+    ViewInput {
+        cursor: Some(c),
+        pointer: Some(c),
+        size: (W, H),
+        dt: DT,
+        ..Default::default()
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+/// `input` with `l` pressed flips the flag and does exactly what `input` alone does.
+fn step_l(s: &mut ViewState, input: ViewInput) {
+    let mut without = s.clone();
+    let line = without.frame(&input, no_boxes);
+    let before = s.signals_shown;
+    let mut with_l = input;
+    with_l.pressed.l = true;
+    assert_eq!(s.frame(&with_l, no_boxes), line, "the keyframe line");
+    assert_eq!(s.signals_shown, !before, "l flips the flag");
+    let mut flipped_back = s.clone();
+    flipped_back.signals_shown = before;
+    assert_eq!(flipped_back, without, "l changes nothing else");
+}
+
+fn step(s: &mut ViewState, input: ViewInput) {
+    let before = s.signals_shown;
+    s.frame(&input, no_boxes);
+    assert_eq!(s.signals_shown, before, "only l flips the flag");
+}
+
+#[test]
+fn gate15_l() {
+    let mut s = plain_state();
+    assert!(!s.signals_shown, "off at new");
+    let (buildings, see_through, streets) = (s.buildings_shown, s.see_through, s.streets_shown);
+    step_l(&mut s, at((640.0, 360.0)));
+    assert!(s.signals_shown);
+    step_l(&mut s, at((640.0, 360.0)));
+    assert!(!s.signals_shown);
+
+    // Playing, following, with K pressed in the same frame.
+    s.playing = true;
+    s.follow = Some(Follow {
+        vehicle_id: 7,
+        drawn: false,
+    });
+    let mut k = at((640.0, 360.0));
+    k.pressed.k = true;
+    step_l(&mut s, k);
+    step_l(&mut s, at((640.0, 360.0)));
+    s.playing = false;
+    s.follow = None;
+
+    // A right-button orbit.
+    step(
+        &mut s,
+        ViewInput {
+            right_press: true,
+            ..at((640.0, 360.0))
+        },
+    );
+    assert!(s.orbit.is_some());
+    step_l(&mut s, at((700.0, 330.0)));
+    assert!(s.orbit.is_some(), "the orbit goes on");
+    step(
+        &mut s,
+        ViewInput {
+            right_release: true,
+            ..at((700.0, 330.0))
+        },
+    );
+    assert!(s.orbit.is_none());
+
+    // A left drag.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((400.0, 300.0))
+        },
+    );
+    step_l(&mut s, at((460.0, 340.0)));
+    assert!(s.press.is_some(), "the drag goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((460.0, 340.0))
+        },
+    );
+
+    // A scrub.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((640.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_some());
+    step_l(&mut s, at((300.0, 706.0)));
+    assert!(s.scrub.is_some(), "the scrub goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((300.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_none());
+    assert_eq!(
+        (s.buildings_shown, s.see_through, s.streets_shown),
+        (buildings, see_through, streets),
+        "l never touches buildings_shown, see_through or streets_shown"
+    );
+    println!(
+        "gate 15: l flips signals_shown and nothing else, through an orbit, a drag and a scrub: PASS"
+    );
 }
