@@ -75,6 +75,10 @@ enum Cmd {
         /// pair has no gap), faded where they are under a pixel.
         #[arg(long)]
         no_streets: bool,
+        /// Draw no signals. Default: a dot at every signalised approach's stop line,
+        /// green, amber or red as the engine had it, replayed from the run's own clock.
+        #[arg(long)]
+        no_signals: bool,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -163,6 +167,7 @@ fn run(cli: Cli) -> Result<()> {
             buildings,
             no_see_through,
             no_streets,
+            no_signals,
         } => render(
             RenderOptions {
                 project,
@@ -182,6 +187,7 @@ fn run(cli: Cli) -> Result<()> {
             buildings,
             !no_see_through,
             !no_streets,
+            !no_signals,
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -225,6 +231,7 @@ fn render(
     buildings: Option<PathBuf>,
     see_through: bool,
     streets: bool,
+    signals: bool,
 ) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
@@ -234,6 +241,9 @@ fn render(
         job.set_streets(true)?;
     }
     job.set_see_through(see_through);
+    if signals {
+        job.set_signals(true)?;
+    }
 
     let n_frames = job.clock.frames;
     let mut enc = encode::Encoder::start(&ffmpeg, &out, opts.width, opts.height, opts.fps)?;

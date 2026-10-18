@@ -6,7 +6,8 @@
 //! to the frame's width after the settle frames. With see-through on (vis-002 §2.15), a
 //! perspective renderer redraws the buildings at each pose's heights. With streets
 //! (vis-002 §2.17), two more meshes: the junction surfaces and median noses, and the
-//! markings, whose colours a perspective renderer fades for each pose.
+//! markings, whose colours a perspective renderer fades for each pose. With signals
+//! (vis-003 §2.12), one more mesh: the dots, set before each frame.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -33,11 +34,12 @@ use bevy::winit::WinitPlugin;
 use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::credit;
-use crate::draw::{self, BuildingsCut, CreditNodes, StreetsDrawn};
+use crate::draw::{self, BuildingsCut, CreditNodes, DotsEntity, StreetsDrawn};
 use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
 use crate::see_through;
+use crate::signals::DotsData;
 use crate::streets::{self, Streets};
 
 /// One box to draw.
@@ -110,6 +112,8 @@ pub struct Renderer {
     pose: Option<Pose>,
     /// The streets; `None` while they are off.
     streets: Option<StreetsDrawn>,
+    /// The signals' dots; `None` while they are off.
+    dots: Option<DotsEntity>,
 }
 
 impl Renderer {
@@ -288,6 +292,7 @@ impl Renderer {
             road_mat,
             pose: pose.copied(),
             streets: None,
+            dots: None,
         };
         // Let assets and pipelines settle before the first frame that counts.
         r.settle()?;
@@ -416,6 +421,28 @@ impl Renderer {
             ),
         });
         self.settle()
+    }
+
+    /// Signals (vis-003 §2.12): on spawns the dots' entity, hidden until
+    /// [`Renderer::set_dots`], then settles again; off despawns it. Off from the start,
+    /// nothing is spawned.
+    pub fn set_signals(&mut self, on: bool) -> Result<()> {
+        let world = self.apps.main.world_mut();
+        if let Some(old) = self.dots.take() {
+            draw::despawn_dots(world, old);
+        }
+        if !on {
+            return Ok(());
+        }
+        self.dots = Some(draw::spawn_dots(world));
+        self.settle()
+    }
+
+    /// Draw these dots from the next frame; nothing while signals are off.
+    pub fn set_dots(&mut self, dots: &DotsData) {
+        let Some(d) = self.dots.as_ref() else { return };
+        let cam = self.camera;
+        draw::set_dots(self.apps.main.world_mut(), d, dots, (cam.cx, cam.cy));
     }
 
     /// Set the perspective camera to `pose` for the next frames; nothing on the
