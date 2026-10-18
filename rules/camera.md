@@ -9,7 +9,7 @@ covers: >
   perspective paths draw, the keyframe line and the keyframe file with its errors,
   and the flight `render --camera` takes through the keyframes.
 max_lines: 60
-generated: 2026-10-06
+generated: 2026-10-18
 ---
 
 # Camera
@@ -33,10 +33,10 @@ generated: 2026-10-06
   height and far (`rules/buildings.md`), cuboids, 0.01 m a rank. Both draw streets (`rules/streets.md`).
 - **Perspective** (`view`, `render --camera`): `draw::perspective(pose, fx, fy, aspect)`
   maps world `(x, y, z)` to Bevy `(x − fx, z, −(y − fy))`; eye `E` on the look-at point, up
-  `u`, fov 45°, near 0.1, far 20·d. Buildings, boxes and street markings: `NoFrustumCulling`.
-- Perspective boxes: `boxes_mesh`, one mesh and one draw in `vehicle_id` order: a depth tie
-  goes to the higher id every run, and a box bit-equal in x, y, heading and length to a later
-  one is not drawn. Speed colour × shade: top 1, sides 0.55, ends 0.4, bottom 0.25; lift 0.001 m.
+  `u`, fov 45°, near 0.1, far 20·d. Buildings, boxes, markings and dots: `NoFrustumCulling`.
+- Perspective boxes: `boxes_mesh`, one mesh and one draw in `vehicle_id` order (ties:
+  `rules/render.md`). Speed colour × shade: top 1, sides 0.55, ends 0.4, bottom 0.25; lift 0.001 m.
+- Signals' dots (`rules/signals.md`): flat at 0.03 m orthographic; facing the camera in perspective.
 
 ## Keyframe line (`src/keyframes.rs`)
 - `Keyframe { t, at: Centre(x, y) | Follow(id), height_m, yaw_deg, pitch_deg }`. `format`:
