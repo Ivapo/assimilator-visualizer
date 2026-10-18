@@ -1,9 +1,9 @@
-//! vis-003 Phase 1 exit gates 5, 6, 7, 8 and 15's `L` (`specs/data_spec.md`): the
+//! vis-003 Phase 1 exit gates 5, 6, 7, 8, 9 and 15's `L` (`specs/data_spec.md`): the
 //! signals replayed with the engine's own code on a synthetic crossing and on both
 //! fixtures, checked against a second `SignalState` and against the run's FCD, their dots
-//! placed and meshed, and `L`. The headless ones without a fixture run in plain
-//! `cargo test`. Those that need the fixtures of `scripts/fixture.sh` and
-//! `scripts/fixture.sh midtown` are ignored; run everything with
+//! placed, meshed and drawn through the GPU, and `L`. The headless ones without a fixture
+//! run in plain `cargo test`. Those that need the fixtures of `scripts/fixture.sh` and
+//! `scripts/fixture.sh midtown`, or the GPU, are ignored; run everything with
 //! `cargo test --release --test signals -- --include-ignored --test-threads=1 --nocapture`.
 //! Gates 2, 10 and 15's CLI cases are `scripts/gates-signals.sh`.
 
@@ -17,9 +17,12 @@ use assimilator_core::systems::signal::SignalState;
 use assimilator_video::camera::{self, Pose};
 use assimilator_video::inputs;
 use assimilator_video::place::Placement;
-use assimilator_video::render::VehicleBox;
+use assimilator_video::render::{Renderer, VehicleBox};
 use assimilator_video::run::{self, LoadOptions, Run};
-use assimilator_video::signals::{AMBER, Colour, Eye, GREEN, OUTLINE, RED, Signals, dots, scale};
+use assimilator_video::scene;
+use assimilator_video::signals::{
+    AMBER, Colour, DotsData, Eye, GREEN, OUTLINE, RED, Signals, dots, scale,
+};
 use assimilator_video::streets::{Kind, Streets};
 use assimilator_video::view::state::Follow;
 use assimilator_video::view::{Fit, ViewInput, ViewState};
@@ -952,6 +955,136 @@ fn gate8_urban_grid_place() {
     gate8_place("urban_grid");
 }
 
+// ── Gate 9: the synthetic crossing, drawn ────────────────────────────────────
+
+fn count(f: &[u8], c: [u8; 3]) -> usize {
+    f.chunks(4).filter(|p| p[..3] == c).count()
+}
+
+#[test]
+#[ignore = "renders through the GPU"]
+fn gate9_synthetic_drawn() {
+    let pl = synthetic();
+    let sig = Signals::build(&pl, 0.1, 100.0);
+    let st = Streets::build(&pl);
+    let strips = scene::strips(&pl);
+    let (w, h) = (1920u32, 1080u32);
+    let cam = scene::Camera {
+        cx: 0.0,
+        cy: 0.0,
+        k: 0.05,
+        width: w,
+        height: h,
+    };
+    let mut r = Renderer::new(&strips, cam, 1, None, None).unwrap();
+    r.set_streets(Some(&st)).unwrap();
+    let off = r.render(&[]).unwrap();
+    r.set_signals(true).unwrap();
+    let hidden = r.render(&[]).unwrap();
+    let unchanged = off
+        .chunks(4)
+        .zip(hidden.chunks(4))
+        .filter(|(a, b)| a != b)
+        .count();
+    println!("gate 9: signals on, no dots set: {unchanged} pixels change");
+    assert_eq!(unchanged, 0);
+    for (t, want) in [
+        (10.0, [G, R, R, G]),
+        (21.0, [A, R, R, A]),
+        (30.0, [R, G, G, R]),
+    ] {
+        let cols = sig.colours_at(t);
+        assert_eq!(cols, want, "colours at {t}");
+        r.set_dots(&dots(&sig, &cols, Eye::Ortho(cam.k), w as f64, h as f64));
+        let on = r.render(&[]).unwrap();
+        let changed = off
+            .chunks(4)
+            .zip(on.chunks(4))
+            .filter(|(a, b)| a != b)
+            .count();
+        let fills: BTreeSet<[u8; 3]> = cols.iter().map(|c| c.srgb()).collect();
+        let exact: Vec<usize> = fills.iter().map(|c| count(&on, *c)).collect();
+        let black = count(&on, OUTLINE);
+        let mut centres = Vec::new();
+        for (a, c) in sig.approaches.iter().zip(&cols) {
+            let (i, j) = cam.world_to_pixel(a.at[0], a.at[1]);
+            let o = ((j.floor() as usize) * w as usize + i.floor() as usize) * 4;
+            let px = [on[o], on[o + 1], on[o + 2]];
+            centres.push(px);
+            assert_eq!(px, c.srgb(), "{}'s centre pixel at {t}", a.link);
+        }
+        println!(
+            "gate 9 t {t}: {changed} pixels change; exactly {exact:?} of the fills {fills:?}, {black} black; centres {centres:?}"
+        );
+        assert_eq!(changed, 448, "t {t}");
+        assert_eq!(exact, [104, 104], "t {t}");
+        assert_eq!(black, 32, "t {t}");
+    }
+
+    let base = Pose {
+        cx: 0.0,
+        cy: 0.0,
+        height_m: 60.0,
+        yaw_deg: 30.0,
+        pitch_deg: 30.0,
+    };
+    let mut r = Renderer::new_perspective(&strips, cam, 1, &base, None, None).unwrap();
+    r.set_streets(Some(&st)).unwrap();
+    r.set_signals(true).unwrap();
+    let cols = sig.colours_at(10.0);
+    for (tag, pose) in [
+        ("pitch 30", base),
+        (
+            "pitch 90",
+            Pose {
+                pitch_deg: 90.0,
+                ..base
+            },
+        ),
+        (
+            "height_m 400, pitch 25",
+            Pose {
+                height_m: 400.0,
+                pitch_deg: 25.0,
+                ..base
+            },
+        ),
+    ] {
+        r.set_pose(&pose);
+        for (a, c) in sig.approaches.iter().zip(&cols) {
+            let one = Signals {
+                approaches: vec![a.clone()],
+                t: sig.t.clone(),
+            };
+            let d: DotsData = dots(&one, &[*c], Eye::Pose(&pose), w as f64, h as f64);
+            r.set_dots(&d);
+            let on = r.render(&[]).unwrap();
+            let fill = c.srgb();
+            let (mut x0, mut x1, mut y0, mut y1, mut n) = (usize::MAX, 0, usize::MAX, 0, 0);
+            for (k, p) in on.chunks(4).enumerate() {
+                if p[..3] == fill || p[..3] == OUTLINE {
+                    let (x, y) = (k % w as usize, k / w as usize);
+                    (x0, x1, y0, y1) = (x0.min(x), x1.max(x), y0.min(y), y1.max(y));
+                    n += 1;
+                }
+            }
+            let e = pose.eye();
+            let dist = ((a.at[0] - e[0]).powi(2) + (a.at[1] - e[1]).powi(2) + e[2].powi(2)).sqrt();
+            let (bw, bh) = (x1 + 1 - x0, y1 + 1 - y0);
+            println!(
+                "gate 9 {tag}, {} alone ({dist:.0} m away): {n} pixels of its fill or black, box {bw}x{bh}",
+                a.link
+            );
+            assert!((60..=64).contains(&n), "{tag} {}: {n}", a.link);
+            assert!(
+                (9..=11).contains(&bw) && (9..=11).contains(&bh),
+                "{tag} {}: {bw}x{bh}",
+                a.link
+            );
+        }
+    }
+    println!("gate 9: the dots drawn, orthographic and in perspective: PASS");
+}
 // ── Gate 15: `L`, headless ───────────────────────────────────────────────────
 
 const W: f64 = 1280.0;
