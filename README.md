@@ -15,14 +15,16 @@ Its Phase 2 draws the data's credit line in the corner of every frame of an impo
 network's video. Its Phase 3 cuts the buildings between the camera and the point it looks
 at down to stubs, so the traffic there shows. Its Phase 5 draws the streets, junctions
 filled in grey, and its Phase 6 marks them as the engine's dashboard does: lane dashes,
-stop lines and lane arrows, straight from the engine's `NetworkJson`.
+stop lines and lane arrows, straight from the engine's `NetworkJson`. vis-003
+(`specs/data_spec.md`) Phase 1 draws the run's signals: a dot at each signalised stop line,
+green, amber or red as the engine had it, replayed with the engine's own signal code.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
                          [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                          [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
                          [--camera <file.toml>] [--buildings <file.geojson>]
-                         [--no-see-through] [--no-streets]
+                         [--no-see-through] [--no-streets] [--no-signals]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -56,6 +58,16 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   road's grey, and is gone under a tenth of a pixel, so a far or high camera shows no
   speckle; it fades back in smoothly as the camera comes closer. `--no-streets` draws the
   plain strips, the video exactly as before Phase 5.
+- **Signals.** On a network with signals, every signalised approach gets a dot at its stop
+  line, green, amber or red as the engine had it at that moment: the run's signal states
+  are replayed once with the engine's own code, at the run's timestep read from
+  `results.db`. The dot is the engine dashboard's, about 11 px across at 1080 lines with a
+  thin black rim, the same size on screen near and far. `--no-signals` draws none, the
+  video exactly as before. With signals on, a run that is not micro is an error (`the run
+  is <mode>; signals are replayed only for micro runs …`), and so is a run whose timestep
+  cannot be read (`the run's timestep is not readable …`); both end `--no-signals renders
+  without signals`. In `view`, `--no-signals` starts with the dots hidden and `L` shows
+  them; a run that cannot be replayed then opens without them.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
   bottom-right corner of every frame, with or without `--buildings`, crediting its data
   (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
@@ -136,7 +148,7 @@ scripts/fetch-buildings.sh --project <dir> --out <dir>/buildings.geojson
 assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                        [--width <px>] [--height <px>] [--buildings <file.geojson>]
-                       [--no-see-through] [--no-streets]
+                       [--no-see-through] [--no-streets] [--no-signals]
 ```
 
 `view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
@@ -167,6 +179,7 @@ and framings worth rendering.
 | `B` | hide / show the buildings (with `--buildings`) |
 | `X` | see-through on / off: buildings in the way cut to stubs (on at launch with `--buildings`, unless `--no-see-through`) |
 | `M` | hide / show the streets (shown at launch, unless `--no-streets`) |
+| `L` | hide / show the signals (shown at launch, unless `--no-signals`) |
 
 The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
 with a handle at the current time and a tick at each whole minute (thinned on long runs).
@@ -250,12 +263,14 @@ scripts/gates-streets.sh          # Phase 5 gates 10, 11 and its renders (now wi
 cargo test --release --test streets -- --include-ignored --test-threads=1 --nocapture     # Phase 5 gates 5–9, 12
 scripts/gates-look.sh             # Phase 6 gate 10 and the gate 14 renders, against scratch/out/look-v1/, offline
 cargo test --release --test look -- --include-ignored --test-threads=1 --nocapture        # Phase 6 gates 5–9
+scripts/gates-signals.sh          # vis-003 Phase 1 gates 2, 10, 15 (CLI) and the gate 14 renders, against scratch/out/look-p6/, offline; needs sqlite3
+cargo test --release --test signals -- --include-ignored --test-threads=1 --nocapture     # vis-003 Phase 1 gates 5–9 and 15 (`L`)
 ```
 
-Streets are on by default, so the renders that `scripts/gates.sh`, `gates-ties.sh`,
-`gates-see-through.sh` and `gates-parts.sh` compare with a `ref-pin90b39292` file pass
-`--no-streets`; the renders compared only with each other (`gates-ties.sh`'s gate 9,
-`gates-city.sh` and `gates-credit.sh`) draw streets.
+Streets and signals are on by default, so the renders that `scripts/gates.sh`,
+`gates-ties.sh`, `gates-see-through.sh` and `gates-parts.sh` compare with a
+`ref-pin90b39292` file pass `--no-streets --no-signals`; the renders compared only with
+each other (`gates-ties.sh`'s gate 9, `gates-city.sh` and `gates-credit.sh`) draw both.
 
 `scripts/fixture.sh midtown` fetches two caches: `buildings.geojson` with `--no-parts`,
 which the gates of Phases 1–3 read, and `buildings-parts.geojson` with parts. Both are

@@ -20,7 +20,7 @@ note: >
   (2026-10-09): a two-way street's median gap shows dark, as on the dashboard, its junction
   ends rounded by the engine's median noses in the road's grey, and no median fill is drawn.
 status: accepted
-last_updated: 2026-10-09
+last_updated: 2026-10-18
 
 phases:
   - name: "Phase 1 — Buildings: real blocks around the network, in render and view"
@@ -2315,7 +2315,9 @@ Phase 6 shipped 2026-10-09.
   line.
 - **Kept per `(link, lane)`**, in the mesh's order, so a later phase can recolour each by
   its signal's state (vis-001 §2.7 item 5). That phase is not designed here, and no gate
-  of this phase reads the order.
+  of this phase reads the order. *(2026-10-18)* vis-003 (`specs/data_spec.md` §2.17) draws
+  a dot at each signalised stop line instead, as the dashboard does, and the stop lines
+  stay white.
 
 #### 2.17.8 The yellow line: double, between a two-way pair's strips
 
@@ -2526,7 +2528,9 @@ with streets; it checks only its exit and its JSON line, so it still passes.
 - **No stop lines at unsignalised junctions,** nor at all-way stops or a priority
   junction's minor approaches: no fixture has one (§2.17.7).
 - **No colour by signal state.** The stop lines are kept per `(link, lane)` for that
-  phase (vis-001 §2.7 item 5).
+  phase (vis-001 §2.7 item 5). *(2026-10-18)* vis-003 (`specs/data_spec.md` §2.17) draws a
+  dot at each signalised stop line instead, as the dashboard does, and the stop lines stay
+  white.
 - **Pick, pan and zoom** are unchanged: they use the ground plane, and the markings are
   2 cm above it.
 
@@ -2693,6 +2697,8 @@ That is about 400 lines of the engine's code. At a pin move, the builder would k
 old rules until the comparison gate failed. **Drawn directly, the markings follow the
 engine at a pin move by themselves**, and the gates show what changed (§2.18.12). The
 data item also gains: the engine's own stop line is what a signal colour will paint.
+*(2026-10-18)* vis-003 (`specs/data_spec.md` §2.17) draws a dot at each signalised stop
+line instead, as the dashboard does, and the stop lines stay white.
 
 **Its cost and order**, measured (§2.18.15):
 
@@ -2940,7 +2946,9 @@ lane's centre, stays inside a 3 m lane.
     staggered lines) stay whole, kept with their link.
 
   The data item will then colour quad by quad, as it would have Phase 5's; no gate of
-  this phase reads the order.
+  this phase reads the order. *(2026-10-18)* vis-003 (`specs/data_spec.md` §2.17) draws a
+  dot at each signalised stop line instead, as the dashboard does, and the stop lines stay
+  white.
 
 #### 2.18.7 Where the first vehicle stops: the engine's 0.2 m
 
@@ -3150,6 +3158,8 @@ that label lane conflict pairs, a debug item: nothing drawn would change.
   thresholds, `--no-streets` or `M`.** *(2026-10-09, changed by the user at gate 14)* But
   for the fills, which are removed (§2.18.16).
 - **No colour by signal state:** the stop lines are kept per `(link, lane)` for it.
+  *(2026-10-18)* vis-003 (`specs/data_spec.md` §2.17) draws a dot at each signalised stop
+  line instead, as the dashboard does, and the stop lines stay white.
 
 #### 2.18.14 Build cost
 

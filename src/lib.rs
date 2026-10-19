@@ -11,6 +11,8 @@
 //! network's render ([`Job::credit`], [`Job::credit_size`], [`Job::credit_box`]), with
 //! the same job without it for the gates ([`Job::prepare_without_credit`]). vis-002
 //! Phase 3 cuts the buildings in the camera's way to stubs ([`Job::set_see_through`]).
+//! vis-003 Phase 1 draws the run's signals as dots at the stop lines
+//! ([`Job::set_signals`]).
 
 pub mod buildings;
 pub mod camera;
@@ -27,6 +29,7 @@ pub mod render;
 pub mod run;
 pub mod scene;
 pub mod see_through;
+pub mod signals;
 pub mod streets;
 pub mod view;
 
@@ -44,6 +47,7 @@ use crate::place::{Placed, Placement};
 use crate::render::{Renderer, VehicleBox};
 use crate::run::LoadOptions;
 use crate::scene::Camera;
+use crate::signals::{Eye, Signals};
 
 /// What `render` needs, after CLI parsing (vis-001 §2.4).
 #[derive(Debug, Clone)]
@@ -91,6 +95,12 @@ pub struct Job {
     buildings: Option<Buildings>,
     /// The credit line drawn on every frame; `None` without one.
     credit: Option<String>,
+    /// The run's `results.db`, scenario and seed, which the signals' clock is read from.
+    results: PathBuf,
+    scenario: String,
+    seed: u64,
+    /// The signals' timeline; `None` while they are off, or on a network with no signal.
+    signals: Option<Signals>,
 }
 
 impl Job {
@@ -171,8 +181,15 @@ impl Job {
                 Renderer::new_perspective(&run.strips, fit, pool, &pose, buildings.as_ref(), line)?
             }
         };
+        let paths = inputs::RunPaths::new(
+            &o.project,
+            &o.scenario,
+            o.seed,
+            o.results.clone(),
+            o.fcd.clone(),
+        );
         Ok(Self::assemble(
-            clock, run, renderer, flight, buildings, credit,
+            clock, run, renderer, flight, buildings, credit, paths,
         ))
     }
 
@@ -183,6 +200,7 @@ impl Job {
         flight: Option<Flight>,
         buildings: Option<Buildings>,
         credit: Option<String>,
+        paths: inputs::RunPaths,
     ) -> Job {
         let run::Run {
             fcd,
@@ -201,6 +219,10 @@ impl Job {
             flight,
             buildings,
             credit,
+            results: paths.results,
+            scenario: paths.scenario,
+            seed: paths.seed,
+            signals: None,
         }
     }
 
@@ -280,6 +302,25 @@ impl Job {
         self.renderer.set_streets(streets.as_ref())
     }
 
+    /// Signals (vis-003 §2.12): on builds the run's timeline ([`Signals::for_run`]) and
+    /// draws the dots from the next frame; off drops both. On a network with no signal
+    /// nothing is read or spawned. Every `prepare*` builds a job with them off; `render`
+    /// turns them on unless `--no-signals` is given.
+    pub fn set_signals(&mut self, on: bool) -> Result<()> {
+        self.signals = None;
+        self.renderer.set_signals(false)?;
+        if !on {
+            return Ok(());
+        }
+        let Some(signals) =
+            Signals::for_run(&self.placement, &self.results, &self.scenario, self.seed)?
+        else {
+            return Ok(());
+        };
+        self.signals = Some(signals);
+        self.renderer.set_signals(true)
+    }
+
     /// The credit line drawn on every frame (vis-002 §2.14.2); `None` without one.
     pub fn credit(&self) -> Option<&str> {
         self.credit.as_deref()
@@ -318,8 +359,19 @@ impl Job {
 
     /// The RGBA readback of the scene at sim time `t`.
     pub fn render_at(&mut self, t: f64) -> Result<Vec<u8>> {
-        if let Some(pose) = self.pose_at(t) {
-            self.renderer.set_pose(&pose);
+        let pose = self.pose_at(t);
+        if let Some(pose) = &pose {
+            self.renderer.set_pose(pose);
+        }
+        if let Some(sig) = &self.signals {
+            let cam = *self.renderer.camera();
+            let eye = match &pose {
+                Some(pose) => Eye::Pose(pose),
+                None => Eye::Ortho(cam.k),
+            };
+            let (w, h) = (cam.width as f64, cam.height as f64);
+            let dots = signals::dots(sig, &sig.colours_at(t), eye, w, h);
+            self.renderer.set_dots(&dots);
         }
         let boxes = self.boxes_at(t);
         self.renderer.render(&boxes)

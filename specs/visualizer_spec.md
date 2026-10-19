@@ -6,7 +6,7 @@ note: >
   for presentations, from a CLI a harness can call. Phase 1 is the smallest surface that
   produces a video: vehicles as boxes on flat roads, top-down camera, headless Bevy to ffmpeg.
 status: accepted
-last_updated: 2026-10-05
+last_updated: 2026-10-18
 
 phases:
   - name: "Phase 1 — Moving boxes: one run to one video"
@@ -347,6 +347,10 @@ drafted and reviewed. Each ends with a video.
    in it; vis-002's roadmap (§2.13 there) carries what remains.
 5. **Data** — links colored by speed or flow; HUD with clock, legend, one chart;
    signal states from the plans (moved from item 2, 2026-09-29).
+   *Note (2026-10-18):* narrowed by vis-003 (`specs/data_spec.md`), a spec of its own: its
+   Phase 1 draws the run's signal states as dots at the stop lines, replayed with the
+   engine's own signal code rather than computed from the plans; a HUD and link colours
+   are its roadmap; the legend and the chart are not planned.
 6. **Harness contract (v1)** — `check`, supported schema version ranges, stable
    `scene.toml`, harness-side docs, a Linux build check.
 

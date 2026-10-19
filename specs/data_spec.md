@@ -10,12 +10,12 @@ note: >
   run into a timeline, and checked against the run's FCD. A HUD and link colours are
   roadmap.
 status: accepted
-last_updated: 2026-10-09
+last_updated: 2026-10-18
 
 phases:
   - name: "Phase 1 — Signals: the engine's signal states as dots at the stop lines, by default"
     reviewed: 2026-10-09
-    shipped: null
+    shipped: 2026-10-18
     cut: null
     by: null
 

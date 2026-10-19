@@ -68,6 +68,8 @@ pub struct Pressed {
     pub x: bool,
     /// Show or hide the streets (vis-002 §2.17.12), by position.
     pub m: bool,
+    /// Show or hide the signals (vis-003 §2.13), by position.
+    pub l: bool,
 }
 
 /// Keys held this frame.
@@ -226,6 +228,9 @@ pub struct ViewState {
     /// Whether the streets are drawn (vis-002 §2.17.12); `M` flips it. Off at
     /// [`ViewState::new`]; `view` sets it at launch, on unless `--no-streets`.
     pub streets_shown: bool,
+    /// Whether the signals are drawn (vis-003 §2.13); `L` flips it. Off at
+    /// [`ViewState::new`]; `view` sets it at launch, on unless `--no-signals`.
+    pub signals_shown: bool,
 }
 
 impl ViewState {
@@ -251,6 +256,7 @@ impl ViewState {
             buildings_shown: true,
             see_through: false,
             streets_shown: false,
+            signals_shown: false,
         }
     }
 
@@ -348,6 +354,9 @@ impl ViewState {
         }
         if input.pressed.m {
             self.streets_shown = !self.streets_shown;
+        }
+        if input.pressed.l {
+            self.signals_shown = !self.signals_shown;
         }
 
         // Orbit: a right press, or a left press with Control held, off the bar and with no

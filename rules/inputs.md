@@ -10,7 +10,7 @@ covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
   points, and which checks fail before the first frame.
 max_lines: 50
-generated: 2026-10-02
+generated: 2026-10-18
 ---
 
 # Inputs
@@ -26,9 +26,8 @@ generated: 2026-10-02
   `runs` row for (scenario, seed) with `status = 'completed'`; otherwise the error is
   "no completed run". No KPI is read.
 - FCD: default `fcd/<scenario>_<seed>.parquet` beside `results.db`, or `--fcd`.
-  - Columns are selected by name and their types are checked: `time` f64, `vehicle_id`
-    u64, `link_id` Utf8 (LargeUtf8 is also accepted), `lane` u32, `position` f64, `speed`
-    f64.
+  - Columns are selected by name and their types checked: `time` f64, `vehicle_id` u64,
+    `link_id` Utf8 (LargeUtf8 also accepted), `lane` u32, `position` f64, `speed` f64.
   - `vehicle_length` f64 is optional and sets the box length. Without it the length is
     4.5 m. The engine at the pin writes it (asm-020 Phase 3), and older files lack it.
     `acceleration` and `vehicle_class` (`Dictionary(Int32, Utf8)`) are not read.
@@ -60,5 +59,6 @@ generated: 2026-10-02
 (`view`: positive size, no ffmpeg → `run::load`): project/scenario → `results.db`'s run →
 FCD file → schema → `to > from` → every link known and row placed → `--camera`'s file
 (`rules/camera.md`) → `--buildings`' file (`rules/buildings.md`) → `render`'s credit inputs,
-then its fit after the settle frames (`rules/credit.md`). An error is one `error: …` line,
-exit 1, no output file or window.
+then its fit after the settle frames (`rules/credit.md`) → with signals on, the run's mode,
+then its clock (`rules/signals.md`; `view`: before the window). An error is one `error: …`
+line, exit 1, no output file or window.

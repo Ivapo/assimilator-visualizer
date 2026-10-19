@@ -13,7 +13,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-10-09
+generated: 2026-10-18
 ---
 
 # Render
@@ -23,10 +23,9 @@ generated: 2026-10-09
 ## CLI
 `assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
 [--results] [--fcd] [--from] [--to] [--speedup] [--fps 30] [--width 1920] [--height 1080]
-[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through] [--no-streets]`.
+[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through] [--no-streets] [--no-signals]`.
 - Width and height must be even. Stderr: one `{"frame": n, "of": N}` per frame, then `{"done": "<out>"}`.
-- On error, one `error: …` line and exit 1; a clap usage error exits 2 with its first line.
-- No logger: Bevy's `bevy_log` feature is off, so neither Bevy nor wgpu prints.
+- On error, one `error: …` line, exit 1; a clap usage error exits 2, its first line. No logger.
 
 ## Clock
 - `D = to − from`; default speedup `D / clamp(D, 30, 300)`; `N = ceil(D·fps/speedup − 1e-6)` ≥ 1.
@@ -47,6 +46,7 @@ generated: 2026-10-09
   World to Bevy is `(x − cx, height, −(y − cy))`.
 - **Buildings**, only with `--buildings`: one lit mesh and a sun (`rules/buildings.md`); with
   `--camera` too, those in the way cut to stubs unless `--no-see-through` (`rules/see-through.md`).
+- **Signals** unless `--no-signals`: a dot at each signalised stop line (`rules/signals.md`).
 - **Credit line**, only on a network with `map_origin`: bottom-right UI text (`rules/credit.md`).
 
 ## Camera
@@ -62,12 +62,12 @@ generated: 2026-10-09
   window or event loop; pipelines compile synchronously; the loop is pumped by hand.
 - The target is an `Rgba8UnormSrgb` image. The camera uses MSAA ×4, `Tonemapping::None`
   and `DebandDither::Disabled`. Three empty frames at start-up settle assets and pipelines.
-- Per frame: set the boxes, spawn `Screenshot::image(target)`, then update and `poll(Wait)`
+- Per frame: set dots and boxes, spawn `Screenshot::image(target)`, then update and `poll(Wait)`
   until the observer has the lossless readback (≤ 200 updates): `W·H·4` bytes, top row first.
 - `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate):
   size, fps, speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings,
-  the credit line (`prepare_without_credit`: none); see-through and streets off (`set_streets`
-  spawns them and settles again). Gates: `render_frame(n)`, `render_at(t)`, `render_empty()`,
+  the credit line (`prepare_without_credit`: none); see-through, streets and signals off (`set_streets`,
+  `set_signals` spawn them and settle again). Gates: `render_frame(n)`, `render_at(t)`, `render_empty()`,
   `camera()`/`k()`, `pose_at(t)`, `boxes_at(t)`, `buildings()`, `motion_report()`, `credit*()`.
 
 ## Output

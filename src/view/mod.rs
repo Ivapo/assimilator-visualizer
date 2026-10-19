@@ -5,7 +5,8 @@
 //! `--buildings` (vis-002 §2.8), the buildings and the sun, shown or hidden by `B`, with
 //! the buildings in the way cut to stubs while see-through is on (§2.15.6), flipped by `X`.
 //! Streets (vis-002 §2.17) are drawn on every network, shown or hidden by `M`, their
-//! markings faded for the pose while shown.
+//! markings faded for the pose while shown. Signals (vis-003 §2.13) are drawn on every
+//! network with a signal, shown or hidden by `L`, the dots rebuilt each frame while shown.
 
 pub mod slider;
 pub mod state;
@@ -20,8 +21,10 @@ use bevy::window::{CursorMoved, PrimaryWindow, WindowResolution};
 
 use crate::buildings::Buildings;
 use crate::draw::{self, BuildingsCut};
+use crate::inputs;
 use crate::run::{self, LoadOptions, Run};
 use crate::see_through;
+use crate::signals::{self, DotsData, Eye, Signals};
 use crate::streets::{self, Streets};
 pub use state::{Fit, ViewInput, ViewState};
 
@@ -35,6 +38,8 @@ pub struct ViewOptions {
     pub see_through: bool,
     /// Streets shown at launch (vis-002 §2.17.12): true unless `--no-streets`.
     pub streets: bool,
+    /// Signals shown at launch (vis-003 §2.13): true unless `--no-signals`.
+    pub signals: bool,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -57,6 +62,9 @@ struct Viewer {
     buildings: Option<ViewBuildings>,
     /// The streets, built at launch on every network; shown while `streets_shown`.
     streets: draw::StreetsDrawn,
+    /// The signals' timeline and dots; `None` on a network with no signal, or when the
+    /// timeline could not be built under `--no-signals`. Shown while `signals_shown`.
+    dots: Option<(Signals, draw::DotsEntity)>,
     readout: Entity,
     bar: BarNodes,
     bench: Option<Bench>,
@@ -118,11 +126,27 @@ pub fn run(o: &ViewOptions) -> Result<()> {
                 .map_err(|e| anyhow!("--buildings {}: {e}", file.display()))?,
         ),
     };
+    // Built under `--no-signals` too, so that `L` can show the dots; there, an error
+    // leaves no timeline (vis-003 §2.13).
+    let paths = inputs::RunPaths::new(
+        &o.load.project,
+        &o.load.scenario,
+        o.load.seed,
+        o.load.results.clone(),
+        o.load.fcd.clone(),
+    );
+    let timeline =
+        match Signals::for_run(&run.placement, &paths.results, &paths.scenario, paths.seed) {
+            Ok(t) => t,
+            Err(e) if o.signals => return Err(e),
+            Err(_) => None,
+        };
     let fit = Fit::new(&run.strips, o.width, o.height);
     let snaps = run.fcd.snapshots.iter().map(|s| s.time).collect();
     let mut state = ViewState::new(run.from, run.to, snaps, fit);
     state.see_through = o.see_through;
     state.streets_shown = o.streets;
+    state.signals_shown = o.signals;
     if o.bench.is_some() {
         state.t = BENCH_T.clamp(state.from, state.to);
         state.playing = true;
@@ -173,6 +197,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         *world.entity_mut(e).get_mut::<Visibility>().unwrap() = shown;
     }
     let boxes = draw::spawn_boxes(world);
+    let dots = timeline.map(|t| (t, draw::spawn_dots(world)));
     let buildings = buildings.map(|b| ViewBuildings {
         entities: draw::spawn_buildings(world, &b, (fit.cx, fit.cy)),
         drawn: b.buildings.iter().map(|x| x.top()).collect(),
@@ -206,6 +231,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         camera,
         buildings,
         streets,
+        dots,
         readout,
         bar,
         bench: o.bench.map(|secs| Bench {
@@ -276,6 +302,7 @@ fn input(world: &mut World) -> ViewInput {
             b: keys.just_pressed(KeyCode::KeyB),
             x: keys.just_pressed(KeyCode::KeyX),
             m: keys.just_pressed(KeyCode::KeyM),
+            l: keys.just_pressed(KeyCode::KeyL),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -368,6 +395,18 @@ fn frame(world: &mut World) {
             }
             let mpp = streets::mpp_at(&s.pose(), s.size.1);
             draw::set_street_colours(world, &mut v.streets, mpp);
+        }
+        // Signals (vis-003 §2.13): shown or hidden by `L`; while shown, the dots for `t`,
+        // the pose and the window's size, on every frame.
+        if let Some((sig, entity)) = &v.dots {
+            let dots = if s.signals_shown {
+                let pose = s.pose();
+                let colours = sig.colours_at(s.t);
+                signals::dots(sig, &colours, Eye::Pose(&pose), s.size.0, s.size.1)
+            } else {
+                DotsData::default()
+            };
+            draw::set_dots(world, entity, &dots, (fx, fy));
         }
         let text = s.readout();
         let mut ent = world.entity_mut(v.readout);

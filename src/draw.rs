@@ -7,7 +7,8 @@
 //! orthographic eye's rule, and, for `render` only, the credit line's UI tree (§2.14.5).
 //! See-through (vis-002 §2.15.5) rebuilds the buildings' mesh with lowered heights.
 //! Streets (vis-002 §2.17.11) add two meshes: the junction surfaces and median noses,
-//! and the markings, recoloured as the fade follows the camera.
+//! and the markings, recoloured as the fade follows the camera. Signals (vis-003 §2.12)
+//! add one more: every dot, rebuilt each frame.
 
 use std::collections::HashSet;
 
@@ -23,6 +24,7 @@ use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
 use crate::credit;
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
+use crate::signals::DotsData;
 use crate::streets::{self, MarkingsData, Streets};
 
 /// The rank lift of the perspective path, metres (§2.11.2): 0.01 m per rank would float
@@ -824,4 +826,85 @@ pub fn despawn_streets(world: &mut World, d: StreetsDrawn) {
     for e in d.entities() {
         world.despawn(e);
     }
+}
+
+/// The signals' dots: one entity, and the handle of the mesh [`set_dots`] replaces each
+/// frame.
+#[derive(Debug, Clone)]
+pub struct DotsEntity {
+    pub entity: Entity,
+    pub mesh: Handle<Mesh>,
+}
+
+fn dots_mesh(d: &DotsData, (fx, fy): (f64, f64)) -> Mesh {
+    let pos: Vec<[f32; 3]> = d
+        .positions
+        .iter()
+        .map(|p| [(p[0] - fx) as f32, p[2] as f32, -(p[1] - fy) as f32])
+        .collect();
+    let n = pos.len();
+    let colours: Vec<[f32; 4]> = d.colours.iter().map(|c| streets::colour(*c, 1.0)).collect();
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
+    .with_inserted_indices(Indices::U32(d.indices.clone()))
+}
+
+/// Spawn the dots' entity (vis-003 §2.12), hidden, never culled, with one white unlit
+/// material that does not cull: the vertex colours carry the colours, linear from sRGB as
+/// the markings'. Its first mesh is a placeholder, never shown.
+pub fn spawn_dots(world: &mut World) -> DotsEntity {
+    let placeholder = DotsData {
+        positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        colours: vec![[0, 0, 0]; 3],
+        indices: vec![0, 1, 2],
+    };
+    let mesh = world
+        .resource_mut::<Assets<Mesh>>()
+        .add(dots_mesh(&placeholder, (0.0, 0.0)));
+    let material = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            cull_mode: None,
+            ..default()
+        });
+    let entity = world
+        .spawn((
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::IDENTITY,
+            Visibility::Hidden,
+            NoFrustumCulling,
+        ))
+        .id();
+    DotsEntity { entity, mesh }
+}
+
+/// Draw `dots` about the bake origin `(fx, fy)` in place of the last frame's; hide the
+/// entity when there is no triangle.
+pub fn set_dots(world: &mut World, entity: &DotsEntity, dots: &DotsData, at: (f64, f64)) {
+    let want = if dots.indices.is_empty() {
+        Visibility::Hidden
+    } else {
+        world
+            .resource_mut::<Assets<Mesh>>()
+            .insert(entity.mesh.id(), dots_mesh(dots, at))
+            .expect("the dots' mesh handle is held");
+        Visibility::Visible
+    };
+    let mut v = world.get_mut::<Visibility>(entity.entity).unwrap();
+    if *v != want {
+        *v = want;
+    }
+}
+
+/// Despawn the dots.
+pub fn despawn_dots(world: &mut World, d: DotsEntity) {
+    world.despawn(d.entity);
 }
