@@ -7,6 +7,9 @@
 //! Streets (vis-002 §2.17) are drawn on every network, shown or hidden by `M`, their
 //! markings faded for the pose while shown. Signals (vis-003 §2.13) are drawn on every
 //! network with a signal, shown or hidden by `L`, the dots rebuilt each frame while shown.
+//! The HUD (vis-003 §2.20.10) is drawn in the top-left corner on every network, shown or
+//! hidden by `H`, its line set for `t` each frame while shown and its size following the
+//! window's.
 
 pub mod slider;
 pub mod state;
@@ -20,7 +23,8 @@ use bevy::prelude::*;
 use bevy::window::{CursorMoved, PrimaryWindow, WindowResolution};
 
 use crate::buildings::Buildings;
-use crate::draw::{self, BuildingsCut};
+use crate::draw::{self, BuildingsCut, HudNodes};
+use crate::hud;
 use crate::inputs;
 use crate::run::{self, LoadOptions, Run};
 use crate::see_through;
@@ -40,6 +44,8 @@ pub struct ViewOptions {
     pub streets: bool,
     /// Signals shown at launch (vis-003 §2.13): true unless `--no-signals`.
     pub signals: bool,
+    /// The HUD shown at launch (vis-003 §2.20.10): true unless `--no-hud`.
+    pub hud: bool,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -66,6 +72,8 @@ struct Viewer {
     /// timeline could not be built under `--no-signals`. Shown while `signals_shown`.
     dots: Option<(Signals, draw::DotsEntity)>,
     readout: Entity,
+    /// The HUD's tree and the size it is drawn at, px; shown while `hud_shown`.
+    hud: (HudNodes, u32),
     bar: BarNodes,
     bench: Option<Bench>,
 }
@@ -147,6 +155,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     state.see_through = o.see_through;
     state.streets_shown = o.streets;
     state.signals_shown = o.signals;
+    state.hud_shown = o.hud;
     if o.bench.is_some() {
         state.t = BENCH_T.clamp(state.from, state.to);
         state.playing = true;
@@ -217,6 +226,12 @@ pub fn run(o: &ViewOptions) -> Result<()> {
             },
         ))
         .id();
+    // The HUD, sized for the window at launch; each frame shows or hides it.
+    let hud_size = hud::size(state.size.0, state.size.1);
+    let font = world
+        .resource_mut::<Assets<Font>>()
+        .add(Font::from_bytes(draw::CREDIT_FONT.to_vec()));
+    let hud_nodes = draw::spawn_hud(world, None, font, hud_size);
     // Ticks are drawn over the track and under the handle.
     let bar = BarNodes {
         track: spawn_rect(world, TRACK_COLOR, 0),
@@ -233,6 +248,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         streets,
         dots,
         readout,
+        hud: (hud_nodes, hud_size),
         bar,
         bench: o.bench.map(|secs| Bench {
             secs,
@@ -303,6 +319,7 @@ fn input(world: &mut World) -> ViewInput {
             x: keys.just_pressed(KeyCode::KeyX),
             m: keys.just_pressed(KeyCode::KeyM),
             l: keys.just_pressed(KeyCode::KeyL),
+            h: keys.just_pressed(KeyCode::KeyH),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -407,6 +424,27 @@ fn frame(world: &mut World) {
                 DotsData::default()
             };
             draw::set_dots(world, entity, &dots, (fx, fy));
+        }
+        // The HUD (vis-003 §2.20.10): shown or hidden by `H`; while shown, its size from
+        // the window's, and its line for `t`, as `render` sets it, on every frame.
+        let (nodes, drawn_size) = &mut v.hud;
+        let want = if s.hud_shown {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        let mut vis = world.get_mut::<Visibility>(nodes.root).unwrap();
+        if *vis != want {
+            *vis = want;
+        }
+        if s.hud_shown {
+            let size = hud::size(s.size.0, s.size.1);
+            if size != *drawn_size {
+                draw::set_hud_size(world, nodes, size);
+                *drawn_size = size;
+            }
+            let (n, mean) = hud::numbers(&run.fcd, s.t, !boxes.is_empty());
+            draw::set_hud_text(world, nodes, &hud::text(s.t, n, mean));
         }
         let text = s.readout();
         let mut ent = world.entity_mut(v.readout);

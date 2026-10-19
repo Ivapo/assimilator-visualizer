@@ -17,7 +17,10 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use assimilator_video::clock;
 use assimilator_video::fcd::{Fcd, Row, Snapshot, VehicleRows};
 use assimilator_video::hud;
+use assimilator_video::render::VehicleBox;
 use assimilator_video::run::{self, LoadOptions, Run};
+use assimilator_video::view::state::Follow;
+use assimilator_video::view::{Fit, ViewInput, ViewState};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -259,4 +262,151 @@ fn gate6_midtown_window_every_frame() {
 #[ignore = "needs scratch/midtown (scripts/fixture.sh midtown)"]
 fn gate6_midtown_whole_run_every_frame() {
     gate6_every_frame("midtown", None, None, None, 9000);
+}
+
+// ── Gate 13: `H` ─────────────────────────────────────────────────────────────
+
+const W: f64 = 1280.0;
+const H: f64 = 720.0;
+const DT: f64 = 1.0 / 60.0;
+
+/// vis-001 Phase 3's `plain_state`: `[0, 300]`, centre (0, 0), `k` = 1, 1280×720.
+fn plain_state() -> ViewState {
+    let fit = Fit {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        rect: (-1e4, -1e4, 1e4, 1e4),
+        size: (W, H),
+    };
+    ViewState::new(0.0, 300.0, vec![], fit)
+}
+
+fn at(c: (f64, f64)) -> ViewInput {
+    ViewInput {
+        cursor: Some(c),
+        pointer: Some(c),
+        size: (W, H),
+        dt: DT,
+        ..Default::default()
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+/// `input` with `h` pressed flips the flag and does exactly what `input` alone does.
+fn step_h(s: &mut ViewState, input: ViewInput) {
+    let mut without = s.clone();
+    let line = without.frame(&input, no_boxes);
+    let before = s.hud_shown;
+    let mut with_h = input;
+    with_h.pressed.h = true;
+    assert_eq!(s.frame(&with_h, no_boxes), line, "the keyframe line");
+    assert_eq!(s.hud_shown, !before, "h flips the flag");
+    let mut flipped_back = s.clone();
+    flipped_back.hud_shown = before;
+    assert_eq!(flipped_back, without, "h changes nothing else");
+}
+
+fn step(s: &mut ViewState, input: ViewInput) {
+    let before = s.hud_shown;
+    s.frame(&input, no_boxes);
+    assert_eq!(s.hud_shown, before, "only h flips the flag");
+}
+
+#[test]
+fn gate13_h() {
+    let mut s = plain_state();
+    assert!(!s.hud_shown, "off at new");
+    let (buildings, see_through, streets, signals) = (
+        s.buildings_shown,
+        s.see_through,
+        s.streets_shown,
+        s.signals_shown,
+    );
+    step_h(&mut s, at((640.0, 360.0)));
+    assert!(s.hud_shown);
+    step_h(&mut s, at((640.0, 360.0)));
+    assert!(!s.hud_shown);
+
+    // Playing, following, with K pressed in the same frame.
+    s.playing = true;
+    s.follow = Some(Follow {
+        vehicle_id: 7,
+        drawn: false,
+    });
+    let mut k = at((640.0, 360.0));
+    k.pressed.k = true;
+    step_h(&mut s, k);
+    step_h(&mut s, at((640.0, 360.0)));
+    s.playing = false;
+    s.follow = None;
+
+    // A right-button orbit.
+    step(
+        &mut s,
+        ViewInput {
+            right_press: true,
+            ..at((640.0, 360.0))
+        },
+    );
+    assert!(s.orbit.is_some());
+    step_h(&mut s, at((700.0, 330.0)));
+    assert!(s.orbit.is_some(), "the orbit goes on");
+    step(
+        &mut s,
+        ViewInput {
+            right_release: true,
+            ..at((700.0, 330.0))
+        },
+    );
+    assert!(s.orbit.is_none());
+
+    // A left drag.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((400.0, 300.0))
+        },
+    );
+    step_h(&mut s, at((460.0, 340.0)));
+    assert!(s.press.is_some(), "the drag goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((460.0, 340.0))
+        },
+    );
+
+    // A scrub.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((640.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_some());
+    step_h(&mut s, at((300.0, 706.0)));
+    assert!(s.scrub.is_some(), "the scrub goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((300.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_none());
+    assert_eq!(
+        (s.buildings_shown, s.see_through, s.streets_shown, s.signals_shown),
+        (buildings, see_through, streets, signals),
+        "h never touches buildings_shown, see_through, streets_shown or signals_shown"
+    );
+    println!(
+        "gate 13: h flips hud_shown and nothing else, through an orbit, a drag and a scrub: PASS"
+    );
 }

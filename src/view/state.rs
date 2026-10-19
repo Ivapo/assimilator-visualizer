@@ -70,6 +70,8 @@ pub struct Pressed {
     pub m: bool,
     /// Show or hide the signals (vis-003 §2.13), by position.
     pub l: bool,
+    /// Show or hide the HUD (vis-003 §2.20.10), by position.
+    pub h: bool,
 }
 
 /// Keys held this frame.
@@ -231,6 +233,9 @@ pub struct ViewState {
     /// Whether the signals are drawn (vis-003 §2.13); `L` flips it. Off at
     /// [`ViewState::new`]; `view` sets it at launch, on unless `--no-signals`.
     pub signals_shown: bool,
+    /// Whether the HUD is drawn (vis-003 §2.20.10); `H` flips it. Off at
+    /// [`ViewState::new`]; `view` sets it at launch, on unless `--no-hud`.
+    pub hud_shown: bool,
 }
 
 impl ViewState {
@@ -257,6 +262,7 @@ impl ViewState {
             see_through: false,
             streets_shown: false,
             signals_shown: false,
+            hud_shown: false,
         }
     }
 
@@ -357,6 +363,9 @@ impl ViewState {
         }
         if input.pressed.l {
             self.signals_shown = !self.signals_shown;
+        }
+        if input.pressed.h {
+            self.hud_shown = !self.hud_shown;
         }
 
         // Orbit: a right press, or a left press with Control held, off the bar and with no
