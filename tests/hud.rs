@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use arrow_array::{Float64Array, UInt64Array};
 use parquet::arrow::ProjectionMask;
@@ -17,10 +17,12 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use assimilator_video::clock;
 use assimilator_video::fcd::{Fcd, Row, Snapshot, VehicleRows};
 use assimilator_video::hud;
-use assimilator_video::render::VehicleBox;
+use assimilator_video::render::{Renderer, VehicleBox};
 use assimilator_video::run::{self, LoadOptions, Run};
+use assimilator_video::scene;
 use assimilator_video::view::state::Follow;
 use assimilator_video::view::{Fit, ViewInput, ViewState};
+use assimilator_video::{Job, RenderOptions};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -409,4 +411,216 @@ fn gate13_h() {
     println!(
         "gate 13: h flips hud_shown and nothing else, through an orbit, a drag and a scrub: PASS"
     );
+}
+
+// ── Gates 6, 7 and 9: through the GPU ────────────────────────────────────────
+
+fn opts(dir: &str, from: Option<f64>, to: Option<f64>, speedup: Option<f64>, w: u32, h: u32) -> RenderOptions {
+    RenderOptions {
+        project: root().join("scratch").join(dir),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from,
+        to,
+        speedup,
+        fps: 30,
+        width: w,
+        height: h,
+    }
+}
+
+/// A job set as `render` sets it by default (`src/main.rs`): streets, see-through,
+/// signals, and the HUD when `hud`.
+fn job(o: &RenderOptions, camera: Option<&Path>, buildings: Option<&Path>, hud: bool) -> Job {
+    let mut j = Job::prepare_with(o, camera, buildings).unwrap();
+    j.set_streets(true).unwrap();
+    j.set_see_through(true);
+    j.set_signals(true).unwrap();
+    j.set_hud(hud).unwrap();
+    j
+}
+
+fn count(f: &[u8], c: [u8; 3]) -> usize {
+    f.chunks(4).filter(|p| p[..3] == c).count()
+}
+
+/// The text each listed frame drew, read back after it rendered.
+fn gate6_sampled(o: &RenderOptions, want: &[(u64, &str)]) {
+    let mut j = Job::prepare_with(o, None, None).unwrap();
+    j.set_hud(true).unwrap();
+    for &(n, text) in want {
+        let t = j.clock.time_of(n);
+        j.render_at(t).unwrap();
+        let drew = j.hud_text();
+        println!("gate 6: {} frame {n} (t {t:.4}): {drew:?}", o.project.display());
+        assert_eq!(drew.as_deref(), Some(text), "frame {n}");
+    }
+}
+
+#[test]
+#[ignore = "needs scratch/midtown (scripts/fixture.sh midtown); renders through the GPU"]
+fn gate6_midtown_sampled_frames() {
+    gate6_sampled(
+        &opts("midtown", Some(300.0), Some(360.0), Some(1.0), 1920, 1080),
+        &[
+            (0, "5:00 · 184 vehicles · 17 km/h"),
+            (3, "5:00 · 185 vehicles · 16 km/h"),
+            (30, "5:01 · 185 vehicles · 16 km/h"),
+            (450, "5:15 · 196 vehicles · 24 km/h"),
+            (900, "5:30 · 201 vehicles · 20 km/h"),
+            (1350, "5:45 · 206 vehicles · 23 km/h"),
+            (1799, "5:59 · 203 vehicles · 18 km/h"),
+        ],
+    );
+    println!("gate 6: Midtown's sampled frames: PASS");
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate6_urban_grid_sampled_frames() {
+    gate6_sampled(
+        &opts("urban_grid", None, None, None, 1920, 1080),
+        &[
+            (0, "0:09 · 6 vehicles · 50 km/h"),
+            (29, "0:10 · 6 vehicles · 50 km/h"),
+            (600, "0:29 · 18 vehicles · 42 km/h"),
+            (2700, "1:39 · 66 vehicles · 33 km/h"),
+            (5400, "3:09 · 96 vehicles · 30 km/h"),
+            (8699, "4:59 · 107 vehicles · 21 km/h"),
+        ],
+    );
+    println!("gate 6: urban_grid's sampled frames: PASS");
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate7_drawn_alone() {
+    // (w, h, box, changed, exactly the fill, exactly black added)
+    for (w, h, want_box, want_changed, want_fill, want_black) in [
+        (1280, 720, [18, 18, 269, 46], 3915, 340, 941),
+        (1920, 1080, [27, 27, 403, 69], 8384, 1264, 3087),
+        (3840, 2160, [55, 55, 805, 137], 31453, 8163, 14795),
+    ] {
+        let o = opts("urban_grid", None, None, None, w, h);
+        let mut j = job(&o, None, None, false);
+        let off = j.render_at(150.0).unwrap();
+        j.set_hud(true).unwrap();
+        let on = j.render_at(150.0).unwrap();
+        let text = j.hud_text();
+        let b = j.hud_box().unwrap();
+        let (mut changed, mut outside) = (0, 0);
+        for (i, (p, q)) in off.chunks(4).zip(on.chunks(4)).enumerate() {
+            if p != q {
+                changed += 1;
+                let (x, y) = ((i % w as usize) as u32, (i / w as usize) as u32);
+                if !(b[0] <= x && x < b[2] && b[1] <= y && y < b[3]) {
+                    outside += 1;
+                }
+            }
+        }
+        let (fill_on, fill_off) = (count(&on, hud::FILL), count(&off, hud::FILL));
+        let (black_on, black_off) = (count(&on, hud::OUTLINE), count(&off, hud::OUTLINE));
+        let size = hud::size(w as f64, h as f64);
+        println!(
+            "gate 7: {w}x{h}: S {size}, m {}, o {}; text {text:?}; box {b:?}; changed {changed}, \
+             outside {outside}; exactly the fill {fill_on} (without {fill_off}); exactly black \
+             {black_on} − {black_off} = {} added",
+            hud::margin(size),
+            hud::outline_offset(size),
+            black_on - black_off
+        );
+        assert_eq!(text.as_deref(), Some("2:30 · 83 vehicles · 30 km/h"));
+        assert_eq!(b, want_box, "{w}x{h}: box");
+        assert_eq!((changed, outside), (want_changed, 0), "{w}x{h}: changed, outside");
+        assert_eq!((fill_on, fill_off), (want_fill, 0), "{w}x{h}: the fill");
+        assert_eq!(black_on - black_off, want_black, "{w}x{h}: black added");
+    }
+    println!("gate 7: drawn alone at 720p, 1080p and 2160p: PASS");
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate7_tabular_widths() {
+    let run = load("urban_grid", None, None);
+    let cam = scene::Camera::fit(&run.strips, 1920, 1080);
+    let mut r = Renderer::new(&run.strips, cam, 1, None, None).unwrap();
+    r.set_hud(true).unwrap();
+    let o = hud::outline_offset(hud::size(1920.0, 1080.0));
+    let mut widths = Vec::new();
+    for s in [
+        "1:11 · 111 vehicles · 11 km/h",
+        "8:88 · 888 vehicles · 88 km/h",
+        "0:00 · 000 vehicles · 00 km/h",
+        "4:07 · 205 vehicles · 23 km/h",
+        "19:59 · 216 vehicles · 40 km/h",
+    ] {
+        r.set_hud_text(s);
+        r.render(&[]).unwrap();
+        r.set_hud_text(s);
+        r.render(&[]).unwrap();
+        let b = r.hud_box().unwrap();
+        let width = b[2] - b[0] - 2 * o;
+        println!("gate 7: {s:?}: box {b:?}, laid out {width} px wide");
+        widths.push((b, width));
+    }
+    // The four with a four-character clock are gated; the fifth digit is recorded only.
+    for &(b, width) in &widths[..4] {
+        assert_eq!((b, width), ([27, 27, 420, 69], 387));
+    }
+    println!("gate 7: tabular figures, 387 px each: PASS");
+}
+
+/// Each listed frame rendered alone by a new job equals the same frame rendered in
+/// sequence from frame 0.
+fn gate9(o: &RenderOptions, camera: Option<&Path>, buildings: Option<&Path>, frames: &[u64]) {
+    let mut seq = job(o, camera, buildings, true);
+    let last = *frames.iter().max().unwrap();
+    let mut kept = BTreeMap::new();
+    for n in 0..=last {
+        let f = seq.render_frame(n).unwrap();
+        if frames.contains(&n) {
+            kept.insert(n, (f, seq.hud_text()));
+        }
+    }
+    for &n in frames {
+        let mut fresh = job(o, camera, buildings, true);
+        let f = fresh.render_frame(n).unwrap();
+        let (g, text) = &kept[&n];
+        let diff = f.chunks(4).zip(g.chunks(4)).filter(|(p, q)| p != q).count();
+        println!(
+            "gate 9: {} frame {n} (t {:.4}, {text:?}): alone against in sequence, {diff} pixels differ",
+            o.project.display(),
+            seq.clock.time_of(n)
+        );
+        assert_eq!(fresh.hud_text(), *text, "frame {n}: the text");
+        assert!(f == *g, "frame {n}");
+    }
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate9_urban_grid_alone_and_in_sequence() {
+    gate9(
+        &opts("urban_grid", None, None, None, 1920, 1080),
+        None,
+        None,
+        &[0, 1, 30, 299, 300],
+    );
+    println!("gate 9: urban_grid, 5 of 5 equal: PASS");
+}
+
+#[test]
+#[ignore = "needs scratch/midtown (scripts/fixture.sh midtown); renders through the GPU"]
+fn gate9_city_flight_alone_and_in_sequence() {
+    let camera = root().join("tests/city-flight.toml");
+    let buildings = root().join("scratch/midtown/buildings.geojson");
+    gate9(
+        &opts("midtown", Some(300.0), Some(310.0), Some(1.0), 1920, 1080),
+        Some(&camera),
+        Some(&buildings),
+        &[0, 29, 30, 299],
+    );
+    println!("gate 9: the city flight, 4 of 4 equal: PASS");
 }
