@@ -7,7 +7,9 @@
 //! perspective renderer redraws the buildings at each pose's heights. With streets
 //! (vis-002 §2.17), two more meshes: the junction surfaces and median noses, and the
 //! markings, whose colours a perspective renderer fades for each pose. With signals
-//! (vis-003 §2.12), one more mesh: the dots, set before each frame.
+//! (vis-003 §2.12), one more mesh: the dots, set before each frame. With the HUD
+//! (vis-003 §2.20), a second UI tree draws its line in the top-left corner, set before
+//! each frame.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -34,7 +36,8 @@ use bevy::winit::WinitPlugin;
 use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::credit;
-use crate::draw::{self, BuildingsCut, CreditNodes, DotsEntity, StreetsDrawn};
+use crate::hud;
+use crate::draw::{self, BuildingsCut, CreditNodes, DotsEntity, HudNodes, StreetsDrawn};
 use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
@@ -114,6 +117,10 @@ pub struct Renderer {
     streets: Option<StreetsDrawn>,
     /// The signals' dots; `None` while they are off.
     dots: Option<DotsEntity>,
+    /// The camera that draws into the image, which the HUD's tree targets.
+    image_camera: Entity,
+    /// The HUD's tree and its outline offset; `None` while it is off.
+    hud: Option<(HudNodes, u32)>,
 }
 
 impl Renderer {
@@ -293,6 +300,8 @@ impl Renderer {
             pose: pose.copied(),
             streets: None,
             dots: None,
+            image_camera,
+            hud: None,
         };
         // Let assets and pipelines settle before the first frame that counts.
         r.settle()?;
@@ -443,6 +452,57 @@ impl Renderer {
         let Some(d) = self.dots.as_ref() else { return };
         let cam = self.camera;
         draw::set_dots(self.apps.main.world_mut(), d, dots, (cam.cx, cam.cy));
+    }
+
+    /// The HUD (vis-003 §2.20.9): on spawns its tree into the image, sized to the frame,
+    /// holding every glyph it can draw, then settles again; off despawns it. Off from the
+    /// start, nothing is spawned.
+    pub fn set_hud(&mut self, on: bool) -> Result<()> {
+        let world = self.apps.main.world_mut();
+        if let Some((nodes, _)) = self.hud.take() {
+            world.entity_mut(nodes.root).despawn();
+        }
+        if !on {
+            return Ok(());
+        }
+        let size = hud::size(self.camera.width as f64, self.camera.height as f64);
+        let font = world
+            .resource_mut::<Assets<Font>>()
+            .add(Font::from_bytes(draw::CREDIT_FONT.to_vec()));
+        let nodes = draw::spawn_hud(world, Some(self.image_camera), font, size);
+        self.hud = Some((nodes, hud::outline_offset(size)));
+        self.settle()
+    }
+
+    /// Draw the HUD with this line from the next frame; nothing while it is off.
+    pub fn set_hud_text(&mut self, line: &str) {
+        let Some((nodes, _)) = self.hud.as_ref() else {
+            return;
+        };
+        let nodes = *nodes;
+        draw::set_hud_text(self.apps.main.world_mut(), &nodes, line);
+    }
+
+    /// The HUD's box, as [`Renderer::credit_box`]: the fill text's computed rectangle as
+    /// laid out by the last frame, grown by the outline offset on every side and rounded
+    /// outward, `[x0, y0, x1, y1]` with `x1` and `y1` exclusive. `None` while it is off.
+    pub fn hud_box(&self) -> Option<[u32; 4]> {
+        let (nodes, offset) = self.hud.as_ref()?;
+        let r = self.fill_rect(nodes.fill).ok()?;
+        let o = *offset as f32;
+        let (w, h) = (self.camera.width as f32, self.camera.height as f32);
+        Some([
+            (r.min.x - o).floor().clamp(0.0, w) as u32,
+            (r.min.y - o).floor().clamp(0.0, h) as u32,
+            (r.max.x + o).ceil().clamp(0.0, w) as u32,
+            (r.max.y + o).ceil().clamp(0.0, h) as u32,
+        ])
+    }
+
+    /// The HUD's line as set on its fill text; `None` while it is off.
+    pub fn hud_text(&self) -> Option<String> {
+        let (nodes, _) = self.hud.as_ref()?;
+        Some(self.apps.main.world().get::<Text>(nodes.fill)?.0.clone())
     }
 
     /// Set the perspective camera to `pose` for the next frames; nothing on the

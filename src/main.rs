@@ -79,6 +79,10 @@ enum Cmd {
         /// green, amber or red as the engine had it, replayed from the run's own clock.
         #[arg(long)]
         no_signals: bool,
+        /// Draw no HUD. Default: in the top-left corner of every frame, the sim clock, the
+        /// vehicles on the road and their mean speed, from the run's FCD.
+        #[arg(long)]
+        no_hud: bool,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -171,6 +175,7 @@ fn run(cli: Cli) -> Result<()> {
             no_see_through,
             no_streets,
             no_signals,
+            no_hud,
         } => render(
             RenderOptions {
                 project,
@@ -191,6 +196,7 @@ fn run(cli: Cli) -> Result<()> {
             !no_see_through,
             !no_streets,
             !no_signals,
+            !no_hud,
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -237,6 +243,7 @@ fn render(
     see_through: bool,
     streets: bool,
     signals: bool,
+    hud: bool,
 ) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
@@ -248,6 +255,9 @@ fn render(
     job.set_see_through(see_through);
     if signals {
         job.set_signals(true)?;
+    }
+    if hud {
+        job.set_hud(true)?;
     }
 
     let n_frames = job.clock.frames;

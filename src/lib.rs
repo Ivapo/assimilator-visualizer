@@ -12,7 +12,8 @@
 //! the same job without it for the gates ([`Job::prepare_without_credit`]). vis-002
 //! Phase 3 cuts the buildings in the camera's way to stubs ([`Job::set_see_through`]).
 //! vis-003 Phase 1 draws the run's signals as dots at the stop lines
-//! ([`Job::set_signals`]).
+//! ([`Job::set_signals`]), and Phase 2 the HUD in the top-left corner ([`Job::set_hud`],
+//! [`Job::hud_text`], [`Job::hud_box`]).
 
 pub mod buildings;
 pub mod camera;
@@ -21,6 +22,7 @@ pub mod credit;
 pub mod draw;
 pub mod encode;
 pub mod fcd;
+pub mod hud;
 pub mod inputs;
 pub mod keyframes;
 pub mod motion;
@@ -101,6 +103,8 @@ pub struct Job {
     seed: u64,
     /// The signals' timeline; `None` while they are off, or on a network with no signal.
     signals: Option<Signals>,
+    /// Whether the HUD is drawn.
+    hud: bool,
 }
 
 impl Job {
@@ -223,6 +227,7 @@ impl Job {
             scenario: paths.scenario,
             seed: paths.seed,
             signals: None,
+            hud: false,
         }
     }
 
@@ -321,6 +326,27 @@ impl Job {
         self.renderer.set_signals(true)
     }
 
+    /// The HUD (vis-003 §2.20): on draws its line in the top-left corner of every frame
+    /// from the next one, the clock, the vehicles on the road and their mean speed at the
+    /// frame's time; off removes it. Every `prepare*` builds a job with it off; `render`
+    /// turns it on unless `--no-hud` is given.
+    pub fn set_hud(&mut self, on: bool) -> Result<()> {
+        self.hud = on;
+        self.renderer.set_hud(on)
+    }
+
+    /// The HUD's line as the last frame drew it; `None` while it is off.
+    pub fn hud_text(&self) -> Option<String> {
+        self.renderer.hud_text()
+    }
+
+    /// The HUD's box, `[x0, y0, x1, y1]` in pixels with `x1` and `y1` exclusive: the fill
+    /// text's rectangle as the last frame laid it out, grown by the outline offset
+    /// (§2.20.9); `None` while it is off.
+    pub fn hud_box(&self) -> Option<[u32; 4]> {
+        self.renderer.hud_box()
+    }
+
     /// The credit line drawn on every frame (vis-002 §2.14.2); `None` without one.
     pub fn credit(&self) -> Option<&str> {
         self.credit.as_deref()
@@ -374,6 +400,10 @@ impl Job {
             self.renderer.set_dots(&dots);
         }
         let boxes = self.boxes_at(t);
+        if self.hud {
+            let (n, mean) = hud::numbers(&self.fcd, t, !boxes.is_empty());
+            self.renderer.set_hud_text(&hud::text(t, n, mean));
+        }
         self.renderer.render(&boxes)
     }
 
