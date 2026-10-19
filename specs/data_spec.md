@@ -1089,7 +1089,8 @@ unit, halves up. Midtown is in Manhattan (`map_origin` 40.765 N, 73.978 W):
 - **A flag** (`--speed-unit kmh|mph`) would let each video choose. It is one more flag in
   the harness contract, and a default still has to be chosen.
 
-The units are the user's (OQ-5). Recommended: km/h, fixed, as the dashboard.
+The units are the user's (OQ-5). Recommended: km/h, fixed, as the dashboard. *(2026-10-19,
+user)* OQ-5 is answered (a), km/h, fixed, as recommended, after the probe's stills.
 
 #### 2.20.8 The text
 
@@ -1099,7 +1100,8 @@ none), joined by ` · ` as the credit line joins its items (vis-002 §2.14.2). N
 words: the clock's colon and the units say what each number is.
 
 The alternative shown in the stills (OQ-6's (c)): three lines, the clock above the count
-above the speed.
+above the speed. *(2026-10-19, user)* OQ-6's (c) and (d) are answered as drafted: one
+line, and "vehicles".
 
 **Tabular figures.** Fira Sans Medium's digits are proportional: their advances run from
 450 (`1`) to 573 (`0`) units of 1,000 (the font's `hmtx`, the probe's
@@ -1146,14 +1148,15 @@ The `9W/16` term keeps a portrait frame's line inside its width, as for the cred
 HUD's line at 1/36 is 387 to 404 px wide at 1080 lines.
 
 **The draft's proposal, to be chosen from the stills (OQ-6):** (a), the outline, at 1/36,
-one line, "vehicles".
+one line, "vehicles". *(2026-10-19, user)* OQ-6 is answered as recommended: the outline,
+at 1/36 (30 px at 1080 lines), one line, "vehicles", after the probe's stills.
 
 **Where it sits.** Top-left, `m` from both edges, over everything else in the image, in
 both cameras: it is UI over the 3D image, so a flight does not move it.
 - **The credit line** is bottom-right, on imported networks only (`rules/credit.md`). The
   two boxes are 965 px apart (the HUD's box ends at row 69, the credit's begins at row
-  1,034, and they share no column: the HUD's ends at 420, the credit's begins at 699) apart at 1080 lines on Midtown, and do not meet at any 16:9
-  size or in a portrait frame.
+  1,034, and they share no column: the HUD's ends at 420, the credit's begins at 699) at
+  1080 lines on Midtown, and do not meet at any 16:9 size or in a portrait frame.
 - **What it covers.** In Midtown's orthographic frame (`k` 1.6009) the HUD's box lies
   over no dot (0 of 188) and no box in any of the 300–360 s window's 1,800 frames: the
   network does not reach that corner; in urban_grid's (`k` 1.1481), no dot (0 of 36) and no box in 8,700 frames. In a flight, whatever
@@ -1355,7 +1358,7 @@ is the root's rectangle grown by the offset, which for the panel is the panel it
   - *(answered 2026-10-09, user, before review)* **As drafted.** In the orthographic render
     a dot under a roof stays hidden, as the boxes are. Recorded as §2.2 decision 5 and
     §2.12. Gate 14 was worded with it and does not change.
-- **OQ-5** — The HUD's speed unit: km/h or mph (§2.20.7)?
+- **OQ-5** — The HUD's speed unit: km/h or mph (§2.20.7)? **RESOLVED.**
   - *(a) km/h, fixed:* the dashboard's unit and the engine's other displays'. Midtown's
     window reads 15 – 25 km/h.
   - *(b) mph, fixed:* what a US audience reads. Midtown is in Manhattan and its network is
@@ -1365,10 +1368,13 @@ is the root's rectangle grown by the offset, which for the panel is the panel it
     harness contract, and still a default to choose.
   - *Recommendation:* (a), as the dashboard. The probe's stills show both on Midtown
     (`stills/units-kmh.png`, `stills/units-mph.png`).
-  - *(design call: the user. It blocks gate 6's predicted strings and gate 12's wording,
-    not the design: either unit is one constant and one word.)*
+  - ~~*(design call: the user. It blocks gate 6's predicted strings and gate 12's wording,
+    not the design: either unit is one constant and one word.)*~~
+  - *(answered 2026-10-19, user, before review)* **(a): km/h, fixed,** as the dashboard.
+    The probe's stills (`stills/sheet-units.png`) were put to the user before the answer.
+    Recorded in §2.20.7. Gates 6 and 12 were written with km/h, and do not change.
 - **OQ-6** — How the HUD looks (§2.20.8, §2.20.9), chosen from the probe's stills
-  (`scratch/vis003p2-probe/stills/`, 1920×1080, §2.20.15):
+  (`scratch/vis003p2-probe/stills/`, 1920×1080, §2.20.15). **RESOLVED.**
   - **(a) Readable over any background:** the credit line's outline (light fill, eight
     black copies), a translucent black panel, or a one-sided shadow.
     `sheet-look.png` puts the three side by side on Midtown's orthographic frame, a frame
@@ -1383,9 +1389,14 @@ is the root's rectangle grown by the offset, which for the panel is the panel it
   - *Recommendation:* (a) the outline, (b) 1/36, (c) one line, (d) "vehicles". Phase 6's
     lesson: a look decided on paper failed at the visual gate, so the choice is made on
     the stills, and gate 12 shows it again in motion.
-  - *(design call: the user. It blocks gate 7's pixel counts and box sizes, gate 6's
+  - ~~*(design call: the user. It blocks gate 7's pixel counts and box sizes, gate 6's
     strings (d) and gate 12's wording, not the design: the treatments are one function in
-    `src/draw.rs`, the ratio and the words constants in `src/hud.rs`.)*
+    `src/draw.rs`, the ratio and the words constants in `src/hud.rs`.)*~~
+  - *(answered 2026-10-19, user, before review)* **As recommended: (a) the outline, (b)
+    1/36 (30 px at 1080 lines), (c) one line, (d) "vehicles".** The probe's stills
+    (`stills/sheet-look.png`, `sheet-size.png`, `sheet-layout.png`, `sheet-units.png`)
+    were put to the user before the answer. Recorded in §2.20.8 and §2.20.9. Gates 6, 7
+    and 12 were written with these answers, and do not change.
 
 ## 4. Implementation phases
 
@@ -1847,7 +1858,9 @@ Drafted 2026-10-19; the design is §2.20, and the user's decisions are §2.2's d
 `--no-hud` it changes no output. With the HUD on it adds one UI tree in the top-left corner
 and changes nothing else drawn. OQ-5 (the unit) and OQ-6 (the look) are the user's; the
 scope and every gate are written with their recommendations, km/h and the outline at 1/36
-on one line with "vehicles", and say what an answer changes.
+on one line with "vehicles", and say what an answer changes. *(2026-10-19, user)* Both are
+answered as recommended (OQ-5 (a); OQ-6 (a)–(d)), so the scope and the gates stand as
+drafted.
 
 - **Scope:**
   - **`src/hud.rs`** (new; no Bevy types):
@@ -2033,7 +2046,8 @@ on one line with "vehicles", and say what an answer changes.
 
      The counts are `==`: the probe's, through the same Bevy, font and GPU. They depend on
      OQ-6's answer: another treatment, size or layout is measured again before the gate is
-     run, and recorded.
+     run, and recorded. *(2026-10-19, user)* OQ-6 is answered as these counts were
+     measured (the outline, 1/36, one line), so they stand.
   8. **On, deterministic** (`scripts/gates-hud.sh`). Phase 1's seven cases, each twice,
      each pair equal: urban_grid's default and `--camera tests/flight.toml` **8700 of
      8700**; Midtown's `--from 300 --to 360 --speedup 1` orthographic with and without
