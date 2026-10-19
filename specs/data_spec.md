@@ -21,7 +21,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 2 — HUD: the clock, the vehicles on the road and their mean speed, top-left, by default"
-    reviewed: null
+    reviewed: 2026-10-19
     shipped: null
     cut: null
     by: null
@@ -73,6 +73,10 @@ assimilator-video view --project <project> --scenario baseline --seed 42
 Nothing new is read from outside the run: the dots come from the scenario's resolved
 network, which `render` already reads (vis-001 §2.1), and from the run's timestep in
 `results.db`. They are stepped through the engine's own code (§2.6).
+
+*(2026-10-19, Phase 2 round 1)* From Phase 2, every render also draws the HUD in the
+top-left corner (§2.20). "Today's frames, byte for byte" above are then `--no-signals
+--no-hud`; `--no-signals` alone gives them with the HUD.
 
 Rejected candidates for the observable:
 - *The timeline of signal states.* It is an input to a frame, as vis-002 §1 says of the
@@ -888,7 +892,7 @@ Read at the pin (`90b39292`, cargo's checkout, read-only), 2026-10-19:
   included:
   - the run's progress tick: `avg_speed`, "mean speed of this step's vehicle snapshots
     (m/s)" (`crates/output/src/runner.rs:ProgressTick`, computed in
-    `run_to_results_db`);
+    `run_to_results_db_with_sink`, which `run_to_results_db` calls);
   - the run's KPI: `speed_sum` over every snapshot of every step, over their count
     (`crates/core/src/simulation.rs:Simulation::step_execute`, `Simulation::finalize`).
 - **The engine's count** is the progress tick's `active`, `sim.vehicle_count()`
@@ -903,7 +907,7 @@ The HUD reads only the FCD, which every render reads already (vis-001 §2.1,
 | | Midtown | urban_grid |
 |---|---|---|
 | Snapshots; first – last time | 1,199; 1.1 – 1,199.1 s | 291; 9.1 – 299.1 s |
-| Gap between successive snapshots | 1.0 s (±3e-13) at every one | 1.0 s (±3e-13) at every one |
+| Gap between successive snapshots | 1.0 s (±1e-12) at every one | 1.0 s (±1e-12) at every one |
 | Vehicles; rows | 985; 202,241 | 198; 21,556 |
 | A vehicle missing a row between its first and its last | 0 | 0 |
 | `vehicle_class` | `car`, every row | `car`, every row |
@@ -916,7 +920,8 @@ The HUD reads only the FCD, which every render reads already (vis-001 §2.1,
   whenever the FCD's interval is due (`run_to_results_db`). So a snapshot's rows are the
   vehicles the engine counts at that step (§2.20.2).
 - **A step with no vehicle writes no row.** The writer writes the step's rows
-  (`crates/output/src/results_db.rs:ResultsDbWriter::on_step`), and there are none. So an
+  (`crates/output/src/results_db.rs:ResultsDbWriter::on_step`), through the FCD writer's
+  `FcdParquetWriter::write_batch`, which returns early with none. So an
   empty network is a time missing from the FCD, not a snapshot of 0. Neither fixture has
   one (the gaps above), but a run whose demand stops and starts would.
 - **The FCD's interval is not recorded.** `runs.resolved_config` carries the timestep,
@@ -1058,11 +1063,14 @@ with the 299.1 s row's numbers, and at 300.1 the 300.1 s row's.
 is vis-001's snapshot tolerance), as `m:ss` under an hour (`5:00`, `19:59`) and `h:mm:ss`
 from one (`1:00:00`). Before 0 (a negative `--from`) it reads `0:00`.
 
-| Window | Changes, `m:ss` | Changes, tenths (`300.1 s`, the dashboard's) |
+| Window | Changes, `m:ss` | Changes, tenths (`300.1 s`, the dashboard's `toFixed(1)`) |
 |---|---|---|
-| Midtown 300–360 s at 1× (60 s of video) | 59 | 599 |
+| Midtown 300–360 s at 1× (60 s of video) | 59 | 600 |
 | Midtown, the whole run (300 s of video, 3.99×) | 1,197 | 8,999 |
-| urban_grid, the whole run (290 s of video, 1×) | 290 | 2,899 |
+| urban_grid, the whole run (290 s of video, 1×) | 290 | 2,900 |
+
+*(2026-10-19, round 1)* The tenths column is rounded, as `toFixed(1)` is; the draft's 599
+and 2,899 were floored.
 
 Tenths change ten times a second of video at 1×, and every frame at Midtown's default
 speedup: a blur in a talk. The dashboard is a tool watched closely, and the video is
@@ -1106,8 +1114,9 @@ line, and "vehicles".
 **Tabular figures.** Fira Sans Medium's digits are proportional: their advances run from
 450 (`1`) to 573 (`0`) units of 1,000 (the font's `hmtx`, the probe's
 `out/font-widths.txt`). With them, every change of a digit would shift the words after it
-by up to a ninth of an em, about 3 px at 1080 lines. The font has the OpenType feature
-`tnum` (its `GSUB` lists it), and Bevy 0.19.1 sets features per text
+by up to an eighth of an em (123 units), about 3.7 px at 1080 lines. The font has the
+OpenType feature `tnum` (its `GSUB` lists it, read from the TTF in review round 1; the
+probe's `font_widths.py` reads only the advances), and Bevy 0.19.1 sets features per text
 (`TextFont::font_features`, `FontFeatureTag::TABULAR_FIGURES`). **The HUD sets `tnum`.**
 Measured (the probe's `out/widths.txt`): at 1080 lines the fill is **387 px** wide for `1:11 · 111 vehicles · 11 km/h`,
 `8:88 · 888 vehicles · 88 km/h`, `0:00 · 000 vehicles · 00 km/h` and `4:07 · 205 vehicles ·
@@ -1170,7 +1179,10 @@ both cameras: it is UI over the 3D image, so a flight does not move it.
 the last frame's, and the image is the UI pass's over the scene, as the credit line's.
 Bevy lays out glyphs into a font atlas the first time it meets them, so the HUD lays out
 every glyph it can draw (`0123456789:·– vehiclsmp/hk`) once, at spawn, before the settle
-frames. Measured (§2.20.15): Phase 1's seven cases rendered twice with the HUD,
+frames. *(2026-10-19, round 1)* The string is the probe's less its `\n` (there for the
+three-line layout; it draws no glyph), with which gate 7's counts were measured: every
+character `text` writes, and the `p` of mph, which km/h (OQ-5) leaves unused. It is kept
+as measured. Measured (§2.20.15): Phase 1's seven cases rendered twice with the HUD,
 every pair equal (8700 of 8700, 1800 of 1800); a frame rendered alone by a new job equals
 the same frame rendered in sequence, 9 of 9 (urban_grid's frames 0, 1, 30, 299 and 300;
 the city flight's 0, 29, 30 and 299 of 300–310 s), so a frame does not depend on the
@@ -1214,10 +1226,13 @@ Every CLI render in `scripts/` that is compared with a `ref-pin90b39292` file pa
 else (`gates.sh` 4, `gates-ties.sh` 2, `gates-see-through.sh` 12, `gates-parts.sh` 11),
 with the comment above them in each of the four. One more line compares with an earlier
 phase's frames: `gates-signals.sh`'s `off-` render in `case_`, against `look-p6`, gains
-`--no-hud` too. The other renders compare only with each other or count frames that
-differ, and still pass with the HUD drawn: `gates-ties.sh` gate 9, `gates-city.sh` gate
-13, `gates-credit.sh` gate 14, `gates-streets.sh` gates 10 and 11, `gates-look.sh` gate 10,
-and `gates-signals.sh`'s `signals-` pairs (gate 3). `gates-signals.sh` writes into
+`--no-hud` too, and the fifth comment is `case_`'s own, on its first line (`off against
+Phase 6` becomes `off (--no-signals --no-hud) against Phase 6`). The other renders compare
+only with each other, count frames that differ, or check only `ffprobe` and stderr, and
+still pass with the HUD drawn: `gates.sh`'s `explicit` render and its gate 4 error
+renders, `gates-ties.sh` gate 9, `gates-city.sh` gate 13, `gates-credit.sh` gate 14,
+`gates-streets.sh` gates 10 and 11, `gates-look.sh` gate 10, and `gates-signals.sh`'s
+`signals-` pairs (gate 3). `gates-signals.sh` writes into
 `scratch/out/signals/`, over Phase 1's renders, so Phase 2 copies those first (gate 2).
 
 #### 2.20.13 What it does not do
@@ -1252,8 +1267,8 @@ session's scratchpad:
   the three windows' frame-by-frame counts, means and clocks (`out/hud-*.txt`), the mean's
   definitions (`out/mean-defs.txt`), the per-second series of gate 12 (`out/series.txt`),
   and gate 6's sampled strings from the FCD alone (`out/expected-*.txt`);
-- **`font_widths.py`:** the font's advances and its `GSUB` features
-  (`out/font-widths.txt`);
+- **`font_widths.py`:** the font's advances (`out/font-widths.txt`); its `GSUB` features
+  were read in review round 1 (§2.20.8);
 - **`repo/`** is `git archive` of `origin/main` (`c814e5c`) with a draft `src/hud.rs`,
   `spawn_hud` and `set_hud_text` in `src/draw.rs`, `Renderer::set_hud`, `set_hud_text`,
   `hud_box` and `Job::set_hud`/`hud_text` with the hook in `Job::render_at`, and the HUD
@@ -1872,7 +1887,8 @@ drafted.
       is no snapshot;
     - `clock(t) -> String` (§2.20.6) and `text(t, n, mean) -> String` (§2.20.8): km/h as
       `⌊3.6·v + 0.5⌋`, `–` with no speed, "vehicle" for one;
-    - `GLYPHS`: every character `text` can write, laid out once at spawn (§2.20.9).
+    - `GLYPHS`: §2.20.9's string `0123456789:·– vehiclsmp/hk`, every character `text` can
+      write and the `p` of mph, as the probe measured; laid out once at spawn.
   - **`src/draw.rs`:** `spawn_hud(world, camera: Option<Entity>, font, size) -> HudNodes`
     (a root at `left: m, top: m`, with `UiTargetCamera` when `camera` is given; the fill
     and eight outline copies as `spawn_credit`'s, each `TextLayout::no_wrap()` and
@@ -1883,6 +1899,9 @@ drafted.
     despawns it, and settles again, as `set_streets`; `set_hud_text(&str)`;
     `hud_box() -> Option<[u32; 4]>`, the fill's laid-out rectangle grown by the offset and
     rounded outward, as `credit_box`; `hud_text() -> Option<String>`, the fill node's text.
+    *(2026-10-19, round 1)* `Renderer` gains a field for the image camera's entity, which
+    `build` holds today only in a local (and in `perspective` on that path), and loads
+    `draw::CREDIT_FONT` itself in `set_hud`, since `spawn_credit` keeps no handle.
   - **`src/lib.rs`:** `Job::set_hud(on) -> Result<()>`; every `prepare*` builds a job with
     it off. `render_at(t)` sets the text from `hud::numbers(&self.fcd, t,
     !boxes.is_empty())` after the boxes are taken and before the frame renders.
@@ -1900,23 +1919,32 @@ drafted.
     flag or default changes.
   - **Tests.** `tests/hud.rs` (new):
     - headless, not ignored: gate 5, and gate 13's `H`;
-    - headless, needing the fixtures, so ignored: gate 6's every-frame part;
+    - headless, needing the fixtures, so ignored: gate 6's every-frame part, through
+      `run::load` and `Run::boxes_at` with the frame times of `clock::{default_speedup,
+      frame_count, frame_time}` as `tests/camera.rs` uses them; the run is loaded as
+      `tests/signals.rs` loads its fixtures (no `Job`, which needs the GPU);
     - through the GPU, ignored, needing the fixtures: gate 6's sampled frames, gate 7 and
-      gate 9.
+      gate 9. Gate 7's tabular widths set their strings on a `Renderer` the test builds
+      (`Renderer::new(&strips, cam, 1, None, None)`, as `tests/signals.rs`), with
+      `set_hud(true)`, `set_hud_text(s)` and `render(&[])`; no `Job` method beyond the
+      scope's is added.
   - **Scripts.** `scripts/gates-hud.sh` (new, offline): gates 2 and 8, gate 13's CLI cases,
     and the renders for gate 12, into `scratch/out/hud/`. The 29 lines of §2.20.12 and
-    `gates-signals.sh`'s `off-` line gain `--no-hud`, and the comment above them in each of
-    the five scripts says so.
+    `gates-signals.sh`'s `off-` line gain `--no-hud`, and one comment in each of the five
+    scripts says so: the comment above them in the four, and `case_`'s first line in
+    `gates-signals.sh` (§2.20.12).
   - **Not edited:** every other test file and script; every source file not named above;
     `Cargo.toml` and `Cargo.lock`; `assets/`.
 - **Exit gate.** On the development machine (Apple M3, macOS, Bevy 0.19.1, ffmpeg 9.0.2),
   on urban_grid and Midtown at engine `90b39292` (FCD SHA-1s `3ad76744…` and `01becc86…`),
-  baseline, seed 42, with Midtown's Phase 2 cache (`scratch/midtown/buildings.geojson`,
-  SHA-256 `f241ccbd…`). Everything runs offline. The predictions come from §2.20.15's probe.
+  baseline, seed 42, with Midtown's buildings cache from vis-002 Phase 2
+  (`scratch/midtown/buildings.geojson`, SHA-256 `f241ccbd…`). Everything runs offline. The
+  predictions come from §2.20.15's probe.
 
   **Baseline, before any change**, at `origin/main`:
-  - **The machine:** `ps` for other builds and engine runs, and the load average, recorded;
-    if another project is building or running, the run waits and the user is told.
+  - **The machine:** `ps` for other builds and engine runs, and the load average, recorded,
+    here and again before the gate run; if another project is building or running, the run
+    waits and the user is told.
   - **The ten references** `scratch/ref-pin90b39292-*.framemd5` are present with their
     SHA-256s (`cdad89d1…` camera, `dcfdd2b7…` default, `f6255241…` ortho-city, `2139c319…`
     ortho-roads, `d6641985…` flight-city1 and city-off, `020475b7…` flight-roads1,
@@ -1939,11 +1967,12 @@ drafted.
      gate 2, `gates-see-through.sh` gate 2 and `gates-parts.sh` gate 2 each **1800 of 1800**
      against their references; the recorded lines of `gates-see-through.sh` gate 7 and
      `gates-parts.sh` gate 9 equal the baseline's.
-  2. **Off, against Phase 1** (`gates-hud.sh`). Phase 1's seven cases (its gate 10's list),
-     signals on, with `--no-hud`: urban_grid's default and `--camera tests/flight.toml`
-     **8700 of 8700**, and Midtown's five **1800 of 1800**, each against its
-     `signals-<case>.framemd5` in `scratch/out/signals-p1/`. And `gates-signals.sh`'s
-     `off-` renders, now with `--no-hud`, against `look-p6` as before (its gate 2).
+  2. **Off, against Phase 1** (`gates-hud.sh`; the second half in `gates-signals.sh`).
+     Phase 1's seven cases (its gate 10's list), signals on, with `--no-hud`: urban_grid's
+     default and `--camera tests/flight.toml` **8700 of 8700**, and Midtown's five **1800 of
+     1800**, each against its `signals-<case>.framemd5` in `scratch/out/signals-p1/`. And
+     `gates-signals.sh`'s `off-` renders, now with `--no-hud`, against `look-p6` as before
+     (its own gate 2).
      (The probe, without `HUD`: Phase 1's seven cases, 8700 of 8700 and 1800 of 1800 against `scratch/out/signals/signals-<case>.framemd5`, seven of seven.)
   3. **What Phase 2 does not touch.**
      - Every test file but `tests/hud.rs`, unedited, passes with every printed number
@@ -1992,8 +2021,11 @@ drafted.
   6. **The fixtures, against the FCD read straight** (`tests/hud.rs`, ignored). The test
      reads each fixture's parquet itself with the `parquet` crate (the columns `time`,
      `vehicle_id`, `speed`), groups it by `time`, and computes §2.20.4–§2.20.8's text at
-     every frame time, with `drawn` from each vehicle's first and last row. It compares
-     that with `hud::text` through `Job::boxes_at` and `Fcd::snapshot_at`:
+     every frame time, with `drawn` from each vehicle's first and last row, summing each
+     time's speeds in `vehicle_id` order as `rows_of` does. It compares that with
+     `hud::text` through `Run::boxes_at` and `Fcd::snapshot_at` (headless; the scope's
+     Tests). *(2026-10-19, round 1)* No snapshot's mean lies within 8.5e-5 km/h of a
+     half, so the order of the sum cannot change a rounding:
      - **every frame** of urban_grid's default render (**8,700**), Midtown's `--from 300 --to
        360 --speedup 1` (**1,800**) and Midtown's whole run at the default speedup
        (**9,000**): **0 differ**;
@@ -2024,10 +2056,14 @@ drafted.
        box drawn and a non-empty snapshot.
   - **The HUD — through the GPU:**
   7. **Drawn, alone** (`tests/hud.rs`, ignored: urban_grid's fixture; GPU). urban_grid's
-     orthographic job (`Job::prepare_with`, no buildings, no streets, no signals) at 150 s,
-     whose top-left corner holds only the background, at 1280×720, 1920×1080 and 3840×2160:
-     the frame without the HUD, then with `set_hud(true)`, whose text there is `2:30 · 83
-     vehicles · 30 km/h`:
+     orthographic job (`Job::prepare_with`, no buildings; streets, see-through and signals
+     on, as the probe's job had them) at 150 s, whose top-left corner holds only the
+     background (no dot of 36, no box), at 1280×720, 1920×1080 and 3840×2160: the frame
+     without the HUD, then with `set_hud(true)`, whose text there is `2:30 · 83 vehicles ·
+     30 km/h`. "Exactly the fill" counts the frame with the HUD (the frame without has
+     none); "exactly black, added" is the whole frame's count with the HUD less without
+     (the frame without the HUD has a few exactly black pixels already, all outside the
+     box: 4, 317 and 2,858):
 
      | Frame | `hud_box()` | Pixels changed, all inside it | Exactly the fill (240, 240, 240) | Exactly black, added |
      |---|---|---|---|---|
@@ -2040,8 +2076,9 @@ drafted.
      - **no pixel outside the box changes;**
      - **tabular figures**, at 1920×1080: `1:11 · 111 vehicles · 11 km/h`, `8:88 · 888
        vehicles · 88 km/h`, `0:00 · 000 vehicles · 00 km/h` and `4:07 · 205 vehicles · 23
-       km/h` lay out **387 px** wide each, `==` (without `tnum` the probe measured 358, 389,
-       390 and 378);
+       km/h` lay out **387 px** wide each, `==`, read as `hud_box()`'s width less `2o`
+       (`[27, 27, 420, 69]`: 393 − 6), through the scope's `Renderer` route (without `tnum`
+       the probe measured 358, 389, 390 and 378);
      - **without the feature, no pixel changes.**
 
      The counts are `==`: the probe's, through the same Bevy, font and GPU. They depend on
@@ -2057,7 +2094,9 @@ drafted.
      from its `signals-<case>.framemd5` in `scratch/out/signals-p1/` in **every frame**,
      since every frame draws the HUD. (The probe: every pair equal, 8700 of 8700 and 1800 of 1800; against Phase 1's renders, 0 frames equal in each of the seven.)
   9. **A frame does not depend on the frames before it** (`tests/hud.rs`, ignored, the
-     fixtures; GPU). Each of these frames, rendered alone by a new job, equals the same
+     fixtures; GPU). Each job is set as `render` sets it (`src/main.rs`): streets,
+     see-through, signals and the HUD on, as the probe's were. Each of these frames,
+     rendered alone by a new job, equals the same
      frame rendered in sequence from frame 0, byte for byte: urban_grid's default render,
      frames 0, 1, 30, 299 and 300; Midtown's city flight with `--buildings`, frames 0, 29,
      30 and 299 of `--from 300 --to 310 --speedup 1`. It is what `view`'s slider and
@@ -2079,7 +2118,7 @@ drafted.
       | ug-default | 184.6 (11 → 8), 201.4 (8 → 6) | 152.7 (6 → 4) |
       | ug-camera | 150.9, 148.1 (3) | 151.9 (3) |
 
-      The one gap above the noise is urban_grid's default render, 15–30 % slower with the
+      The one gap above the noise is urban_grid's default render, 21–32 % slower with the
       HUD, at a falling load; its `--camera` twin, at a steady load of 3, shows none.
       Gate 10 records it again beside the same run's `--no-hud` renders.)
   11. **`view --bench 20`** on Midtown at the default window with `--buildings` (streets,
@@ -2176,8 +2215,9 @@ drafted.
       its format, the text, the drawing (font, `tnum`, size, outline, place), the flag, the
       key, and `Job`'s accessors. `sources`: `src/hud.rs`, `src/draw.rs`, `src/render.rs`,
       `src/lib.rs`, `src/view/mod.rs`, `src/view/state.rs`, `src/main.rs`;
-    - `rules/render.md` (60 of 60): the CLI line gains `--no-hud`, and the scene one line
-      pointing to `rules/hud.md`; cut to fit, the cap not raised;
+    - `rules/render.md` (60 of 60): the CLI line gains `--no-hud`, the scene one line
+      pointing to `rules/hud.md`, and the Pipeline's per-frame bullet the HUD's text and its
+      `prepare_with` bullet the HUD off by default; cut to fit, the cap not raised;
     - `rules/view.md` (60 of 60): the CLI gains `--no-hud`, the drawing `H`, the frame
       order `H` after `L`; cut to fit;
     - `rules/credit.md`: one line, the HUD in the opposite corner, drawn the same way
@@ -2189,7 +2229,9 @@ drafted.
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
     - **the README:** the summary gains a sentence on the HUD; the `render` and the `view`
       usage blocks each gain `[--no-hud]`; a **HUD** bullet after **Signals** says what it
-      shows and where each number comes from, and `--no-hud`; `view`'s keys gain `H`; the
+      shows and where each number comes from, and `--no-hud`; the **Signals** bullet's
+      "`--no-signals` draws none, the video exactly as before" says the same now takes
+      `--no-hud` too; `view`'s keys gain `H`; the
       gate list gains `scripts/gates-hud.sh` and `cargo test --release --test hud --
       --include-ignored --test-threads=1`; the paragraph on the reference renders says the
       same of `--no-hud`;
