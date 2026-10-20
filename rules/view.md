@@ -12,7 +12,7 @@ covers: >
   and following, the readout, the keyframe line and the hidden `--bench`. The time
   slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.
 max_lines: 60
-generated: 2026-10-18
+generated: 2026-10-20
 ---
 
 # View
@@ -20,12 +20,12 @@ generated: 2026-10-18
 **What is true right now.** Corrected freely against the sources above.
 
 ## CLI
-`assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd] [--from]
-[--to] [--width 1280] [--height 720] [--buildings <file>] [--no-see-through] [--no-streets] [--no-signals]`.
+`assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd] [--from] [--to]
+[--width 1280] [--height 720] [--buildings <file>] [--no-see-through] [--no-streets] [--no-signals] [--no-hud]`.
 - `run::load` runs `render`'s checks after width and height, then `--buildings`'s, before
   any `App` is built; no ffmpeg. An error is one `error: …` line, exit 1, no window.
-- Stdout carries only keyframe lines, one per `K`, flushed. Stderr carries only the
-  error line or `--bench`'s JSON. Closing the window exits 0.
+- Stdout: only keyframe lines, one per `K`, flushed. Stderr: only the error line or `--bench`'s
+  JSON. Closing the window exits 0.
 - One Bevy app on the main thread (a window titled `assimilator-video view`, vsync). Per
   frame `track_pointer`, then input → `ViewInput` → `ViewState::frame` → the drawing.
 - Hidden `--bench <s>`: from `t = 140` at 2× at the launch fit, skips 3 s, records `s` s of
@@ -38,13 +38,13 @@ generated: 2026-10-18
   `--buildings`: their mesh and sun, `B` hides and shows them (`rules/buildings.md`); those in
   the way cut to stubs unless `--no-see-through`, `X` flips it (`rules/see-through.md`).
 - Signals on a network with one, shown unless `--no-signals`; `L` flips them (`rules/signals.md`).
+- The HUD at the top left, sized to the window, shown unless `--no-hud`; `H` flips it (`rules/hud.md`).
 
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
   `t` stays in `[from, to]`; reaching `to` pauses, and space at `to` restarts at `from`.
-- Speed `s = 2^(i−3)`, 1/8× … 64×. Keys go by logical character (`ButtonInput<Key>`), so
-  any layout works: `+`/`=` doubles, `-` halves; keypad `+`/`−` by position. Each stops at
-  its end, and held keys never repeat an action.
+- Speed `s = 2^(i−3)`, 1/8× … 64×. By logical character (`ButtonInput<Key>`, any layout): `+`/`=`
+  doubles, `-` halves; keypad `+`/`−` by position. Each stops at its end; held keys never repeat.
 - `←`/`→` pause and step `1/30` s. With Shift: to the latest snapshot below `t − 1e-6` or
   the earliest above `t + 1e-6` (the snapshots include the one before `from`); none, no move.
 
@@ -68,7 +68,7 @@ generated: 2026-10-18
 - Following sets the centre to the vehicle's placed point each frame it is drawn. When it
   is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops
   it; an orbit or a key step does not.
-- Frame order: bar press; clock; scrub; `Esc`; `B`; `X`; `M`; `L`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
+- Frame order: bar press; clock; scrub; `Esc`; `B`; `X`; `M`; `L`; `H`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`

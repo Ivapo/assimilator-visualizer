@@ -13,7 +13,7 @@ covers: >
   The render clock, the scene and camera, the headless Bevy pipeline, the ffmpeg
   output and the CLI contract of `assimilator-video render`.
 max_lines: 60
-generated: 2026-10-18
+generated: 2026-10-20
 ---
 
 # Render
@@ -23,7 +23,7 @@ generated: 2026-10-18
 ## CLI
 `assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
 [--results] [--fcd] [--from] [--to] [--speedup] [--fps 30] [--width 1920] [--height 1080]
-[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through] [--no-streets] [--no-signals]`.
+[--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through] [--no-streets] [--no-signals] [--no-hud]`.
 - Width and height must be even. Stderr: one `{"frame": n, "of": N}` per frame, then `{"done": "<out>"}`.
 - On error, one `error: …` line, exit 1; a clap usage error exits 2, its first line. No logger.
 
@@ -48,6 +48,7 @@ generated: 2026-10-18
   `--camera` too, those in the way cut to stubs unless `--no-see-through` (`rules/see-through.md`).
 - **Signals** unless `--no-signals`: a dot at each signalised stop line (`rules/signals.md`).
 - **Credit line**, only on a network with `map_origin`: bottom-right UI text (`rules/credit.md`).
+- **HUD** unless `--no-hud`: clock, vehicles and mean speed, top-left UI text (`rules/hud.md`).
 
 ## Camera
 - Without `--camera`: top-down orthographic, north up, fitted to the strips' bounding box
@@ -62,16 +63,15 @@ generated: 2026-10-18
   window or event loop; pipelines compile synchronously; the loop is pumped by hand.
 - The target is an `Rgba8UnormSrgb` image. The camera uses MSAA ×4, `Tonemapping::None`
   and `DebandDither::Disabled`. Three empty frames at start-up settle assets and pipelines.
-- Per frame: set dots and boxes, spawn `Screenshot::image(target)`, then update and `poll(Wait)`
-  until the observer has the lossless readback (≤ 200 updates): `W·H·4` bytes, top row first.
-- `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate):
-  size, fps, speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings,
-  the credit line (`prepare_without_credit`: none); see-through, streets and signals off (`set_streets`,
-  `set_signals` spawn them and settle again). Gates: `render_frame(n)`, `render_at(t)`, `render_empty()`,
-  `camera()`/`k()`, `pose_at(t)`, `boxes_at(t)`, `buildings()`, `motion_report()`, `credit*()`.
+- Per frame: set dots, boxes and the HUD's line, spawn `Screenshot::image(target)`, then update and
+  `poll(Wait)` until the observer has the lossless readback (≤ 200 updates): `W·H·4` bytes, top row first.
+- `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate): size, fps,
+  speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings, the credit line
+  (`prepare_without_credit`: none); see-through, streets, signals and the HUD off (`set_streets`,
+  `set_signals`, `set_hud` spawn them and settle again). Gates: `render_frame(n)`, `render_at(t)`,
+  `render_empty()`, `camera()`/`k()`, `pose_at(t)`, `boxes_at(t)`, `buildings()`, `motion_report()`,
+  `credit*()`, `hud*()`.
 
 ## Output
-- `ffmpeg -f rawvideo -pix_fmt rgba -s WxH -r fps -i - -c:v libx264 -pix_fmt yuv420p
-  -f mp4 <out>.partial`. ffmpeg's stderr is captured.
-- `<out>.partial` is renamed to `<out>` only after ffmpeg exits 0. On failure, or if the
-  encoder is dropped, `.partial` is removed.
+- `ffmpeg -f rawvideo -pix_fmt rgba -s WxH -r fps -i - -c:v libx264 -pix_fmt yuv420p -f mp4 <out>.partial`,
+  stderr captured; renamed to `<out>` only after exit 0, removed on failure or if the encoder is dropped.

@@ -8,7 +8,8 @@
 //! See-through (vis-002 §2.15.5) rebuilds the buildings' mesh with lowered heights.
 //! Streets (vis-002 §2.17.11) add two meshes: the junction surfaces and median noses,
 //! and the markings, recoloured as the fade follows the camera. Signals (vis-003 §2.12)
-//! add one more: every dot, rebuilt each frame.
+//! add one more: every dot, rebuilt each frame. The HUD (vis-003 §2.20.9) is a UI tree
+//! drawn as the credit line's, in the top-left corner, in `render` and `view`.
 
 use std::collections::HashSet;
 
@@ -22,6 +23,7 @@ use bevy::render::view::Msaa;
 use crate::buildings::{Buildings, MeshData};
 use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
 use crate::credit;
+use crate::hud;
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
 use crate::signals::DotsData;
@@ -907,4 +909,114 @@ pub fn set_dots(world: &mut World, entity: &DotsEntity, dots: &DotsData, at: (f6
 /// Despawn the dots.
 pub fn despawn_dots(world: &mut World, d: DotsEntity) {
     world.despawn(d.entity);
+}
+
+/// What [`spawn_hud`] spawned: the root, the fill text and its eight outline copies.
+#[derive(Debug, Clone, Copy)]
+pub struct HudNodes {
+    pub root: Entity,
+    pub fill: Entity,
+    pub outline: [Entity; 8],
+}
+
+/// One copy of the HUD's line: never wrapped, with tabular figures, so a digit that
+/// changes moves nothing after it (vis-003 §2.20.8).
+fn hud_text(font: &Handle<Font>, size: u32, color: [u8; 3]) -> impl Bundle {
+    (
+        Text::new(hud::GLYPHS),
+        TextFont {
+            font: font.clone().into(),
+            font_size: FontSize::Px(size as f32),
+            font_features: [bevy::text::FontFeatureTag::TABULAR_FIGURES].into(),
+            ..default()
+        },
+        TextColor(srgb(color)),
+        TextLayout::no_wrap(),
+    )
+}
+
+/// The eight outline copies' offsets from the fill, `o` px, in spawn order.
+fn hud_offsets(size: u32) -> impl Iterator<Item = (f32, f32)> {
+    let o = hud::outline_offset(size) as f32;
+    [-o, 0.0, o]
+        .into_iter()
+        .flat_map(move |dy| [-o, 0.0, o].into_iter().map(move |dx| (dx, dy)))
+        .filter(|&d| d != (0.0, 0.0))
+}
+
+/// Spawn the HUD's UI tree (vis-003 §2.20.9), drawn as the credit line is: a root
+/// `hud::margin(size)` px from the top and left edges, the fill text in its flow, and
+/// eight copies in the outline colour at `ZIndex(-1)`, each `hud::outline_offset(size)`
+/// px away in one of eight directions. With `camera`, drawn by it into its image
+/// (`render`); without, into the window (`view`). Every text holds `hud::GLYPHS` until
+/// [`set_hud_text`], so the first layout meets every glyph the HUD can draw.
+pub fn spawn_hud(
+    world: &mut World,
+    camera: Option<Entity>,
+    font: Handle<Font>,
+    size: u32,
+) -> HudNodes {
+    let m = hud::margin(size) as f32;
+    let mut root = world.spawn(Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(m),
+        top: Val::Px(m),
+        ..default()
+    });
+    if let Some(c) = camera {
+        root.insert(UiTargetCamera(c));
+    }
+    let root = root.id();
+    let fill = world
+        .spawn((hud_text(&font, size, hud::FILL), ChildOf(root)))
+        .id();
+    let mut outline = [Entity::PLACEHOLDER; 8];
+    for (slot, (dx, dy)) in outline.iter_mut().zip(hud_offsets(size)) {
+        *slot = world
+            .spawn((
+                hud_text(&font, size, hud::OUTLINE),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(dx),
+                    top: Val::Px(dy),
+                    ..default()
+                },
+                ZIndex(-1),
+                ChildOf(root),
+            ))
+            .id();
+    }
+    HudNodes {
+        root,
+        fill,
+        outline,
+    }
+}
+
+/// Set the HUD's line on all nine texts, each only where it differs, so an unchanged
+/// line is not laid out again.
+pub fn set_hud_text(world: &mut World, nodes: &HudNodes, line: &str) {
+    for e in std::iter::once(nodes.fill).chain(nodes.outline) {
+        let mut t = world.get_mut::<Text>(e).unwrap();
+        if t.0 != line {
+            t.0 = line.to_string();
+        }
+    }
+}
+
+/// Set the HUD's size: all nine texts' font size, the root's margin and the copies'
+/// offsets, for `view`'s window when it is resized (§2.20.10).
+pub fn set_hud_size(world: &mut World, nodes: &HudNodes, size: u32) {
+    let m = hud::margin(size) as f32;
+    let mut root = world.get_mut::<Node>(nodes.root).unwrap();
+    root.left = Val::Px(m);
+    root.top = Val::Px(m);
+    for e in std::iter::once(nodes.fill).chain(nodes.outline) {
+        world.get_mut::<TextFont>(e).unwrap().font_size = FontSize::Px(size as f32);
+    }
+    for (e, (dx, dy)) in nodes.outline.into_iter().zip(hud_offsets(size)) {
+        let mut n = world.get_mut::<Node>(e).unwrap();
+        n.left = Val::Px(dx);
+        n.top = Val::Px(dy);
+    }
 }
