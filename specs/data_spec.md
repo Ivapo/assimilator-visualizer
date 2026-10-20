@@ -1965,9 +1965,10 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
     that meets the kerb.
   - ~~*(design call: the user. It blocks gate 7's pixels and gate 12's wording, not the
     design: the two are one function of `src/links.rs`.)*~~
-  - *(answered 2026-10-20, user, before review)* **(a): the road strip tinted; per lane,
-    each lane's own strip,** as recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
-    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+  - *(answered 2026-10-20, user, before review)* **(a): the road strip tinted; per lane, each
+    lane's own strip,** as recommended. The probe's stills
+    (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`, `zoom-cars-orbit.png`,
+    `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
     `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.7.
     Gates 7 and 12 were written with this answer, and do not change.
 - **OQ-8** — The cars while link colours are on (§2.21.8): their speed colours, or one
@@ -1980,12 +1981,12 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
     shows the speed.
   - ~~*(design call: the user. It blocks gates 7 and 12's wording, not the design: one
     switch on the box colour.)*~~
-  - *(answered 2026-10-20, user, before review)* **Neutral light grey `(235, 235, 235)`
-    while link colours are on; the speed colours back when they are off,** as
-    recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
+  - *(answered 2026-10-20, user, before review)* **Neutral light grey `(235, 235, 235)` while
+    link colours are on; the speed colours back when they are off,** as recommended. The
+    probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
     `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
-    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.8. Gates 7 and 12 were written with this
-    answer, and do not change.
+    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.8.
+    Gates 7 and 12 were written with this answer, and do not change.
 - **OQ-9** — The palette (§2.21.6), four colours best → worst, for every measure.
   **RESOLVED.**
   - **(a) traffic:** green, yellow, orange, red (`#1a9850`, `#f2c12e`, `#f07f2a`,
@@ -1996,9 +1997,10 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
     (b).
   - *Recommendation:* (b), for the colour-blind reader and the signals' green dots.
   - ~~*(design call: the user. It blocks gate 7's colours and gate 12's wording.)*~~
-  - *(answered 2026-10-20, user, before review)* **(b): blue to red** (`#2c7bb6`,
-    `#9ecae1`, `#fdae61`, `#d7191c`), as recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
-    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+  - *(answered 2026-10-20, user, before review)* **(b): blue to red** (`#2c7bb6`, `#9ecae1`,
+    `#fdae61`, `#d7191c`), as recommended. The probe's stills
+    (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`, `zoom-cars-orbit.png`,
+    `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
     `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.6.
     Gates 7 and 12 were written with this answer, and do not change.
 - **OQ-10** — The legend (§2.21.9): one line under the HUD, top-left, at the HUD's size and
@@ -2009,11 +2011,12 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
     recommended look (`sheet-measures-<scene>.png` in palette (a)).
   - *Recommendation:* as drawn.
   - ~~*(design call: the user. It blocks gate 7's footprint and gate 12's wording.)*~~
-  - *(answered 2026-10-20, user, before review)* **The legend as drawn:** one line under
-    the HUD, in its place under `--no-hud`, as recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
-    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
-    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in
-    §2.21.9. Gates 7 and 12 were written with this answer, and do not change.
+  - *(answered 2026-10-20, user, before review)* **The legend as drawn:** one line under the
+    HUD, in its place under `--no-hud`, as recommended. The probe's stills
+    (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`, `zoom-cars-orbit.png`,
+    `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.9.
+    Gates 7 and 12 were written with this answer, and do not change.
 
 ## 4. Implementation phases
 
