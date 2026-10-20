@@ -11,7 +11,7 @@ covers: >
   its inputs and checks, how it is drawn and fitted, the font and its licence, and `Job`'s
   credit accessors.
 max_lines: 40
-generated: 2026-10-04
+generated: 2026-10-20
 ---
 
 # Credit
@@ -49,7 +49,7 @@ generated: 2026-10-04
   wider than `W − 2m`, all nine take `credit::fit_size`'s `floor(S·(W − 2m)/w)` and settle
   again; `m` and `o` stay the first size's.
 - Font: Fira Sans Medium 4.203 under the OFL 1.1, embedded from `assets/fonts/` (`OFL.txt`).
-- `Job::prepare_with` builds the line; `prepare_without_credit` is the same job without it,
-  for the gates. `credit()`, `credit_size()` (after the fit) and `credit_box()`: `[x0, y0,
-  x1, y1]`, `x1`/`y1` exclusive, the fill's laid-out rectangle grown by `o`, rounded
-  outward. No pixel outside it changes.
+- The HUD, in the opposite corner (top left), is drawn the same way (`rules/hud.md`).
+- `Job::prepare_with` builds the line; `prepare_without_credit` is the same job without it, for the
+  gates. `credit()`, `credit_size()` (after the fit) and `credit_box()`: `[x0, y0, x1, y1]`, `x1`/`y1`
+  exclusive, the fill's laid-out rectangle grown by `o`, rounded outward. No pixel outside it changes.
