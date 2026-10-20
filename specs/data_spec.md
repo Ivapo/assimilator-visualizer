@@ -22,7 +22,7 @@ phases:
     by: null
   - name: "Phase 2 — HUD: the clock, the vehicles on the road and their mean speed, top-left, by default"
     reviewed: 2026-10-19
-    shipped: null
+    shipped: 2026-10-20
     cut: null
     by: null
 
