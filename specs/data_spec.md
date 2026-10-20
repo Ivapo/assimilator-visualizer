@@ -1578,7 +1578,8 @@ contrast and lightness bands are a chart's, against a chart's surface; here the 
 the surface under the markings, and no text sits on it, so they are not applied.
 
 The palette is the user's (OQ-9). **Recommended: (b),** for the colour-blind reader and
-the green dots. Either is one constant in `src/links.rs`.
+the green dots. Either is one constant in `src/links.rs`. *(2026-10-20, user)* OQ-9 is
+answered (b), blue to red, as recommended, after the probe's stills.
 
 #### 2.21.7 Where the colour goes (OQ-7)
 
@@ -1615,7 +1616,8 @@ cut the band into one sub-band per lane, nearest lane nearest the kerb.
 **Recommended: (a), the strip tinted,** per lane as each lane's strip. (b) loses at city
 zoom, where the band is two pixels, and is covered by every building that meets the kerb.
 The choice is the user's (OQ-7): Phase 6's lesson (a look decided on paper failed at the
-visual gate) puts it to the stills.
+visual gate) puts it to the stills. *(2026-10-20, user)* OQ-7 is answered (a), the road
+strip tinted, per lane each lane's own strip, as recommended, after the probe's stills.
 
 #### 2.21.8 The cars (OQ-8)
 
@@ -1631,6 +1633,9 @@ On a tinted street:
 
 **Recommended: neutral while link colours are on,** and the speed colours back when they
 are off (`C` in `view`). The user's call (OQ-8), on the stills. Off, nothing changes.
+*(2026-10-20, user)* OQ-8 is answered as recommended: neutral light grey `(235, 235, 235)`
+while link colours are on, the speed colours back when they are off, after the probe's
+stills.
 
 #### 2.21.9 The legend (OQ-10)
 
@@ -1655,7 +1660,9 @@ and only while they are on: without it a viewer sees colours and no scale.
   length. A grey street reads as a street.
 
 **Recommended: as above.** The user sees it on every still (OQ-10); `nohud-mid-ortho.png`
-shows it in the HUD's place.
+shows it in the HUD's place. *(2026-10-20, user)* OQ-10 is answered as recommended: the
+legend as drawn, one line under the HUD, in its place under `--no-hud`, after the probe's
+stills.
 
 #### 2.21.10 Depth, the fade, and determinism
 
@@ -1947,6 +1954,7 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
 - **OQ-7** — Where the link colour goes (§2.21.7), chosen from the probe's stills
   (`scratch/vis003p3-probe/stills/`, 1920×1080, Midtown with buildings at 330 s
   orthographic and in the city flight, urban_grid at 150 s, and the orbit at 330 s).
+  **RESOLVED.**
   - **(a) The road strip tinted,** markings, arrows and dots on top, junctions grey;
     per lane, each lane's own strip.
   - **(b) A 3 m band outside the strip's kerb edge,** the road and its markings as today.
@@ -1955,19 +1963,31 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
     `zoom-place-ug.png` the same at twice the size, cropped.
   - *Recommendation:* (a). (b) is two pixels at city zoom and passes under every building
     that meets the kerb.
-  - *(design call: the user. It blocks gate 7's pixels and gate 12's wording, not the
-    design: the two are one function of `src/links.rs`.)*
+  - ~~*(design call: the user. It blocks gate 7's pixels and gate 12's wording, not the
+    design: the two are one function of `src/links.rs`.)*~~
+  - *(answered 2026-10-20, user, before review)* **(a): the road strip tinted; per lane,
+    each lane's own strip,** as recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
+    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.7.
+    Gates 7 and 12 were written with this answer, and do not change.
 - **OQ-8** — The cars while link colours are on (§2.21.8): their speed colours, or one
-  neutral light grey `(235, 235, 235)`?
+  neutral light grey `(235, 235, 235)`? **RESOLVED.**
   - `sheet-cars-<scene>.png`: speed colours and neutral, with each palette of OQ-9;
     `zoom-cars-orbit.png` and `zoom-cars-mid-ortho.png` cropped; `sheet-rec-<scene>.png`
     none, (a) with the speed colours, (a) neutral, and the whole recommendation.
   - *Recommendation:* neutral while the colours are on. On the same-hue street a speed
     colour loses its box (the orbit's red queue on a red street), and the street already
     shows the speed.
-  - *(design call: the user. It blocks gates 7 and 12's wording, not the design: one
-    switch on the box colour.)*
+  - ~~*(design call: the user. It blocks gates 7 and 12's wording, not the design: one
+    switch on the box colour.)*~~
+  - *(answered 2026-10-20, user, before review)* **Neutral light grey `(235, 235, 235)`
+    while link colours are on; the speed colours back when they are off,** as
+    recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
+    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.8. Gates 7 and 12 were written with this
+    answer, and do not change.
 - **OQ-9** — The palette (§2.21.6), four colours best → worst, for every measure.
+  **RESOLVED.**
   - **(a) traffic:** green, yellow, orange, red (`#1a9850`, `#f2c12e`, `#f07f2a`,
     `#d7263d`); the best and the worst 3.3 apart under deuteranopia.
   - **(b) blue to red:** blue, light blue, orange, red (`#2c7bb6`, `#9ecae1`, `#fdae61`,
@@ -1975,15 +1995,25 @@ replaces the tint mesh every frame while benching; its band (b) is 3 m.
   - `sheet-cars-<scene>.png`'s top row is (a), its bottom row (b); every `rec-*` still is
     (b).
   - *Recommendation:* (b), for the colour-blind reader and the signals' green dots.
-  - *(design call: the user. It blocks gate 7's colours and gate 12's wording.)*
+  - ~~*(design call: the user. It blocks gate 7's colours and gate 12's wording.)*~~
+  - *(answered 2026-10-20, user, before review)* **(b): blue to red** (`#2c7bb6`,
+    `#9ecae1`, `#fdae61`, `#d7191c`), as recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
+    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in §2.21.6.
+    Gates 7 and 12 were written with this answer, and do not change.
 - **OQ-10** — The legend (§2.21.9): one line under the HUD, top-left, at the HUD's size and
   outline, the measure's name and four swatches with their ranges; in the HUD's place under
-  `--no-hud`.
+  `--no-hud`. **RESOLVED.**
   - Every still with colours shows it; `nohud-mid-ortho.png` without the HUD;
     `sheet-rec-measures-<scene>.png` shows the four measures' legends and maps in the
     recommended look (`sheet-measures-<scene>.png` in palette (a)).
   - *Recommendation:* as drawn.
-  - *(design call: the user. It blocks gate 7's footprint and gate 12's wording.)*
+  - ~~*(design call: the user. It blocks gate 7's footprint and gate 12's wording.)*~~
+  - *(answered 2026-10-20, user, before review)* **The legend as drawn:** one line under
+    the HUD, in its place under `--no-hud`, as recommended. The probe's stills (`stills/sheet-place-mid-ortho.png`, `sheet-place-orbit.png`,
+    `zoom-cars-orbit.png`, `sheet-cars-mid-flight.png`, `sheet-rec-measures-mid-ortho.png`,
+    `rec-nohud-mid-ortho.png`) were put to the user before the answer. Recorded in
+    §2.21.9. Gates 7 and 12 were written with this answer, and do not change.
 
 ## 4. Implementation phases
 
@@ -2827,7 +2857,9 @@ changes no output. With it, it adds one mesh and one UI line and, if OQ-8 is ans
 recommended, draws the boxes in one colour. OQ-7 to OQ-10 (where the colour goes, the
 cars, the palette, the legend) are the user's; the scope and every gate are written with
 their recommendations, (a) the strip tinted, neutral cars, (b) blue to red, and the legend
-as drawn, and say what an answer changes.
+as drawn, and say what an answer changes. *(2026-10-20, user)* All four are answered as
+recommended (OQ-7 (a), OQ-8 neutral, OQ-9 (b), OQ-10 as drawn), so the scope and the gates
+stand as drafted.
 
 - **Scope:**
   - **`src/links.rs`** (new; no Bevy types):
@@ -3042,7 +3074,9 @@ as drawn, and say what an answer changes.
      The counts are `==`: the probe's, through the same Bevy and GPU, by a `Job` whose
      renderer is this one (`Renderer::new` at the fit, no credit on urban_grid) with no box
      drawn. They depend on OQ-7's and OQ-9's answers: another place or palette is measured
-     again before the gate is run, and recorded.
+     again before the gate is run, and recorded. *(2026-10-20, user)* OQ-7 and OQ-9 are
+     answered as these counts were measured ((a), the strip tinted; (b), blue to red), so
+     they stand.
   - **The colours — renders:**
   8. **On, deterministic** (`scripts/gates-links.sh`). Each twice, each pair equal, every
      measure and per lane covered: urban_grid's default `--link-colours density` and
@@ -3128,6 +3162,8 @@ as drawn, and say what an answer changes.
         --link-window 1` opens with "right now" stopped cars. The readout is unchanged.
 
       Then say whether OQ-7's, OQ-8's, OQ-9's and OQ-10's answers stand as they look.
+      *(2026-10-20, user)* OQ-7 to OQ-10 are answered as this gate was written, so it
+      stands as drafted.
   - **The flags and the key:**
   13. **Their edges.**
       - **`C`, headless** (`tests/links.rs`, not ignored), written as `tests/hud.rs`'s
