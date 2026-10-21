@@ -10,7 +10,7 @@ note: >
   run into a timeline, and checked against the run's FCD. Phase 2 (shipped 2026-10-20)
   draws a HUD in the top-left corner of every frame: the sim clock, the vehicles on the
   road and their mean speed, from the FCD's rows at each frame's time, by default;
-  `--no-hud` gives Phase 1's frames and `view`'s `H` hides and shows it. Phase 3 (drafted)
+  `--no-hud` gives Phase 1's frames and `view`'s `H` hides and shows it. Phase 3 (reviewed)
   colours each link by a measure of its FCD rows over the past window ending at the
   frame's time, off by default: `--link-colours` turns it on, `view`'s `C` cycles it.
 status: accepted
@@ -28,7 +28,7 @@ phases:
     cut: null
     by: null
   - name: "Phase 3 — Link colours: each link by a measure over the past window, off by default"
-    reviewed: null
+    reviewed: 2026-10-20
     shipped: null
     cut: null
     by: null
@@ -1434,8 +1434,8 @@ their count.
 **The interval, "right now".** The run's FCD interval `I` is the smallest gap between
 two successive FCD times in the whole file (1.000 s in both fixtures, as 0.99999999999909
 and 0.99999999999994). The engine writes at the first step whose clock reaches the last
-write's time plus its interval (`crates/output/src/runner.rs:run_to_results_db`,
-`next_fcd_time = time + fcd_interval`), so the rows of a run fall a fixed whole number of
+write's time plus its interval (`crates/output/src/runner.rs:run_to_results_db_with_sink`,
+which `run_to_results_db` calls: `next_fcd_time = time + fcd_interval`), so the rows of a run fall a fixed whole number of
 steps apart: the interval rounded up to a step (0.25 s at 0.1 s steps gives 0.3 s). A step
 with no vehicle writes no row (§2.20.3) but moves the next write on, so a missing time
 makes a gap of `2I`, never a smaller one; the smallest gap is the interval.
@@ -1443,7 +1443,9 @@ makes a gap of `2I`, never a smaller one; the smallest gap is the interval.
   lets `--link-window 1` through on both fixtures, whose `I` is a float sum a hair under 1.
 - **`W = I` is "right now":** on rows written every `I` seconds, `(t − I, t]` holds
   exactly one FCD time, the one vis-001's `Fcd::snapshot_at(t)` shows: the boxes', the
-  dots' step (§2.6) and the HUD's rows (§2.20.4).
+  dots' step (§2.6) and the HUD's rows (§2.20.4). *(2026-10-20, round 1)* Except at a
+  missing time (a step with no vehicle): there `(t − I, t]` holds no FCD time and the
+  measures have no row, while `snapshot_at(t)` still shows the time before (gate 5's `t` 4).
 - **A file with one FCD time** has no gap and no interval: any `W > 0` is taken.
 
 **The first seconds.** Before `t − W` reaches the first FCD time, the window holds fewer
@@ -1465,7 +1467,7 @@ urban_grid's default render begins at its first row (9.1 s), so its first frames
 
 **Backwards.** A frame's colours are a function of `t`, `W` and the measure alone,
 computed from the rows each frame (§2.21.12), with nothing carried from the frame before.
-So `view`'s slider, `Shift+←` and a restart at `from` (vis-001 §2.10) show at `t` what a
+So `view`'s slider, `Shift+←` and a restart at `from` (vis-001 §2.9, §2.10) show at `t` what a
 render shows at `t`, whichever way `t` moved; gate 9 checks a frame alone against the same
 frame in sequence.
 
@@ -1646,16 +1648,32 @@ and only while they are on: without it a viewer sees colours and no scale.
   % ■ 50–75 % ■ ≥ 75 %`; `speed ■ < 10 ■ 10–20 ■ 20–30 ■ ≥ 30 km/h`; `cars / lane-km ■ < 3
   ■ 3–6 ■ 6–12 ■ ≥ 12`; `stopped cars ■ < 0.25 ■ 0.25–0.5 ■ 0.5–1 ■ ≥ 1`.
 - **Drawn as the HUD is** (§2.20.9): Fira Sans Medium at `S` (1/36 of `min(H, 9W/16)`),
-  the light fill with the eight black copies; each swatch a square of `0.75·S` with an
-  `o`-px black border. Its top is `m + 1.6·S` (the HUD's line box, 1.2·S, and 0.4·S
+  the light fill with the eight black copies; each swatch a square of `round(0.75·S)`
+  with an `o`-px black border. Its top is `m + 1.6·S` (the HUD's line box, 1.2·S, and 0.4·S
   between), or `m` under `--no-hud`; its left is `m`.
+- *(2026-10-20, round 1)* **Its layout, as the probe drew it** (gate 7's counts are of
+  this): a root node at (`m`, top), absolute, a flex row with its items centred
+  (`AlignItems::Center`); the title, then for each step its swatch and its label. Each text
+  item is a node with a right margin of `0.4·S`, holding the fill text in its flow and the
+  eight black copies `o` px away at `ZIndex(-1)`, as the HUD's; the texts are the strings
+  above as set (no `GLYPHS` placeholder), at `S` px, no wrap, **without** the HUD's
+  tabular figures (the legend's text never changes, so it needs no fixed digit width).
+  Each swatch is a node `round(0.75·S)` px square (23 at 1080 lines), with an `o`-px
+  border in the outline colour, its background the step's colour, and a right margin of
+  `0.25·S`.
+- *(2026-10-20, round 1)* **Where its top is decided.** In `render`, when `set_links`
+  spawns it, from whether the HUD is on then: `main.rs` calls `job.set_hud` before
+  `job.set_links`, as the probe does. In `view`, from `hud_shown` each frame: `H` moves it
+  between `m + 1.6·S` and `m`, so a hidden HUD leaves no gap and a shown one never covers
+  it.
 - **About 745 px wide at 1080 lines** for `relative` (x 27 to 772 in the probe's frames),
   from the top-left corner to under half the frame's width; the credit line stays bottom-right, far
   from it. In Midtown's overview it lies over the background and two street ends; in a
   flight, over whatever the pose puts there.
 - **Static per render:** its text is set at spawn, so the settle frames lay out its glyphs
   (`≥`, `%`, `/` and the rest) before the first frame. In `view` it is respawned when `C`
-  changes the measure.
+  changes the measure, when the window's size changes, and *(2026-10-20, round 1)* when `H`
+  changes `hud_shown`.
 - **Not in it:** a swatch for today's road (no car, the speed measures) and the window's
   length. A grey street reads as a street.
 
@@ -1705,7 +1723,10 @@ stills.
   `Colour` and §2's prose; `--link-colors` is not an alias.
 - **`--link-window <SECONDS>`**, default 60, and **`--link-lanes`**. On `render` each
   needs `--link-colours` (clap's `requires`, exit 2, as any usage error); on `view` they are
-  taken alone, for `C`.
+  taken alone, for `C`. *(2026-10-20, round 1)* `--link-window` is an `Option<f64>` with
+  the 60 applied in code, so `view` knows whether it was given, and takes a negative number
+  as a value (clap's `allow_negative_numbers`), so `--link-window -5` reaches error 1
+  rather than clap's unknown-argument error.
 - **Off** (no `--link-colours` on `render`): nothing is read, built or spawned, the cars
   keep their speed colours, and every frame is Phase 2's (gates 1 and 2).
 - **`C`** in `view` (*colours*; by position, `KeyCode::KeyC`, unbound today: `view` uses
@@ -1719,7 +1740,8 @@ stills.
 **The errors**, each one line, exit 1, no output file and no window (vis-001 §2.4), raised
 after `run::load` has read the FCD, in this order:
 1. `error: --link-window must be a positive number of seconds (got <W>)`, for `W ≤ 0` or
-   not finite (`nan`, `inf`); clap rejects a word, exit 2.
+   not finite (`nan`, `inf`); clap rejects a word, exit 2. `<W>` is the parsed `f64` as
+   Rust's `{}` prints it (`0.5`, `-5`, `NaN`, `inf`), here and in error 2.
 2. `error: --link-window <W> s is shorter than the run's FCD interval (<I> s); --link-window
    <I> colours by each frame's own FCD row`, for `W < I − 1e-6`, with `I` printed to the
    millisecond (`1.000`).
@@ -1727,7 +1749,9 @@ after `run::load` has read the FCD, in this order:
 Both name the flag. On `render` they are checked only with `--link-colours`; on `view`
 at launch when `--link-colours` or `--link-window` is given. A plain `view` on a run whose
 interval exceeds 60 s opens as today, and `C` then leaves the colours off (as `L` on a
-network with no signal): neither fixture has one.
+network with no signal): neither fixture has one. *(2026-10-20, round 1)* `C` still cycles
+`ViewState`'s `link_measure` (gate 13); `src/view/mod.rs` draws nothing for it then: no
+tint, no legend, and the boxes keep their speed colours.
 
 **No other new error:** the link colours read the FCD `run::load` has checked and the
 network `Placement` holds. A unit whose link has no placed geometry draws nothing.
@@ -2856,8 +2880,8 @@ flights. Without it the video is byte-identical to Phase 2's (gates 1 and 2).*
 
 Drafted 2026-10-20; the design is §2.21, and the user's decisions are §2.2's 8–13. Phase 3
 builds on Phase 2 (shipped 2026-10-20) at engine `90b39292`. Without `--link-colours` it
-changes no output. With it, it adds one mesh and one UI line and, if OQ-8 is answered as
-recommended, draws the boxes in one colour. OQ-7 to OQ-10 (where the colour goes, the
+changes no output. With it, it adds one mesh and one UI line and draws the boxes in one
+colour (OQ-8, answered). OQ-7 to OQ-10 (where the colour goes, the
 cars, the palette, the legend) are the user's; the scope and every gate are written with
 their recommendations, (a) the strip tinted, neutral cars, (b) blue to red, and the legend
 as drawn, and say what an answer changes. *(2026-10-20, user)* All four are answered as
@@ -2875,7 +2899,18 @@ stand as drafted.
       `Links::with_units(units, &Fcd) -> Links`, which takes every row of the file from
       `Fcd::vehicles` into (`time`, `vehicle_id`) order, its FCD times, and the interval
       `I` (§2.21.3); `Links::new(&Placement, &Fcd, per_lane)` builds the units from the
-      network (link order, lanes in order) and calls it;
+      network (link order, lanes in order) and calls it. *(2026-10-20, round 1)* A unit's
+      fields: `link` the link's name; `lane` `None` for a link, `Some(k)` for its lane `k`;
+      `length` the trimmed `Placement::link_length`; `lanes` what density divides by (the
+      link's lane count, or 1 for a lane); `limits: Vec<f64>` the `speed_limit` of each lane
+      it covers, in lane order (one for a lane); `span` its lateral extent from the link's
+      centreline in metres, right positive (`[−w/2, w/2]` for a link of total width `w`,
+      `lane_center_offsets()[k] ∓ width_k/2` for lane `k`). A row goes to the unit of its
+      `link_id` whose `lane` is `None` or the row's lane, a lane at or past the link's last
+      going to the last (§2.21.4), so one call can mix link and lane units (gate 5); its
+      limit is `limits[lane]` for a link (the same clamp) and `limits[0]` for a lane.
+      *(2026-10-20, round 2)* A link has one link unit or its lane units, never both; given
+      lane units, its last is the highest `k` among them;
     - `Links::interval() -> Option<f64>` and `check_window(w, interval) -> Result<()>`,
       which raises §2.21.11's two errors, in that order;
     - `Links::values_at(t, w, m) -> Vec<Option<f64>>` (§2.21.3, §2.21.4), `step(m, v) -> u8`
@@ -2888,20 +2923,32 @@ stand as drafted.
     the triangles of every unit that has a colour, only when a colour differs from the last
     frame's; hidden when none has one), `despawn_tint`; `spawn_legend` (§2.21.9: a root
     under the HUD, `UiTargetCamera` when a camera is given, the outlined title and labels as
-    the HUD's texts, the swatches as nodes with a background and a black border) and its
-    despawn; the boxes' colour: `materials` and `boxes_mesh` take the box colour as a
-    function of speed, `scene::SPEED_BINS` or `links::CARS`.
-  - **`src/render.rs`:** `Renderer::set_links(Option<(TintData, legend)>)` spawns the tint
-    and the legend (top `m + 1.6·S`, or `m` with no HUD) and turns the boxes neutral, or
-    despawns them and restores the speed colours, then settles again;
-    `set_link_colours(&[Option<[u8; 3]>])`; `legend_box() -> Option<[u32; 4]>`, as
-    `hud_box`.
+    the HUD's texts, the swatches as nodes with a background and a black border; its
+    layout exactly §2.21.9's) and its despawn; the boxes' colour: `materials` and
+    `boxes_mesh` take the box colour as a function of speed, `scene::SPEED_BINS` or
+    `links::CARS`, and `set_boxes` and `spawn_boxes` pass it through. *(2026-10-20, round
+    1)* `materials` makes one material per speed bin, once, in `Renderer::build`, kept in
+    `render::Boxes::Pool`; neutral boxes replace that list with the neutral material in
+    every slot (and back), without a second road material. *(2026-10-20, round 2)* So the
+    neutral list is built beside `materials`' (one `links::CARS` material, cloned into each
+    slot), not by calling `materials` again.
+  - **`src/render.rs`:** `Renderer::set_links(Option<(TintData, Option<legend>)>)` spawns
+    the tint and, when given, the legend (top `m + 1.6·S` if the HUD is on at the call, else
+    `m`, §2.21.9) and turns the boxes neutral, or with `None` despawns them and restores
+    the speed colours, then settles again; *(2026-10-20, round 2)* a second `Some`
+    replaces the first (despawned, then spawned), as `set_hud` does, which gate 7 relies
+    on; `set_link_colours(&[Option<[u8; 3]>])`.
+    *(2026-10-20, round 1)* The draft's `legend_box()` is dropped: no gate or caller reads
+    it (gate 7 counts the legend's pixels instead).
   - **`src/lib.rs`:** `LinkOptions { measure, window, lanes }`; `Job::set_links(Option<
     LinkOptions>) -> Result<()>`: on builds `Links::new`, runs `check_window` and tells the
     renderer; every `prepare*` builds a job with them off. `render_at(t)` sets the colours
-    after the dots and before the boxes. `Job::link_colours()` reads back the last frame's.
+    after the dots and before the boxes. `Job::link_colours() -> Option<Vec<Option<[u8;
+    3]>>>` reads back the last frame's, `None` while off (gate 9 compares it with
+    `Links::colours_at`).
   - **`src/view/mod.rs`, `src/view/state.rs`:**
-    - `ViewOptions` gains `links: Option<Measure>`, `link_window` and `link_lanes`;
+    - `ViewOptions` gains `links: Option<Measure>`, `link_window: Option<f64>` and
+      `link_lanes`;
     - at launch, before the window: `Links::new`, and `check_window` when `--link-colours`
       or `--link-window` is given (its error is `view`'s); with neither, a window below
       the interval leaves `C` inert (§2.21.11);
@@ -2910,13 +2957,15 @@ stand as drafted.
       `Measure::next` after `H`;
     - while `Some`, the colours for `t` every frame (the mesh replaced only on a change, and
       every frame of `--bench`), the boxes neutral, the legend for the measure at the
-      window's size, respawned when the measure or the size changes; while `None`, hidden
+      window's size, respawned when the measure, the size or `hud_shown` changes, its top
+      from `hud_shown` (§2.21.9); while `None`, or `Some` with `C` inert (§2.21.11), hidden
       and the speed colours back.
   - **`src/main.rs`:** `--link-colours [MEASURE]` (`num_args = 0..=1`, `default_missing_value
-    = "relative"`, clap's possible values), `--link-window <SECONDS>` (`f64`, default 60)
-    and `--link-lanes` on `render` and `view`, with help text; on `render` the last two
-    `requires = "link_colours"`; `render` calls `job.set_links(Some(..))?` when the flag is
-    given. No other flag or default changes.
+    = "relative"`, clap's possible values), `--link-window <SECONDS>` (`Option<f64>`,
+    `allow_negative_numbers = true`, 60 when not given, §2.21.11) and `--link-lanes` on
+    `render` and `view`, with help text; on `render` the last two `requires =
+    "link_colours"`; `render` calls `job.set_links(Some(..))?` when the flag is given,
+    after `job.set_hud` (§2.21.9). No other flag or default changes.
   - **Tests.** `tests/links.rs` (new):
     - headless, not ignored: gate 5, and gate 13's `C`;
     - headless, needing the fixtures, so ignored: gate 6, through `run::load` and
@@ -2925,7 +2974,10 @@ stand as drafted.
     - through the GPU, ignored, needing urban_grid's fixture: gate 7 (a `Renderer` the
       test builds, as `tests/signals.rs`), and gate 9 (`Job`s).
   - **Scripts.** `scripts/gates-links.sh` (new, offline): gates 2 and 8, gate 13's CLI
-    cases, and gate 12's renders, into `scratch/out/links/`. No existing script line
+    cases, and gate 12's renders, into `scratch/out/links/`, each on-render as
+    `links-<case>.mp4` and `links-<case>.framemd5` and its second as `links-<case>-2.*`
+    (`<case>` as gate 12 names them: `ortho-city`, `city`, `orbit`, `ug-camera`, and
+    `ug-default`, `ortho-roads`, `city-roads` for gate 8's other three). No existing script line
     changes: link colours are off unless asked for.
   - **Not edited:** every other test file and script; every source file not named above;
     `Cargo.toml` and `Cargo.lock`; `assets/`.
@@ -3007,7 +3059,7 @@ stand as drafted.
      | `t`, `W` | `n` | A | B | C | D |
      |---|---|---|---|---|---|
      | 0.5, 60 (before the first row) | 0 | – – 0 0 | – – 0 0 | – – 0 0 | – – 0 0 |
-     | 1, 60 | 1 | 1 2 2 3 | 2 2 3 0 | **0 0** 2 0 | **0 1** 2 0 |
+     | 1, 60 | 1 | 1 2 2 3 | 2 2 3 0 | 0 **0** 2 0 | **0** 1 2 0 |
      | 3, 60 | 3 | 2 2 2 2 | 1 0 3 0 | 0 0 1 0 | 0 1 1 0 |
      | 5, 60 | 4 | 2 2 2 **2** | 2 0 3 **1** | 0 0 0 0 | 0 1 0 0 |
      | 2, 1 (right now) | 1 | 2 3 2 3 | 0 0 3 0 | – – 0 0 | – – 0 0 |
@@ -3027,7 +3079,10 @@ stand as drafted.
        error naming `--link-window` and `1.000 s`; 0.9999995, 1 and 60 are taken; 0, −1,
        `NaN` and `inf` give the positive-number error; an `Fcd` with one FCD time takes 0.01.
 
-     Every value `==`. **Without the feature it fails:** there is no `links` module.
+     Every step `==`, and every `–` is `None` from `values_at`. *(2026-10-20, round 1)* The
+     bold marks were on C's `relative` and D's `speed`, which are step 0 (0.99999999996)
+     and step 1 (27 km/h) on the raw value too; the rounding cases are C's `speed` and D's
+     `relative`. **Without the feature it fails:** there is no `links` module.
   6. **The fixtures, against the FCD read straight** (`tests/links.rs`, ignored). The test
      reads each fixture's parquet itself (`time`, `vehicle_id`, `link_id`, `lane`,
      `speed`), the network's lengths through `Placement::link_length` and its lanes'
@@ -3052,13 +3107,22 @@ stand as drafted.
 
      (The probe's `Links::values_at`, binned on the unrounded value, equals the straight
      computation in all 12,176 values at these and four more times, §2.21.16.)
+     *(2026-10-20, round 1)* `359.97` and `299.07` are the last frames, by index: Midtown's
+     frame 1,799 (300 + 1,799/30 s) and urban_grid's frame 8,699 (9.1 + 8,699/30 s), each
+     taken as `clock.time_of(n)` gives it.
   - **The colours — through the GPU:**
   7. **Drawn** (`tests/links.rs`, ignored: urban_grid's fixture; GPU). urban_grid's strips
      through `Renderer::new` at the fit (`k` 1.1481, 1920×1080), streets on, a pool of 1,
      no buildings, no credit, no box; `set_links` with `Links::new` per link and its
      `tint`, and the legend for `relative`; the colours of `relative` at 150 s; `render(&[])`.
      First with the tint alone (`set_links` with no legend), then with the legend; no HUD,
-     so the legend's top is `m`:
+     so the legend's top is `m`. *(2026-10-20, round 1)* Each count is of pixels that
+     differ from the same renderer's frame **with no colours** (rendered first, before
+     `set_links`): "the tint changes" counts them in the tint-alone frame, "the legend adds"
+     is the count in the tint-and-legend frame less the tint-alone count (at 1080 lines
+     50,264 − 34,903). It is not the diff of the two frames: a tinted street at x 699–705
+     runs under the legend's row at 1080 lines (618 tinted pixels in the probe's top-left
+     region, y < 120, some of them under the legend), which that diff would count too. The legend is laid out as §2.21.9 states, the probe's `spawn_legend`:
 
      | Frame | Pixels the tint changes | of them exactly a palette colour | Pixels the legend adds |
      |---|---|---|---|
@@ -3090,7 +3154,10 @@ stand as drafted.
      stopped`, and `--camera tests/see-through-flight.toml --buildings … --link-colours
      stopped --link-window 1` **1800 of 1800** each (`ffprobe` `1920,1080,30/1,…`). **The
      look changed:** each first render differs from its case's `hud-<case>.framemd5` in
-     `scratch/out/hud-p2/` in at least one frame, the count recorded. (The probe,
+     `scratch/out/hud-p2/` in **every** frame, the count recorded. *(2026-10-20, round 1)*
+     The draft's "at least one frame" is passed by the neutral boxes alone; the legend is
+     on every frame, so no frame can be equal. That the tint is the measure asked for is
+     gate 9's check of `Job::link_colours`, and gate 12's. (The probe,
      four of the seven, palette (a) and the speed colours: every pair equal; against Phase
      2's, 0 frames equal in each, §2.21.16.)
   9. **A frame does not depend on the frames before it** (`tests/links.rs`, ignored, the
@@ -3100,7 +3167,10 @@ stand as drafted.
      30, 299 and 300; Midtown's city flight with `--buildings --link-colours speed
      --link-lanes`, frames 0, 29, 30 and 299 of `--from 300 --to 310 --speedup 1`. It is
      what `view`'s slider relies on (§2.21.3). (The probe: 9 of 9
-     equal, 0 pixels differ.)
+     equal, 0 pixels differ.) *(2026-10-20, round 1)* At each of these frames, in sequence
+     and alone, `Job::link_colours()` equals `Links::colours_at(t, W, m)` of a `Links` the
+     test builds with `Links::new` for the same measure, window and lanes, `t` the frame's
+     time: the job tints by what its options name.
   - **Recorded, with one bar:**
   10. **Render time.** Gate 8's wall times beside the same run's gate 2 renders of the same
       cases, each with the load average after it. Prediction: within the machine's noise; a
@@ -3163,6 +3233,15 @@ stand as drafted.
         no legend), the legend changing with each. Dragging the slider back and forth, the
         colours follow the time both ways at once. `view --link-colours stopped
         --link-window 1` opens with "right now" stopped cars. The readout is unchanged.
+        *(2026-10-20, round 1)* With colours on, `H` hides the HUD and the legend moves up
+        into its place; `H` again brings the HUD back with the legend under it.
+
+      *(2026-10-20, round 1)* Where the numbers come from: Midtown's counts at 0:00 and
+      urban_grid's at the end are gate 6's rows; Midtown's ranges are `out/series-midtown.txt`'s
+      samples every 5 s, and urban_grid's first light blue at 39.1 s is
+      `out/series-urban_grid.txt`'s; the orbit's times and queues have no recorded source in
+      the probe's `out/` (its `runs/` keep framemd5s, no video). They are descriptions for
+      the user to watch against, not counts, and a miss among them is recorded, not a fail.
 
       Then say whether OQ-7's, OQ-8's, OQ-9's and OQ-10's answers stand as they look.
       *(2026-10-20, user)* OQ-7 to OQ-10 are answered as this gate was written, so it
@@ -3175,6 +3254,9 @@ stand as drafted.
         `Some(Speed)` one gives `density`; then playing and following with `K` pressed in
         the same frame, through a right-button orbit, a drag and a scrub of the slider,
         every other field of the state equals that of a twin stepped without `c`.
+        *(2026-10-20, round 1)* `gate13_h`'s sequence of frames, with its four named fields
+        replaced by the twin: a clone stepped through the same inputs without `c`, compared
+        whole (`ViewState` is `PartialEq`) after its `link_measure` is set to the first's.
       - **The CLI** (`scripts/gates-links.sh`). Each `view` runs under `perl -e 'alarm 60;
         exec @ARGV'`. On urban_grid, `render --from 10 --to 20 --speedup 1`:
         - `--link-colours --link-window 0.5`: exit 1, stderr's one line is
@@ -3202,15 +3284,18 @@ stand as drafted.
   | Synthetic: steps at eight `(t, W)` and per lane; `check_window` | as tabled, `==`; refused below `I − 1e-6`, taken from it | 5 |
   | Fixtures: every frame against the FCD read straight; step counts | 0 of 1,800 / 8,700 differ; as tabled | 6 |
   | urban_grid's colours drawn at 150 s | the tint 16,246 / 34,903 / 137,509 px, none over the background; 22 midpoints exactly their colour, 26 exactly the road; the legend 7,116 / 15,361 / 57,304 px | 7 |
-  | Seven renders on, twice; against Phase 2 | equal; differ in ≥ 1 frame | 8 |
-  | A frame alone against the same frame in sequence | equal, 9 of 9 | 9 |
+  | Seven renders on, twice; against Phase 2 | equal; differ in every frame | 8 |
+  | A frame alone against the same frame in sequence; the job's colours | equal, 9 of 9; equal to `colours_at` | 9 |
   | `view --bench 20` with link colours | ≥ 30 fps | 11 |
   | `C`; the window's errors; usage errors | cycles, only its field; exit 1 with the flag named; exit 2 | 13 |
 - **Not predicted, and so not gated:**
   - the look: OQ-7 to OQ-10 as answered, how the tint sits under the markings and the dots,
     and how the legend reads over each background, for the user at gate 12;
   - render times (gate 10), and `view`'s frame rate above 30 (gate 11);
-  - the legend's glyphs pixel for pixel: gate 7 bounds its box.
+  - ~~the legend's glyphs pixel for pixel: gate 7 bounds its box.~~ *(2026-10-20, round 1)*
+    Wrong as drafted: gate 7 counts the legend's pixels exactly, with its layout stated in
+    §2.21.9, and checks no box. Not predicted: how the glyphs read over a flight's
+    buildings, which is gate 12's.
 - **Close-out (standing plan steps, the methodology's §3):**
   - **Commit plan:** one branch (`vis-003-phase-3`), one push. The commits:
     - `src/links.rs`, `src/draw.rs`, `src/render.rs`, `src/lib.rs`, `src/main.rs`'s
@@ -3219,7 +3304,9 @@ stand as drafted.
     - `view`: `src/view/mod.rs`, `src/view/state.rs` and `src/main.rs`'s `view` flags (`C`,
       the colours, the legend, the window's check), and gate 13's `C` test;
     - `tests/links.rs`'s GPU gates (7, 9) and `scripts/gates-links.sh` (gates 2, 8 and 13's
-      CLI cases, and gate 12's renders). Gates 1–4, 6–11 and 13 run after this commit;
+      CLI cases, and gate 12's renders). Gates 1–11 and 13 run after this commit
+      (*(2026-10-20, round 1)* gate 5 too: the draft left it out, and gate 3 excludes
+      `tests/links.rs`);
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
@@ -3240,7 +3327,11 @@ stand as drafted.
       (`rules/links.md`); cut to fit;
     - `rules/hud.md` (40 of 40): one line, the legend under the line (`rules/links.md`);
       cut to fit;
-    - `rules/signals.md`, `rules/inputs.md`, `rules/credit.md`, `rules/slider.md`,
+    - *(2026-10-20, round 1)* `rules/inputs.md` (50 of 50): "Checks before the first frame
+      (order)" gains, last, with link colours on (`view`: or `--link-window` given), the
+      window against the interval (`rules/links.md`), and `sources` gains `src/links.rs`;
+      cut to fit. The draft had it as none needed;
+    - `rules/signals.md`, `rules/credit.md`, `rules/slider.md`,
       `rules/buildings.md`, `rules/see-through.md`, `rules/parts.md`, `rules/motion.md`:
       none needed, since nothing they say changes (the colours read no new input, and the
       dots, the credit line and the slider are untouched);
