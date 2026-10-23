@@ -10,12 +10,12 @@ note: >
   today's boxes. A third fixture, Midtown with a class mix, is built by
   `scripts/fixture.sh mix`. Phase 2, turn signals by the visualizer's own rule, is
   roadmap only.
-status: draft
+status: accepted
 last_updated: 2026-10-23
 
 phases:
   - name: "Phase 1 — Shapes: a shape per class, brake lights and headlights, in 3D, by default"
-    reviewed: null
+    reviewed: 2026-10-23
     shipped: null
     cut: null
     by: null
@@ -43,7 +43,7 @@ reference: >
 ## 1. Goal
 
 Make the vehicles of a 3D video read as traffic. Today every vehicle is a box, length ×
-1.8 × 1.5 m, in its speed colour (vis-001 §2.3, §2.11.2). In Midtown's city flight a
+1.8 × 1.5 m, in its speed colour (vis-001 Phase 1's "Vehicles", §2.11.2). In Midtown's city flight a
 12 m truck would be a long box like a long car, and a bus a box like a truck, and nothing
 on a car says which way it faces or whether it is stopping. From Phase 1, in the
 perspective views, each vehicle is drawn as a shape for its class: a car with a cabin, a
@@ -161,7 +161,9 @@ user before the answers:
 11. **Headlights always lit,** warm white (OQ-5 (a), §2.9).
 12. **`--no-shapes` and `V`** (OQ-6, §2.13).
 
-The rest of this section is the draft's proposal. It settles:
+The rest of this section is the draft's proposal, with its recommendations as the user
+chose them (decisions 7–12; *(2026-10-23, round 1)* a "(proposed)" below is now also
+"chosen"). It settles:
 - what the run gives (§2.4) and the mix fixture (§2.5);
 - each shape (§2.6, OQ-1) and its colours (§2.7, OQ-2);
 - the brake lights (§2.8, OQ-3 and OQ-4) and the headlights (§2.9, OQ-5);
@@ -255,15 +257,83 @@ nothing else:
 - **`project.yaml`:** four classes after `car` and one named mix, `mixed`, in place of
   `vehicle_mixes: {}`:
 
-  | Class | Share | `length` (m) | `max_speed`; accel; decel | Behaviour from |
+  | Class | Share | `length` (m) | `max_speed`; accel; decel | Modelled on |
   |---|---|---|---|---|
-  | `car` | 0.75 | 4.5 (Midtown's) | Midtown's | Midtown |
+  | `car` | 0.75 | 4.5 (Midtown's) | Midtown's | Midtown (unchanged) |
   | `truck` | 0.10 | **uniform 8.0–16.5** | 25.0; 1.3; −4.0 | the engine's demand tour |
-  | `bus` | 0.05 | 12.0 | 19.44; 1.5; −4.0 | its PT tour, **without PT routes** |
-  | `bike` | 0.05 | 1.8 | 8.33; 1.5; −3.0 | its `bike_lane` example |
+  | `bus` | 0.05 | 12.0 | 19.44; 1.5; −4.0 | its PT tour, **without PT routes** and without `is_public_transit` |
+  | `bike` | 0.05 | 1.8 | 8.33; 1.5; −3.0 | its `bike_lane` example, without `crossing_speed`, `yields_to_crossings` and `model_params` |
   | `van` | 0.05 | 5.5 | 33.33; 2.0; −6.0 | this draft (a name with no built-in shape) |
 
-- **`demand.yaml`:** every flow's `class: car` becomes `mix: mixed` (65 flows).
+  *(2026-10-23, round 1)* **The text below is normative**, and the table only summarises
+  it: the FCD's SHA-1 depends on every field, and the fields the table leaves out take the
+  engine's defaults. `project.yaml`'s one line `vehicle_mixes: {}\n` (asserted to occur
+  once) is replaced by `CLASSES` followed by `MIX`, byte for byte, at the indentation
+  shown (the probe's `mix-fixture.sh`, which built `c8d1d569…`):
+
+  ```yaml
+  # CLASSES: appended to Midtown's `vehicle_classes:` list, after its `car`
+  - id: truck
+    length:
+      distribution: uniform
+      min: 8.0
+      max: 16.5
+    min_gap: 2.5
+    max_speed: 25.0
+    max_acceleration: 1.3
+    max_deceleration: -4.0
+    car_following_model: idm
+    lane_changing_model: lmrs
+    reaction_time: 1.2
+  - id: bus
+    length: 12.0
+    min_gap: 2.5
+    max_speed: 19.44
+    max_acceleration: 1.5
+    max_deceleration: -4.0
+    comfortable_deceleration: 1.2
+    car_following_model: idm
+    lane_changing_model: lmrs
+    reaction_time: 1.0
+  - id: bike
+    length: 1.8
+    min_gap: 1.0
+    max_speed: 8.33
+    max_acceleration: 1.5
+    max_deceleration: -3.0
+    car_following_model: idm
+    lane_changing_model: lmrs
+    reaction_time: 0.5
+  - id: van
+    length: 5.5
+    min_gap: 2.0
+    max_speed: 33.33
+    max_acceleration: 2.0
+    max_deceleration: -6.0
+    car_following_model: idm
+    lane_changing_model: lmrs
+    reaction_time: 1.0
+  # MIX
+  vehicle_mixes:
+    mixed:
+    - class: car
+      share: 0.75
+    - class: truck
+      share: 0.1
+    - class: bus
+      share: 0.05
+    - class: bike
+      share: 0.05
+    - class: van
+      share: 0.05
+  ```
+
+  The two `#` lines are labels here, not part of the text; each block's lines start at
+  column 0 in the file (the list items of `CLASSES` at `- id:`, `MIX` at
+  `vehicle_mixes:`), as in the probe.
+
+- **`demand.yaml`:** every line matching `^(\s*)class: car$` becomes `\1mix: mixed` (65
+  flows), in the same pass as the halving, as the probe does.
 
 Why these:
 - **Every class of decision 2 and the fallback** in one run: `van` is a name no built-in
@@ -279,8 +349,9 @@ Why these:
   file's own `vehicle_classes` list is not a field of `DemandConfig`, and is left as it
   is).
 
-**Measured** (§2.19): **974 vehicles** (car 732, truck 100, bus 54, bike 47, van 41;
-797 completed, 178 active at 1,200 s, 1 abandoned), 195,709 rows, the first at 1.1 s and
+**Measured** (§2.19): **974 vehicles** in the FCD (car 732, truck 100, bus 54, bike 47,
+van 41; the engine's summary counts 976, 797 completed, 178 active at 1,200 s and 1
+abandoned, of which 2 have no FCD row), 195,709 rows, the first at 1.1 s and
 the last at 1,199.1 s. **FCD SHA-1 `c8d1d569423befbe9cfce9f9a94a04d75562508a`, the same in
 3 of 3 runs,** each from a fresh `git archive` and edit; 3.8 MB of FCD, 5.0 MB for the
 project. The runs took 635, 305 and 32 s at loads of 44 falling to 32 from another
@@ -292,6 +363,11 @@ probe's `mix-fixture.sh` did: steps 1–2 (the engine), the archive at `e2de274`
 2,850 and the 65, and the run. It fetches no buildings: the network is Midtown's, so a
 render reads `scratch/midtown/buildings.geojson` (vis-002's cache, read-only). It
 fails if the FCD's SHA-1 is not `c8d1d569…` (a pin move re-freezes it, vis-001 §2.2.2).
+*(2026-10-23, round 1)* As the other modes, a step already done is skipped (the project
+when `scratch/mix/project.yaml` exists, the run when its FCD does) and `FORCE=1` redoes
+them, the engine's `cargo install` included (step 2 is shared, and needs the network);
+the SHA-1 check runs every time. Gate 14 rebuilds with `rm -rf scratch/mix` instead, so
+it stays offline.
 
 ### 2.6 The shapes (OQ-1)
 
@@ -346,7 +422,7 @@ the boot and the front reads from any side. A 4.5 m car's cabin is 2.16 m long.
 | brake lamps (2) | `−L/2 − 2T … −L/2 − T` | 1.05 … 1.3 | ±(0.75 … 1.15) | brake |
 | headlamps (2) | `L/2 … L/2 + T` | 1.05 … 1.3 | ±(0.75 … 1.15) | head |
 
-The cab is lower than the box (3.1 against 3.6 m) and parted from it by a 0.25 m gap, so
+The cab is lower than the box (3.1 against 3.6 m) and parted from it by a gap of `min(0.03·L, 0.25)` (0.24 m at 8 m, 0.25 m from 8.33 m), so
 the front reads from above too. One rigid body (§1.1).
 
 **Bus:** width **2.55 m** (a city bus's), height **3.1 m**.
@@ -398,7 +474,10 @@ as `L`:
 - **bike:** the frame scales, the rider does not;
 - **plain:** as today's box.
 
-Any `L > 0` gives a shape; the engine's lengths are positive. No class has a length of
+*(2026-10-23, round 1)* Any `L` from 1.3 m up gives a well-formed shape (below it the
+truck's side windows invert, below 1.0 m the bus's window bands, and below 0.7 m the bike's
+rider overhangs its frame); the engine's shortest bundled length is the bike's 1.8 m, and
+gate 5's shortest `L` is 1.8. A shorter `L` is still drawn, as the formulas give it. No class has a length of
 its own here: a 4.5 m `bus` is a short bus.
 
 #### 2.6.6 The names
@@ -412,11 +491,13 @@ projects. A user who wants `hgv` drawn as a truck names the class `truck`.
 #### 2.6.7 The alternative (OQ-1)
 
 Two levels of detail, each drawn by the probe on every scene at the same frames (§2.19):
-- **(a) As above** (proposed): the masses and the glass (the car's cabin glass, the
+- **(a) As above** (proposed; chosen, decision 7): the masses and the glass (the car's cabin glass, the
   truck's windscreen and side windows, the bus's windscreen, window bands and rear
   window).
 - **(b) The masses alone:** the same parts with no glass, the car's cabin all body colour;
-  2 to 4 fewer cuboids a vehicle.
+  0 to 4 fewer cuboids a vehicle (*(2026-10-23, round 1)* was "2 to 4": the car's glass
+  is the cabin's own paint, so the car, the bike and the plain shape lose none, the truck
+  3 and the bus 4).
 
 **Recommended: (a).** The glass is what makes a cabin a cabin and a bus a bus at a tilt
 (`sheet-oq1-shapes.png`, middle and right columns); from straight down the two are the
@@ -429,6 +510,7 @@ answered (a), the masses and the glass, at the sizes tabled above, as recommende
 | Paint | Colour (sRGB) | Shaded by face |
 |---|---|---|
 | body | the speed colour (`scene::SPEED_BINS`, as today), or `links::CARS` `(235, 235, 235)` while link colours are on (vis-003 OQ-8) | yes |
+| cabin (the car's, §2.6.2) | its roof the body's, its sides and ends `GLASS` | yes |
 | glass | `GLASS` `(34, 42, 56)`, a dark blue-grey | yes |
 | dark (chassis, frame, tail panel) | `DARK` `(38, 38, 42)` | yes |
 | brake lamps | `BRAKE_OFF` `(92, 22, 26)`, or `BRAKE_ON` `#ef4444` `(239, 68, 68)` while braking (§2.8) | no |
@@ -444,7 +526,7 @@ answered (a), the masses and the glass, at the sizes tabled above, as recommende
   standing at a red light, the moment brake lights matter most, is all that colour. A red
   lamp on a red rear face does not show (`mix-rear-rec.png`), nor does the dashboard's
   red strip (`mix-rear-strip.png`). Two ways out, each drawn:
-  - **(a) The body in the speed colour, the lamps on a dark tail panel** (proposed): a
+  - **(a) The body in the speed colour, the lamps on a dark tail panel** (proposed; chosen, decision 8): a
     dark band across the rear behind the lamps, as a car's light cluster, so a lit lamp
     reads against dark on any body (`mix-rear-panel.png`);
   - **(b) The speed colour on the roof only:** sides and ends a neutral grey `(200, 202,
@@ -463,7 +545,7 @@ the lamps on a dark tail panel, as recommended (§2.2, decision 8).
 A vehicle's brake lights are **on at `t` when its FCD row at or before `t` has
 `acceleration < 0` or `speed < 0.01`** (`vehicles::STANDING`), the dashboard's rule
 (§2.4.3), and off otherwise. "The row at or before `t`" is the vehicle's latest row with
-`time ≤ t + 1e-6`, as `Fcd::snapshot_at` takes a snapshot (vis-001 §2.8), and its first
+`time ≤ t + 1e-6`, as `src/fcd.rs:Fcd::snapshot_at` takes a snapshot, and its first
 row when `t` is before it (a vehicle is drawn from `t_first − 1e-6`, vis-001 §2.8.5).
 - **Held between rows,** so a lamp changes only at an FCD time, never between two, and a
   frame's lamps are a function of `t` alone (gate 9).
@@ -479,7 +561,7 @@ row when `t` is before it (a vehicle is drawn from `t_first − 1e-6`, vis-001 �
 
   | Rule | Midtown: rows lit; flips per vehicle-minute; one-row runs | urban_grid | mix |
   |---|---|---|---|
-  | **`a < 0` or `v < 0.01` (proposed)** | **53.4 %; 5.69; 14.2 %** | **48.3 %; 4.81; 19.8 %** | **53.3 %; 5.57; 13.9 %** |
+  | **`a < 0` or `v < 0.01` (proposed; chosen)** | **53.4 %; 5.69; 14.2 %** | **48.3 %; 4.81; 19.8 %** | **53.3 %; 5.57; 13.9 %** |
   | `a < −0.1` or `v < 0.01` | 47.3 %; 5.36; 14.1 % | 37.7 %; 4.73; 19.2 % | 47.1 %; 5.20; 13.8 % |
   | `a < −0.5` or `v < 0.01` | 42.2 %; 4.83; 13.3 % | 29.8 %; 4.14; 16.2 % | 42.5 %; 4.66; 12.5 % |
   | `a < −1.0` or `v < 0.01` | 39.3 %; 4.36; 13.1 % | 25.9 %; 3.93; 17.9 % | 39.9 %; 4.20; 12.3 % |
@@ -506,7 +588,7 @@ lamps on or off, all in the same frame, and never between.
 light that is on (or off) for one row only: a one-second blink. They are real braking:
 the median acceleration of a one-row "on" is −0.43 m/s² on Midtown (p10 −2.55, p90
 −0.005), −2.0 on urban_grid; 32 % of them are above −0.1 (`out/brake-blips.txt`).
-- **(a) As the rule says** (proposed): every row's state, so the lights say what the FCD
+- **(a) As the rule says** (proposed; chosen, decision 9): every row's state, so the lights say what the FCD
   says, and gate 6 checks them against it straight.
 - **(b) Debounced:** a one-row run takes its neighbours' state, a function of a vehicle's
   rows `i − 1`, `i`, `i + 1` (still of `t` alone). 23.3 % fewer flips on Midtown, 33.6 % on
@@ -528,12 +610,13 @@ frames (`sheet-oq4-brake.png`, §2.19):
 - **(b) The dashboard's strip.** While braking, the whole rear face and the rear 4.5 % of
   the top in `#ef4444`; while not, the same plates in the body colour, so nothing shows.
   The strongest signal (a truck's rear is a red wall), and it too vanishes on a red body.
-- **(c) Lamps on a tail panel** (proposed, §2.6's tables): (a)'s lamps on a dark band
+- **(c) Lamps on a tail panel** (proposed; chosen, decision 10; §2.6's tables): (a)'s lamps on a dark band
   across the rear, so a lit lamp reads against dark on any body colour.
 
 **How far they show.** Brake lights are a close-up look. In the orbit at `height_m` 250
 (`mix-orbit-*.png`) a car's rear is a few pixels: against (a), (c) changes 70 pixels of
-the 1080p frame and (b) 168, and none of the three is seen without a zoom
+the 1080p frame and (b) 168 (*(2026-10-23, round 1)* counted from the stills,
+`mix-orbit-rec.png` against `-panel.png` and `-strip.png`, pixels whose RGB differs), and none of the three is seen without a zoom
 (`zoom-orbit-panel-strip.png`). They read from about `height_m` 60 down: the line-up's
 22–62 m and the close-ups' 30–40 m.
 
@@ -546,7 +629,7 @@ answered (c), lamps on a dark tail panel, as recommended (§2.2, decision 10).
 
 A look only (decision 5): two lamp plates on the front face, as the brake lamps at the
 rear (§2.6's tables), unshaded.
-- **(a) Always lit** (proposed): `HEAD_ON` warm white `(255, 240, 196)`. The run has no
+- **(a) Always lit** (proposed; chosen, decision 11): `HEAD_ON` warm white `(255, 240, 196)`. The run has no
   time of day (§1.1), and lit headlights are what a viewer reads as "this end is the
   front", day or night (daytime running lights).
 - **(b) Unlit lenses:** light grey `(170, 172, 176)`, unshaded.
@@ -567,7 +650,7 @@ switches with distance:
   the city flight's first frame (`height_m` 1,800, straight down, 300 s on the mix), the
   shapes' frame differs from today's boxes' in **455 pixels** of 2,073,600, about two a
   vehicle, from the trucks' and buses' widths (2.5 and 2.55 against 1.8 m) and the bikes'
-  0.44 m (`out/far.txt`, `sheet-far.png`). In the orbit (`height_m` 250, pitch 35), 1,613.
+  0.44 m (`out/far.txt`, `sheet-far.png`). In the orbit (`height_m` 250, pitch 35), 1,584 (*(2026-10-23, round 1)* was 1,613; `out/far.txt` records 1,584).
 - **No fade.** The boxes are one opaque mesh (vis-001 §2.12.2); a fade would need blending
   and the sorted pass that §2.12.4 there rejected for determinism.
 - **No switch to a box** under some size (the dashboard drops its lights below 2 px of
@@ -620,16 +703,17 @@ their own, into a table beside the run, as link colours keep their rows beside i
 - **`vehicles::read(path) -> Result<Fleet>`** reads `time`, `vehicle_id`, `speed`,
   `acceleration` and `vehicle_class` from the FCD file, every row of the file (not only
   the window's: a vehicle drawn at `--from` may have its row before it), into one
-  `Vehicle { vehicle_id, class: String, kind: Kind, times: Vec<f64>, brakes: Vec<bool> }`
-  per vehicle, in `vehicle_id` order, each one's rows in `time` order (sorted by
+  `Vehicle { vehicle_id, kind: Kind, times: Vec<f64>, brakes: Vec<bool> }`
+  per vehicle (*(2026-10-23, round 1)* no `class` string: nothing reads it), in `vehicle_id` order, each one's rows in `time` order (sorted by
   (`vehicle_id`, `time`), as `fcd::by_vehicle`). A vehicle's class is its first row's; the
   engine never changes a vehicle's class. The class names are looked up through a map,
   never walked (no order from walking a `HashMap`).
 - **`Fleet::looks(t, &[VehicleBox]) -> Vec<Look>`**, one `Look { kind, brake }` per box, in
   the boxes' order, by binary search on `vehicle_id` and then on `times`. A box whose
   vehicle is not in the table (none at the pin) is `Kind::Plain`, unlit.
-- **Read once, when shapes are on** (`Job::set_shapes(true)`, §2.13; `view` at launch).
-  Off, the file is not read again and nothing is built.
+- **Read once, when shapes are on** (`Job::set_shapes(true)`, §2.13). Off, the file is
+  not read again and nothing is built. *(2026-10-23, round 1)* `view` reads it once at
+  launch, with or without `--no-shapes` (§2.13).
 - **Measured** (§2.19): 28.5 ms on Midtown, 26.2 ms on the mix, 2.2 ms on urban_grid, once
   per job.
 
@@ -640,15 +724,17 @@ files exist: `scratch/derived/no_class_length.parquet` (`scripts/fixture.sh`'s p
   today renders tomorrow, in boxes with lights.
 - **No `acceleration`:** brake lights from standing still alone (`speed < 0.01`).
 - **A column of another type** (say `vehicle_class` as plain `Utf8`, or `acceleration` as
-  `Float32`): **`Utf8` and `LargeUtf8` are taken** for `vehicle_class` beside the
-  dictionary of `Utf8` (any integer key); anything else is the "schema mismatch" error of
+  `Float32`): **`Utf8` is taken** for `vehicle_class` beside `Dictionary(Int32, Utf8)`
+  (*(2026-10-23, round 1)* only those two, the ones the error names and gate 5 tests;
+  `LargeUtf8` or another key type is the error); anything else is the "schema mismatch" error of
   `rules/inputs.md`, one line, exit 1, before the first frame: `error: schema mismatch:
   <file> column "vehicle_class" is <type>, expected Dictionary(Int32, Utf8) or Utf8`, and
   `… column "acceleration" is <type>, expected Float64`. It is raised only with shapes on
   in a 3D render or `view`, since nothing else reads them; `--no-shapes` renders the file
-  as today. No engine at the pin writes either.
+  as today. *(2026-10-23, round 2)* `view` reads them at launch under `--no-shapes` too,
+  and there swallows the error (§2.13). No engine at the pin writes either.
 - **A null** in either column (the engine's are non-null) reads as missing for that row:
-  no class is the plain shape, no acceleration is standing still alone.
+  no class is the plain shape, no acceleration is standing still alone (gate 5).
 
 ### 2.13 The flag, the key, and their errors
 
@@ -667,12 +753,14 @@ files exist: `scratch/derived/no_class_length.parquet` (`scripts/fixture.sh`'s p
 - **`V`** in `view` (*vehicles*; by position, `KeyCode::KeyV`, unbound today: `view` uses
   `A B C D E F H K L M Q R S W X`, space, `Esc`, the arrows, `+` and `−`; free are `G I J
   N O P T U V Y Z`) flips shapes and boxes at any moment and changes nothing else; in the
-  frame order after `C`. `view --no-shapes` starts with boxes and `V` shows shapes, reading
-  the table at that first press; on a file §2.12's check refuses, `V` then stays inert (as
-  `L` on a network with no signal) and the window stays open. The keyframe line does not
-  carry it.
+  frame order after `C`. `view --no-shapes` starts with boxes and `V` shows shapes. *(2026-10-23,
+  round 1)* `view` reads the table at launch either way, as it builds the signals'
+  timeline under `--no-signals`; on a file §2.12's check refuses, `view` fails before the
+  window without `--no-shapes`, and with it opens, `V` inert (as `L` with no timeline).
+  The keyframe line does not carry it.
 - **The library keeps today's default.** `Job::prepare*` build every job with shapes off,
-  as streets, signals, the HUD and link colours (vis-003 §2.20.11), so every test that
+  as streets, signals, the HUD and link colours (vis-003 §2.13 for signals, §2.20.11 for the HUD, and its Phase 3 scope for link
+  colours), so every test that
   builds a job draws as today. `src/main.rs` turns them on with `Job::set_shapes(true)`
   unless `--no-shapes` is given; on an orthographic job `set_shapes` does nothing and
   reads nothing.
@@ -708,7 +796,9 @@ with each other), the `case_` pairs of `gates-signals.sh`, `gates-hud.sh`,
 code, an error line or the bench's JSON, never a frame. From Phase 1 the pairs check the
 shapes' determinism: `gates-ties.sh` gate 9 is Midtown's stacked frozen vehicles (vis-001
 §2.12), now as shapes. Their logs equal the baseline's apart from times, loads and the
-bench's JSON (gate 3), since they print equal counts, not hashes.
+bench's JSON (gate 3), since they print counts, not hashes, and *(2026-10-23, round 1)*
+every `differs` and `all_differ` count in the last gate logs (vis-003 Phase 3's) is
+already every frame (N of N): shapes can change no such count.
 
 `gates-hud.sh` and `gates-links.sh` write into `scratch/out/hud/` and `scratch/out/links/`
 over the shipped renders; neither is read by this phase's gates, which compare with
@@ -718,7 +808,7 @@ over the shipped renders; neither is read by this phase's gates, which compare w
 
 | | Today's box | car | truck | bus | bike | plain |
 |---|---|---|---|---|---|---|
-| Cuboids (as proposed, OQ-1 (a), OQ-4 (c)) | 1 | 7 | 11 | 10 | 2 | 6 |
+| Cuboids (as chosen, OQ-1 (a), OQ-4 (c)) | 1 | 7 | 11 | 10 | 2 | 6 |
 | Vertices; triangles | 24; 12 | 168; 84 | 264; 132 | 240; 120 | 48; 24 | 144; 72 |
 
 - **The most vehicles drawn at once** (`Motion::max_drawn`, sampled at 2,000 frame times
@@ -813,7 +903,7 @@ Read-only against the engine at the pin and both fixtures (FCD SHA-1s `01becc86�
 
 **Where the probe differs from the scope:** options by environment variable, not by flag;
 no `V`, no `--no-shapes`; no fallback for a missing column, no schema error; its cost
-table counts parts without the tail panel; the identical key has the kind (as proposed).
+table counts parts without the tail panel; the identical key has the kind (as chosen).
 
 **Measured with it:**
 - **looks against the FCD read straight** (`out/looks-check.txt`): every vehicle drawn at
@@ -869,9 +959,12 @@ table counts parts without the tail panel; the identical key has the kind (as pr
 ## 3. Open questions
 
 The look questions (OQ-1, OQ-2, OQ-4, OQ-5) are the user's, put to the stills of §2.19, one
-per option at the same frames; OQ-3 to the clips. Phase 6's lesson (vis-001 §2.12; a look
+per option at the same frames; OQ-3 to the clips. Phase 6's lesson (vis-002's, §2.18.16
+there, *(2026-10-23, round 1)* not vis-001 §2.12; a look
 decided on paper failed at the visual gate) is why each is drawn rather than described.
-Each blocks gate 7's counts and gate 12, and nothing else: the scope and every gate are
+Each blocked the gates its own entry names (*(2026-10-23, round 1)* was "gate 7's counts
+and gate 12, and nothing else": OQ-3 also names gate 6, OQ-4 gate 5, OQ-6 gate 13 and
+§2.14's lines), and nothing else: the scope and every gate are
 written with the recommendations, and say what another answer changes. *(2026-10-23, user)* All six
 are answered as recommended, before review (§2.2, decisions 7–12), so nothing they block
 changes.
@@ -934,7 +1027,7 @@ acceleration and speed have them and its headlights lit, by default. With `--no-
 the video is byte-identical to today's (gate 2), and the orthographic render is
 byte-identical with or without it (gate 1).*
 
-Drafted 2026-10-23; the design is §2, and the user's decisions are §2.2's 1–6. Phase 1
+Drafted 2026-10-23; the design is §2, and the user's decisions are §2.2's 1–12 (1–6 before the draft, 7–12 on it). Phase 1
 builds on vis-003 Phase 3 (shipped 2026-10-23, `ca244a0`) at engine `90b39292`. OQ-1 to
 OQ-6 are the user's; the scope and every gate are written with their recommendations (the
 glass, the body in the speed colour, every row's state, the tail panel, lit headlights,
@@ -945,12 +1038,13 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
   - **`src/vehicles.rs`** (new; no Bevy types):
     - `Kind { Car, Truck, Bus, Bike, Plain }` and `kind(name: &str) -> Kind` (§2.6.6);
     - `STANDING` 0.01 m/s and `brake(speed, acceleration) -> bool` (§2.8.1);
-    - `Vehicle { vehicle_id, class: String, kind, times: Vec<f64>, brakes: Vec<bool> }`,
+    - `Vehicle { vehicle_id, kind, times: Vec<f64>, brakes: Vec<bool> }`,
       `Fleet { vehicles }` in `vehicle_id` order, `Fleet::new(Vec<Vehicle>)` (sorts by id;
       the tests' constructor), `read(path) -> Result<Fleet>` (§2.12: the five columns,
       every row of the file, the missing-column fallbacks, the two schema errors),
-      `Fleet::vehicle(id)` and `Fleet::looks(t, &[VehicleBox]) -> Vec<Look>`,
-      `Look { kind, brake }`;
+      `Fleet::looks(t, &[VehicleBox]) -> Vec<Look>`, `Look { kind, brake }`
+      (*(2026-10-23, round 1)* no `class` field and no public `Fleet::vehicle(id)`:
+      nothing in the phase reads them);
     - `Paint { Body, Cabin, Glass, Dark, Brake, Head }`, `Part { lo: [f64; 3], hi: [f64;
       3], paint }`, `T` 0.02, `FLOOR` 0.05, and `parts(kind, length) -> Vec<Part>`, §2.6's
       tables row by row in their order (OQ-1 (a), OQ-4 (c));
@@ -970,23 +1064,28 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
     job it does nothing and reads nothing. `render_at(t)` passes `Fleet::looks(t, &boxes)`
     while it is `Some`. `Job::looks_at(t) -> Option<Vec<Look>>` reads them back for gates 6
     and 9.
-  - **`src/view/mod.rs`, `src/view/state.rs`:** `ViewOptions` gains `shapes: bool`; at
-    launch, unless `--no-shapes`, the table is read (its error is `view`'s, before the
-    window); with `--no-shapes` it is read at the first `V`, and an error then leaves `V`
-    inert, as `L` on a network with no signal. The state gains `shapes_shown`, from the
-    option; `Pressed` gains `v`, and `V` (`KeyCode::KeyV`) flips it after `C`. Each frame
-    draws `set_shapes` with the looks while shown, `set_boxes` while not.
+  - **`src/view/mod.rs`, `src/view/state.rs`:** `ViewOptions` gains `shapes: bool`.
+    *(2026-10-23, round 1)* The table is read at launch, with or without `--no-shapes`,
+    after the links window and before `ViewState::new`, as the signals' timeline is built
+    under `--no-signals` (`src/view/mod.rs:run`): its error is `view`'s, before the
+    window, unless `--no-shapes` is given, where it is swallowed, no table is kept and `V`
+    is inert, as `L` with no timeline. The state gains `shapes_shown`, `false` at
+    `ViewState::new` and set from the option at launch beside `hud_shown`; `Pressed`
+    gains `v`, and `V` (`KeyCode::KeyV`) flips it after `C`. Each frame draws
+    `set_shapes` with the looks while shown and a table is kept, `set_boxes` otherwise.
   - **`src/main.rs`:** `--no-shapes` on `render` and `view`, with help text; `render` calls
     `job.set_shapes(true)?` unless it is given, after `job.set_links`. No other flag or
     default changes.
-  - **`src/bin/fcd-derive.rs`:** a mode `class-int` that writes a copy of an FCD file with
-    `vehicle_class` as `Int32` codes (gate 13's schema error); the other modes unchanged.
+  - **`src/bin/fcd-derive.rs`:** a mode `class-int` (`Mode::ClassInt { input, output }`,
+    `--input` and `--output` as the other modes) that writes a copy of an FCD file with
+    `vehicle_class` as `Int32` codes, the dictionary's keys (gate 13's schema error); the
+    other modes unchanged.
   - **`tests/truck-flight.toml`** (new): the close-up of gate 12, two keyframes following
     the mix fixture's vehicle 184 (a truck), `{ t = 315.000, follow = 184, height_m =
     30.00, yaw_deg = 100.00, pitch_deg = 30.00 }` and the same at `t = 345.000`; the probe's
     `kf/clip.toml`.
   - **Tests.** `tests/vehicles.rs` (new): gate 5 and gate 13's `V` headless, not ignored;
-    gate 6 headless, ignored (the three fixtures); gates 7 and 9 through the GPU, ignored
+    gate 6 ignored (the three fixtures; it draws no frame but builds a `Job`, so needs the GPU device); gates 7 and 9 through the GPU, ignored
     (gate 7 builds its scene, as `tests/ties.rs`'s `synthetic`; gate 9 needs the fixtures).
   - **Scripts.**
     - `scripts/fixture.sh mix` (§2.5): `scratch/mix/`, the halving shared with `midtown`
@@ -997,7 +1096,12 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
       gate 8's renders as `vehicles-<case>.mp4` and `.framemd5` and its second as
       `vehicles-<case>-2.*` (`<case>`: `city`, `mix-city`, `mix-orbit`, `ug-camera`, and
       `truck` for gate 12's close-up, which gate 8 renders twice too, 900 of 900), and the
-      close-up's boxes twin with `--no-shapes`, `vehicles-truck-boxes.mp4`.
+      close-up's boxes twin with `--no-shapes`, `vehicles-truck-boxes.mp4`. *(2026-10-23,
+      round 1)* It builds `fcd-derive` (`cargo build --release --quiet --bin fcd-derive`,
+      as `fixture.sh` does) and writes gate 13's copy itself, `fcd-derive class-int
+      --input scratch/urban_grid/fcd/baseline_42.parquet --output
+      scratch/out/vehicles/class_int.parquet`; `fixture.sh` and `scratch/derived/` are not
+      changed by it.
     - The 23 lines of §2.14 gain `--no-shapes`, with their comments; nothing else in them.
   - **Not edited:** every other test file and script; every source file not named above;
     `Cargo.toml` and `Cargo.lock`; `assets/`.
@@ -1069,7 +1173,8 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
        (car 1.5, truck 3.6, bus 3.1, bike 1.65, plain 1.55), `|z|` up to half the width
        plus `T` where glass lies on a side (truck and bus) and half the width otherwise
        (bike 0.22); the truck's box at `L` 8 is **5.46 m** long and at 16.5 **13.95 m**,
-       its cab **2.3 m** at both and **1.4 m** at `L` 4.
+       its cab **2.3 m** at both and **1.4 m** at `L` 4 (*(2026-10-23, round 1)* lengths
+       as `hi[0] − lo[0]`, each within 1e-9 m).
      - **`brake`:** `(5, 0)` off; `(5, −1e-12)` on; `(0.01, 0)` off; `(0.00999, 0)` on;
        `(0, 1.5)` on (standing).
      - **`Fleet::looks`** on `Fleet::new` of vehicle 7, rows at 1, 2 and 3 s braking off,
@@ -1081,11 +1186,16 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
        no `vehicle_class`, every vehicle Plain; with no `acceleration`, lit only where
        `speed < 0.01`; with `vehicle_class` as `Utf8`, the same as the dictionary; with it
        as `Int32`, the error `schema mismatch: <file> column "vehicle_class" is Int32,
-       expected Dictionary(Int32, Utf8) or Utf8`; with `acceleration` as `Float32`, `…
-       column "acceleration" is Float32, expected Float64`.
+       expected Dictionary(Int32, Utf8) or Utf8`; with it as `LargeUtf8`, the same error
+       naming `LargeUtf8`; with `acceleration` as `Float32`, `…
+       column "acceleration" is Float32, expected Float64`; *(2026-10-23, round 1)* with
+       a null `vehicle_class` on one vehicle's first row, that vehicle Plain, and a null
+       `acceleration` on a row with `speed` 5, that row unlit.
 
      **Without the feature it fails:** there is no `vehicles` module.
-  6. **The fixtures, against the FCD read straight** (`tests/vehicles.rs`, ignored). The
+  6. **The fixtures, against the FCD read straight** (`tests/vehicles.rs`, ignored; it
+     draws no frame, but *(2026-10-23, round 1)* a `Job` with a flight builds its
+     perspective renderer, so it needs the GPU device). The
      test reads each fixture's parquet itself (`time`, `vehicle_id`, `speed`,
      `acceleration`, `vehicle_class`), and at every frame time takes each drawn vehicle's
      row at or before it with its own loops, and compares the kind and the state with
@@ -1109,7 +1219,9 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
        | mix 359.97 | 195 | 136 | 144 / 21 / 12 / 11 / 7 |
 
        `359.97` and `299.07` are the last frames by index (`clock.time_of(1799)` and
-       `time_of(8699)`). (The probe, at these and three more of the mix's times: 1,637 of
+       `time_of(8699)`), and urban_grid's `150` is `time_of(4227)` (*(2026-10-23,
+       round 2)* exactly 150.0 in f64, `9.0999999999999837 + 4227 · 1 / 30`; round 1's
+       "149.99999999999998" was wrong). (The probe, at these and three more of the mix's times: 1,637 of
        1,637 equal.)
   - **The shapes — through the GPU:**
   7. **Drawn** (`tests/vehicles.rs`, ignored: GPU). The probe's line-up, built in the test:
@@ -1126,6 +1238,9 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
        centres exactly `HEAD_ON`; the twentieth, one of car 1's, recorded.
      - **The same scene with `render`** (boxes) differs from it, and **with no vehicle** the
        two are equal.
+     - *(2026-10-23, round 1)* The two frames with shapes are written as binary PPM (`P6`,
+       a header and the RGB bytes, written by the test: no package) to
+       `scratch/out/vehicles/vehicles-lineup-rear.ppm` and `-front.ppm`, for gate 12.
 
      The counts are `==`, the probe's through the same Bevy and GPU. They depend on OQ-1's,
      OQ-4's and OQ-5's answers: another answer is measured again before the gate is run,
@@ -1150,8 +1265,9 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
      `Job::looks_at(t)` equals `Fleet::looks(t, &job.boxes_at(t))` of a `Fleet` the test
      reads with `vehicles::read`. (The probe: 9 of 9 equal, 0 pixels differ.)
   - **Recorded, with one bar:**
-  10. **Render time.** Gate 8's wall times beside gate 2's renders of the same cases, each
-      with the load average after it. Prediction: with shapes, Midtown's flights take about
+  10. **Render time.** Gate 8's wall times, each with the load average after it, and
+      *(2026-10-23, round 1)* for the two cases gate 2 also renders (Midtown's
+      `city-flight.toml` with `--buildings`, urban_grid's `flight.toml`) beside gate 2's. Prediction: with shapes, Midtown's flights take about
       15 ms a frame longer, about 40 % on a 1,800-frame render; recorded, not a bar. (The
       probe: Midtown's city flight 70 s without shapes and 98–107 s with, at loads of 6 to
       8, §2.15.)
@@ -1198,8 +1314,9 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
       - **urban_grid's flight** (`vehicles-ug-camera.mp4` against `hud-ug-camera.mp4`).
         While it follows a car (0:55 to 2:11), the car is a car shape seen from behind, its
         cabin glass dark and its lamps unlit; at 1:36 its lamps light as it slows, it stands
-        at a red light from 1:42, and at 2:11 its lamps go out as it moves off.
-      - **The line-up** (`stills/lu-*.png` of §2.19, as gate 7 draws it): each class's
+        at a red light from 1:42, and at 1:51 *(2026-10-23, round 1: was 2:11, when the
+        follow ends)* its lamps go out as it moves off.
+      - **The line-up** (gate 7's `vehicles-lineup-rear.ppm` and `-front.ppm`): each class's
         shape, a braking row with lit lamps and a coasting row with unlit ones.
       - **In `view` on the mix:** at launch the vehicles are shapes; `V` shows boxes, `V`
         again shapes; `view --no-shapes` opens with boxes. Orbiting to a low pitch behind a
@@ -1217,8 +1334,10 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
   - **The flags, the key and the fixture:**
   13. **Their edges.**
       - **`V`, headless** (`tests/vehicles.rs`, not ignored), written as `tests/links.rs`'s
-        `C` test with `v` for `c`: `shapes_shown` is `true` at `ViewState::new` and
-        at a launch without `--no-shapes`, `false` with it; four frames with `v` pressed give `false`, `true`, `false`, `true`;
+        `C` test with `v` for `c`: *(2026-10-23, round 1)* `shapes_shown` is `false` at
+        `ViewState::new`, as every other toggle (`view::run` sets it at launch, which no
+        headless test reaches; gate 12's `view` item watches it); four frames with `v`
+        pressed give `true`, `false`, `true`, `false`;
         then playing and following with `K` pressed in the same frame, through a
         right-button orbit, a drag and a scrub of the slider, every other field of the state
         equals that of a twin stepped without `v`.
@@ -1227,7 +1346,7 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
         - without `--camera`, `--no-shapes`: exit 0, and every frame equal to the same
           render without it (300 of 300);
         - `--shapes`: exit 2, no video;
-        - `--camera tests/flight.toml --fcd <class-int copy>` (`fcd-derive class-int`):
+        - `--camera tests/flight.toml --fcd <class-int copy>` (`scratch/out/vehicles/class_int.parquet`, written by the script):
           exit 1, stderr's one line the schema error naming `vehicle_class`, no video; the
           same with `--no-shapes`: exit 0, `ffprobe` `1920,1080,30/1,300`;
         - `view --bench 1` and `view --no-shapes --bench 1`: exit 0 and the bench JSON on
@@ -1235,9 +1354,13 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
           schema error; with `--no-shapes`: exit 0.
 
       Without the feature: `--no-shapes` is itself rejected, exit 2.
-  14. **The mix fixture** (`scripts/fixture.sh mix`, then `FORCE=1` twice more): exit 0 each
+  14. **The mix fixture** (by hand: `scripts/fixture.sh mix`, then twice more each after
+      `rm -rf scratch/mix`, *(2026-10-23, round 1)* not `FORCE=1`, which reinstalls the
+      engine over the network): exit 0 each
       time, the FCD's SHA-1 **`c8d1d569423befbe9cfce9f9a94a04d75562508a`** each time;
-      **974 vehicles** (car 732, truck 100, bus 54, bike 47, van 41), **195,709 rows**;
+      **974 vehicles** (car 732, truck 100, bus 54, bike 47, van 41), **195,709 rows**,
+      counted with DuckDB over the FCD (`count(DISTINCT vehicle_id)`, the same grouped by
+      `vehicle_class`, `count(*)`), as §2.4.2 was;
       `scratch/midtown/` untouched (its FCD's SHA-1 `01becc86…` before and after). (The
       probe: 3 of 3.)
 - **Predictions at a glance:**
@@ -1251,7 +1374,7 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
   | Synthetic: kinds, parts, the rule, looks, read and its errors | as listed, `==` | 5 |
   | Fixtures: every frame's looks against the FCD read straight; counts | 0 of 1,800 / 8,700 / 1,800 differ; as tabled | 6 |
   | The line-up's lamps | 20 of 20 brake, 19 of 20 head, exact | 7 |
-  | Four flights on, twice; against `hud-p2` | equal; every frame differs from `hud-p2`'s | 8 |
+  | Five renders on, twice (four flights and the close-up); two against `hud-p2` | equal; every frame differs from `hud-p2`'s | 8 |
   | A frame alone against the same frame in sequence; the job's looks | equal, 9 of 9; equal to `Fleet::looks` | 9 |
   | `view --bench 20` with shapes | ≥ 30 fps | 11 |
   | `V`; the flag's edges; the schema error | flips only its field; as listed | 13 |
@@ -1264,34 +1387,44 @@ as recommended (§2.2, decisions 7–12), so the scope and the gates stand as dr
 - **Close-out (standing plan steps, the methodology's §3):**
   - **Commit plan:** one branch (`vis-004-phase-1`), one push. The commits:
     - `src/vehicles.rs`, `src/draw.rs`, `src/render.rs`, `src/lib.rs`, `src/main.rs`'s
-      `render` flag, and `tests/vehicles.rs`'s headless gates (5, 6). On by default in
+      `render` flag, and `tests/vehicles.rs`'s gates 5 and 6 (6 ignored). On by default in
       `render --camera`, so the same commit carries the 23 script lines of §2.14;
     - `view`: `src/view/mod.rs`, `src/view/state.rs` and `src/main.rs`'s `view` flag, and
       gate 13's `V` test;
     - `scripts/fixture.sh mix` and `src/bin/fcd-derive.rs`'s `class-int`;
-    - `tests/vehicles.rs`'s GPU gates (7, 9) and `scripts/gates-vehicles.sh`. Gates 1–11,
-      13 and 14 run after this commit;
+    - `tests/vehicles.rs`'s GPU gates (7, 9), `tests/truck-flight.toml` and
+      `scripts/gates-vehicles.sh`. Gates 1–11, 13 and 14 run after this commit
+      (*(2026-10-23, round 1)* gates 11 and 14 by hand, as their text says; the rest by
+      the scripts and the tests);
     - the gate run and its record;
     - the close-out.
   - **Reconciliation:**
-    - **`rules/vehicles.md`** (new, `max_lines: 50`): the table and its read, the kinds and
+    - **`rules/vehicles.md`** (new, `max_lines: 50`; *(2026-10-23, round 1)* the parts by kind a line
+      each, citing `vehicles::parts` for the table, not copying it): the table and its read, the kinds and
       the names, the parts and their sizes, the stretch, the paints, the brake rule, the
       headlamps, the identical key, `--no-shapes`, `V` and the error. `sources`:
       `src/vehicles.rs`, `src/draw.rs`, `src/render.rs`, `src/lib.rs`, `src/view/mod.rs`,
       `src/view/state.rs`, `src/main.rs`;
     - `rules/render.md` (60 of 60): the CLI line gains `[--no-shapes]`; the scene's
       vehicles bullet points to `rules/vehicles.md` for the perspective path; the
-      Pipeline's `prepare_with` bullet shapes off; cut to fit, the cap not raised;
+      Pipeline's `prepare_with` bullet shapes off; *(2026-10-23, round 1)* the Link colours
+      bullet's "the boxes grey" becomes the bodies grey; the `Gates:` list gains
+      `looks_at`; cut to fit, the cap not raised;
     - `rules/camera.md` (60 of 60): "What each path draws" says the perspective path draws
       shapes (`rules/vehicles.md`) and the orthographic one boxes; cut to fit;
     - `rules/view.md` (60 of 60): the CLI gains `--no-shapes`, the drawing `V`, the frame
       order `V` after `C`; cut to fit;
     - `rules/inputs.md` (50 of 50): the FCD bullet says `acceleration` and `vehicle_class`
-      are read by `vehicles::read` with shapes on (`rules/vehicles.md`); the checks' order
+      are read by `vehicles::read` with shapes on, and by `view` at launch either way
+      (`rules/vehicles.md`); the checks' order
       gains the schema check last; `sources` gains `src/vehicles.rs`; cut to fit;
     - `rules/links.md` (40 of 40): "every box `CARS`" becomes every body; cut to fit;
-    - `rules/signals.md`, `rules/streets.md`, `rules/hud.md`, `rules/credit.md`,
-      `rules/slider.md`, `rules/buildings.md`, `rules/see-through.md`, `rules/parts.md`,
+    - *(2026-10-23, round 1)* `rules/hud.md` ("boxes and the dots"), `rules/streets.md`
+      ("every box's base") and `rules/buildings.md` ("Roads and boxes stay unlit"): the
+      word "boxes" becomes "vehicles" (a box's, a vehicle's), no line added; cut to fit,
+      the caps not raised (40, 40 and 60, each full);
+    - `rules/signals.md`, `rules/credit.md`,
+      `rules/slider.md`, `rules/see-through.md`, `rules/parts.md`,
       `rules/motion.md`: none needed, since nothing they say changes (the shapes stand
       where the boxes stood, over the same layers);
     - `spec-lint --write-index` regenerates `rules/INDEX.md` and `specs/INDEX.md`;
