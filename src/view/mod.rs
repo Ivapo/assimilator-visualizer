@@ -360,7 +360,7 @@ fn frame(world: &mut World) {
         *cam.get_mut::<Transform>().unwrap() = transform;
         *cam.get_mut::<Projection>().unwrap() = projection;
         let boxes = run.boxes_at(s.t);
-        draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D);
+        draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D, draw::speed_colour);
         if let Some(b) = v.buildings.as_mut() {
             let want = if s.buildings_shown {
                 Visibility::Inherited

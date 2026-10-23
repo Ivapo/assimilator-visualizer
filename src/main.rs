@@ -8,11 +8,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Result, bail};
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
 
+use assimilator_video::links::{self, Measure};
 use assimilator_video::run::LoadOptions;
 use assimilator_video::view::{self, ViewOptions};
-use assimilator_video::{Job, RenderOptions, encode};
+use assimilator_video::{Job, LinkOptions, RenderOptions, encode};
 
 #[derive(Parser)]
 #[command(
@@ -83,6 +85,20 @@ enum Cmd {
         /// vehicles on the road and their mean speed, from the run's FCD.
         #[arg(long)]
         no_hud: bool,
+        /// Colour each link by a measure of its FCD rows over the past window, with a
+        /// legend under the HUD and the cars in light grey: `relative` (speed as a share
+        /// of the limit, the default), `speed`, `density` (cars per lane-km) or `stopped`
+        /// (stopped cars). Default: off.
+        #[arg(long, value_name = "MEASURE", num_args = 0..=1, default_missing_value = "relative",
+              value_parser = PossibleValuesParser::new(Measure::NAMES))]
+        link_colours: Option<String>,
+        /// The link colours' window, seconds, ending at each frame's time; the run's FCD
+        /// interval colours by each frame's own FCD row. Default: 60.
+        #[arg(long, value_name = "SECONDS", allow_negative_numbers = true, requires = "link_colours")]
+        link_window: Option<f64>,
+        /// Colour each lane by its own rows, not each link.
+        #[arg(long, requires = "link_colours")]
+        link_lanes: bool,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -179,6 +195,9 @@ fn run(cli: Cli) -> Result<()> {
             no_streets,
             no_signals,
             no_hud,
+            link_colours,
+            link_window,
+            link_lanes,
         } => render(
             RenderOptions {
                 project,
@@ -200,6 +219,11 @@ fn run(cli: Cli) -> Result<()> {
             !no_streets,
             !no_signals,
             !no_hud,
+            link_colours.map(|m| LinkOptions {
+                measure: Measure::from_name(&m).expect("clap's possible values"),
+                window: link_window.unwrap_or(links::WINDOW_S),
+                lanes: link_lanes,
+            }),
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -249,6 +273,7 @@ fn render(
     streets: bool,
     signals: bool,
     hud: bool,
+    links: Option<LinkOptions>,
 ) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
@@ -263,6 +288,10 @@ fn render(
     }
     if hud {
         job.set_hud(true)?;
+    }
+    // After the HUD: the legend's place follows it (vis-003 §2.21.9).
+    if links.is_some() {
+        job.set_links(links)?;
     }
 
     let n_frames = job.clock.frames;

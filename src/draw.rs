@@ -9,7 +9,9 @@
 //! Streets (vis-002 §2.17.11) add two meshes: the junction surfaces and median noses,
 //! and the markings, recoloured as the fade follows the camera. Signals (vis-003 §2.12)
 //! add one more: every dot, rebuilt each frame. The HUD (vis-003 §2.20.9) is a UI tree
-//! drawn as the credit line's, in the top-left corner, in `render` and `view`.
+//! drawn as the credit line's, in the top-left corner, in `render` and `view`. Link
+//! colours (vis-003 §2.21) add the tint, one mesh over the road strips replaced when a
+//! colour changes, a legend under the HUD drawn as its line, and the boxes in one colour.
 
 use std::collections::HashSet;
 
@@ -24,6 +26,7 @@ use crate::buildings::{Buildings, MeshData};
 use crate::camera::{self, FAR_PER_D, FOV_DEG, Pose};
 use crate::credit;
 use crate::hud;
+use crate::links::{self, Legend, TintData};
 use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
 use crate::signals::DotsData;
@@ -51,6 +54,21 @@ fn unlit(materials: &mut Assets<StandardMaterial>, c: [u8; 3]) -> Handle<Standar
         unlit: true,
         ..default()
     })
+}
+
+/// A box's colour by its speed: its bin's (`scene::SPEED_BINS`).
+pub fn speed_colour(speed: f64) -> [u8; 3] {
+    scene::SPEED_BINS[scene::speed_bin(speed)].1
+}
+
+/// A box's colour while link colours are on, whatever its speed (vis-003 OQ-8).
+pub fn cars_colour(_speed: f64) -> [u8; 3] {
+    links::CARS
+}
+
+/// The one material of every pooled box while link colours are on.
+pub fn cars_material(mats: &mut Assets<StandardMaterial>) -> Handle<StandardMaterial> {
+    unlit(mats, links::CARS)
 }
 
 /// The road material, and one material per speed bin (`scene::SPEED_BINS`).
@@ -226,11 +244,17 @@ pub fn spawn_pool(
 
 /// Every box of `boxes` as one mesh, in slice (`vehicle_id`) order (vis-001 §2.12.2): the
 /// shaded cuboid's vertices through [`box_transform`] at rank = slice index, coloured by
-/// the speed colour (linear) × the face's shade. One draw keeps its triangles' order, so
+/// `colour` of its speed ([`speed_colour`], or [`cars_colour`]) (linear) × the face's
+/// shade. One draw keeps its triangles' order, so
 /// a depth tie goes to the later box, the higher id. A box whose placed point, heading and
 /// length equal a later box's bit for bit is left out; ranks are counted first, so no
 /// other box moves. `None` when no box is drawn.
-pub fn boxes_mesh(boxes: &[VehicleBox], (cx, cy): (f64, f64), lift: f64) -> Option<Mesh> {
+pub fn boxes_mesh(
+    boxes: &[VehicleBox],
+    (cx, cy): (f64, f64),
+    lift: f64,
+    colour: fn(f64) -> [u8; 3],
+) -> Option<Mesh> {
     // The last box is always drawn, so only an empty slice draws nothing.
     if boxes.is_empty() {
         return None;
@@ -271,7 +295,7 @@ pub fn boxes_mesh(boxes: &[VehicleBox], (cx, cy): (f64, f64), lift: f64) -> Opti
     let mut idx = Vec::with_capacity(n * unit_idx.len());
     for (i, b) in boxes.iter().enumerate().filter(|&(i, _)| drawn[i]) {
         let t = box_transform(b, i, cx, cy, lift);
-        let c = srgb(scene::SPEED_BINS[scene::speed_bin(b.speed)].1).to_linear();
+        let c = srgb(colour(b.speed)).to_linear();
         let base = pos.len() as u32;
         for ((p, nrm), s) in unit_pos.iter().zip(&unit_normal).zip(&shades) {
             pos.push(t.transform_point(Vec3::from(*p)).to_array());
@@ -319,7 +343,7 @@ pub fn spawn_boxes(world: &mut World) -> BoxesEntity {
             odo: 0.0,
         },
     };
-    let mesh = boxes_mesh(&[placeholder], (0.0, 0.0), 0.0).expect("one box is drawn");
+    let mesh = boxes_mesh(&[placeholder], (0.0, 0.0), 0.0, speed_colour).expect("one box is drawn");
     let mesh = world.resource_mut::<Assets<Mesh>>().add(mesh);
     let material = world
         .resource_mut::<Assets<StandardMaterial>>()
@@ -340,16 +364,17 @@ pub fn spawn_boxes(world: &mut World) -> BoxesEntity {
     BoxesEntity { entity, mesh }
 }
 
-/// Draw `boxes` as [`boxes_mesh`]'s one mesh, `lift` metres per rank, in place of the last
-/// frame's; hide the entity when no box is drawn.
+/// Draw `boxes` as [`boxes_mesh`]'s one mesh, `lift` metres per rank, coloured by
+/// `colour`, in place of the last frame's; hide the entity when no box is drawn.
 pub fn set_boxes(
     world: &mut World,
     entity: &BoxesEntity,
     boxes: &[VehicleBox],
     (cx, cy): (f64, f64),
     lift: f64,
+    colour: fn(f64) -> [u8; 3],
 ) {
-    let want = match boxes_mesh(boxes, (cx, cy), lift) {
+    let want = match boxes_mesh(boxes, (cx, cy), lift, colour) {
         Some(mesh) => {
             world
                 .resource_mut::<Assets<Mesh>>()
@@ -1019,4 +1044,226 @@ pub fn set_hud_size(world: &mut World, nodes: &HudNodes, size: u32) {
         n.left = Val::Px(dx);
         n.top = Val::Px(dy);
     }
+}
+
+/// The link colours' tint (vis-003 §2.21.10): one entity, the handle of the mesh
+/// [`set_tint`] replaces, and the colours it was last drawn with.
+#[derive(Debug, Clone)]
+pub struct TintEntity {
+    pub entity: Entity,
+    pub mesh: Handle<Mesh>,
+    pub drawn: Vec<Option<[u8; 3]>>,
+}
+
+/// The triangles of every unit with a colour, in unit order, each vertex its unit's
+/// colour, linear from sRGB as the markings'; `None` when no unit has one.
+fn tint_mesh(d: &TintData, colours: &[Option<[u8; 3]>], (fx, fy): (f64, f64)) -> Option<Mesh> {
+    let mut idx = Vec::new();
+    for (t, c) in d.tris.iter().zip(colours) {
+        if c.is_some() {
+            idx.extend_from_slice(t);
+        }
+    }
+    if idx.is_empty() {
+        return None;
+    }
+    let pos: Vec<[f32; 3]> = d
+        .positions
+        .iter()
+        .map(|p| [(p[0] - fx) as f32, p[2] as f32, -(p[1] - fy) as f32])
+        .collect();
+    let n = pos.len();
+    let cols: Vec<[f32; 4]> = d
+        .unit
+        .iter()
+        .map(|&u| streets::colour(colours[u as usize].unwrap_or([0, 0, 0]), 1.0))
+        .collect();
+    Some(
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD,
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, cols)
+        .with_inserted_indices(Indices::U32(idx)),
+    )
+}
+
+/// Spawn the tint's entity, hidden, never culled, with one white unlit material that does
+/// not cull, as the dots'. Its first mesh is a placeholder, never shown.
+pub fn spawn_tint(world: &mut World) -> TintEntity {
+    let placeholder = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32, 0.0, 0.0]; 3])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; 3])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.0f32, 0.0, 0.0, 1.0]; 3])
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2]));
+    let mesh = world.resource_mut::<Assets<Mesh>>().add(placeholder);
+    let material = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            cull_mode: None,
+            ..default()
+        });
+    let entity = world
+        .spawn((
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::IDENTITY,
+            Visibility::Hidden,
+            NoFrustumCulling,
+        ))
+        .id();
+    TintEntity {
+        entity,
+        mesh,
+        drawn: Vec::new(),
+    }
+}
+
+/// Draw the units with these colours about the bake origin `at`, replacing the mesh only
+/// when a colour differs from the last drawn, or always when `force` (`view --bench`);
+/// hide the entity when no unit has a colour.
+pub fn set_tint(
+    world: &mut World,
+    e: &mut TintEntity,
+    d: &TintData,
+    colours: &[Option<[u8; 3]>],
+    at: (f64, f64),
+    force: bool,
+) {
+    if !force && e.drawn == colours {
+        return;
+    }
+    let want = match tint_mesh(d, colours, at) {
+        Some(mesh) => {
+            world
+                .resource_mut::<Assets<Mesh>>()
+                .insert(e.mesh.id(), mesh)
+                .expect("the tint's mesh handle is held");
+            Visibility::Visible
+        }
+        None => Visibility::Hidden,
+    };
+    let mut v = world.get_mut::<Visibility>(e.entity).unwrap();
+    if *v != want {
+        *v = want;
+    }
+    e.drawn = colours.to_vec();
+}
+
+/// Despawn the tint.
+pub fn despawn_tint(world: &mut World, e: TintEntity) {
+    world.despawn(e.entity);
+}
+
+/// The legend's top, px (§2.21.9): under the HUD's line box and `0.4·S`, or the HUD's
+/// own top when the HUD is off.
+pub fn legend_top(size: u32, hud_on: bool) -> f32 {
+    let m = hud::margin(size) as f32;
+    if hud_on {
+        m + 1.2 * size as f32 + 0.4 * size as f32
+    } else {
+        m
+    }
+}
+
+/// One copy of a legend text: never wrapped, proportional figures.
+fn legend_text(s: &str, font: &Handle<Font>, size: u32, color: [u8; 3]) -> impl Bundle {
+    (
+        Text::new(s),
+        TextFont {
+            font: font.clone().into(),
+            font_size: FontSize::Px(size as f32),
+            ..default()
+        },
+        TextColor(srgb(color)),
+        TextLayout::no_wrap(),
+    )
+}
+
+/// An outlined text item in `parent`'s row, with a right margin of `0.4·S`: the fill in
+/// its flow and the eight black copies `o` px away at `ZIndex(-1)`, as the HUD's.
+fn legend_item(world: &mut World, parent: Entity, s: &str, font: &Handle<Font>, size: u32) {
+    let item = world
+        .spawn((
+            Node {
+                margin: UiRect::right(Val::Px(size as f32 * 0.4)),
+                ..default()
+            },
+            ChildOf(parent),
+        ))
+        .id();
+    world.spawn((legend_text(s, font, size, hud::FILL), ChildOf(item)));
+    for (dx, dy) in hud_offsets(size) {
+        world.spawn((
+            legend_text(s, font, size, hud::OUTLINE),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(dx),
+                top: Val::Px(dy),
+                ..default()
+            },
+            ZIndex(-1),
+            ChildOf(item),
+        ));
+    }
+}
+
+/// Spawn the legend's UI tree (vis-003 §2.21.9) at (`hud::margin(size)`, `top`): a row
+/// with its items centred, the title, then each step's swatch (`round(0.75·S)` px square,
+/// an `o`-px black border, a right margin of `0.25·S`) and its range. With `camera`,
+/// drawn by it into its image (`render`); without, into the window (`view`). Returns the
+/// root.
+pub fn spawn_legend(
+    world: &mut World,
+    camera: Option<Entity>,
+    font: Handle<Font>,
+    size: u32,
+    top: f32,
+    legend: &Legend,
+) -> Entity {
+    let (title, items) = legend;
+    let m = hud::margin(size) as f32;
+    let mut root = world.spawn(Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(m),
+        top: Val::Px(top),
+        flex_direction: FlexDirection::Row,
+        align_items: AlignItems::Center,
+        ..default()
+    });
+    if let Some(c) = camera {
+        root.insert(UiTargetCamera(c));
+    }
+    let root = root.id();
+    legend_item(world, root, title, &font, size);
+    let o = hud::outline_offset(size) as f32;
+    let side = (size as f32 * 0.75).round();
+    for (label, colour) in items {
+        world.spawn((
+            Node {
+                width: Val::Px(side),
+                height: Val::Px(side),
+                border: UiRect::all(Val::Px(o)),
+                margin: UiRect::right(Val::Px(size as f32 * 0.25)),
+                ..default()
+            },
+            BackgroundColor(srgb(*colour)),
+            BorderColor::all(srgb(hud::OUTLINE)),
+            ChildOf(root),
+        ));
+        legend_item(world, root, label, &font, size);
+    }
+    root
+}
+
+/// Despawn the legend's tree.
+pub fn despawn_legend(world: &mut World, root: Entity) {
+    world.entity_mut(root).despawn();
 }
