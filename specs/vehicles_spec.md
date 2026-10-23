@@ -147,6 +147,20 @@ Decided by the user, 2026-10-23, before drafting:
 
 The flag's and the key's names and each class's sizes were left to the draft.
 
+Decided by the user, 2026-10-23, on the draft, before review (the answers to OQ-1 to OQ-6,
+each as recommended). The probe's sheets and clips (`stills/sheet-oq1-shapes.png`,
+`sheet-oq2-colour.png`, `sheet-oq4-brake.png`, `sheet-oq5-head.png`, `sheet-far.png`;
+`runs/clip-oq3.mp4`, `clip-oq4.mp4`, in `scratch/vis004p1-probe/`, §2.19) were put to the
+user before the answers:
+7. **The shapes with their glass** (OQ-1 (a)), at the sizes tabled in §2.6: car 1.8 × 1.5
+   m, truck 2.5 × 3.6, bus 2.55 × 3.1, bike 0.44 × 1.65, plain 1.8 × 1.55 (width × top).
+8. **The speed colour on the whole body,** as today, the lamps on a dark tail panel (OQ-2
+   (a), §2.7).
+9. **Every row's state as the FCD says;** no debounce (OQ-3 (a), §2.8.2).
+10. **Lamps on a dark tail panel** (OQ-4 (c), §2.8.3).
+11. **Headlights always lit,** warm white (OQ-5 (a), §2.9).
+12. **`--no-shapes` and `V`** (OQ-6, §2.13).
+
 The rest of this section is the draft's proposal. It settles:
 - what the run gives (§2.4) and the mix fixture (§2.5);
 - each shape (§2.6, OQ-1) and its colours (§2.7, OQ-2);
@@ -406,7 +420,9 @@ Two levels of detail, each drawn by the probe on every scene at the same frames 
 
 **Recommended: (a).** The glass is what makes a cabin a cabin and a bus a bus at a tilt
 (`sheet-oq1-shapes.png`, middle and right columns); from straight down the two are the
-same (the glass is on the sides). The choice is the user's, on the stills.
+same (the glass is on the sides). The choice is the user's, on the stills. *(2026-10-23, user)* OQ-1 is
+answered (a), the masses and the glass, at the sizes tabled above, as recommended
+(§2.2, decision 7).
 
 ### 2.7 The colours (OQ-2)
 
@@ -437,7 +453,8 @@ same (the glass is on the sides). The choice is the user's, on the stills.
     (`sheet-oq2-colour.png`).
 
 **Recommended: (a),** which keeps today's reading of speed at every pitch. The choice is
-the user's (OQ-2).
+the user's (OQ-2). *(2026-10-23, user)* OQ-2 is answered (a), the speed colour on the whole body with
+the lamps on a dark tail panel, as recommended (§2.2, decision 8).
 
 ### 2.8 Brake lights (OQ-3, OQ-4)
 
@@ -496,7 +513,9 @@ the median acceleration of a one-row "on" is −0.43 m/s² on Midtown (p10 −2.
   urban_grid, 22.6 % on the mix; the share lit barely moves (53.4 → 53.2 %). It hides
   real one-second braking and lights a row the rule says is off.
 
-The choice is the user's (OQ-3), on the clips (§2.19). **Recommended: (a).**
+The choice is the user's (OQ-3), on the clips (§2.19). **Recommended: (a).** *(2026-10-23, user)* OQ-3
+is answered (a), every row's state as the FCD says, no debounce, as recommended (§2.2,
+decision 9).
 
 #### 2.8.3 How they look (OQ-4)
 
@@ -520,7 +539,8 @@ the 1080p frame and (b) 168, and none of the three is seen without a zoom
 
 **Recommended: (c).** (b) is the dashboard's and the loudest, but turns a truck's back
 into a red wall and still fails on a red body; (c) reads on every body and keeps the rear
-a rear. The choice is the user's (OQ-4), on the stills and the clips.
+a rear. The choice is the user's (OQ-4), on the stills and the clips. *(2026-10-23, user)* OQ-4 is
+answered (c), lamps on a dark tail panel, as recommended (§2.2, decision 10).
 
 ### 2.9 Headlights (OQ-5)
 
@@ -535,6 +555,8 @@ Never anything beyond the vehicle: no beam on the road, no bloom (§1.1). Bikes 
 (§2.6.4). At the line-up's 24 m the lit lamps mark every front (`lu-front-rec.png`); from
 60 m up they are a pixel or less, and (a) and (b) look the same (`sheet-oq5-head.png`,
 bottom row). **Recommended: (a).** The choice is the user's (OQ-5), on the stills.
+*(2026-10-23, user)* OQ-5 is answered (a), headlights always lit, warm white, as recommended (§2.2,
+decision 11).
 
 ### 2.10 The far end: no fade, no box
 
@@ -636,6 +658,7 @@ files exist: `scratch/derived/no_class_length.parquet` (`scripts/fixture.sh`'s p
   `--no-streets`, `--no-signals` and `--no-hud`; the lights are parts of the shapes, so the
   one flag turns all three off. Rejected: `--boxes` (says what is drawn, not what is
   turned off, and breaks the `--no-` pattern), `--no-vehicle-shapes` (long for no gain).
+  *(2026-10-23, user)* OQ-6 is answered: `--no-shapes` and `V`, as drafted (§2.2, decision 12).
 - **`--no-shapes` where nothing changes is accepted, with no effect:** `render` without
   `--camera`, whose orthographic frames are today's with or without it (decision 3), as
   `--no-see-through` is accepted where nothing is cut (vis-002 §2.15.6). A harness can
@@ -849,35 +872,56 @@ The look questions (OQ-1, OQ-2, OQ-4, OQ-5) are the user's, put to the stills of
 per option at the same frames; OQ-3 to the clips. Phase 6's lesson (vis-001 §2.12; a look
 decided on paper failed at the visual gate) is why each is drawn rather than described.
 Each blocks gate 7's counts and gate 12, and nothing else: the scope and every gate are
-written with the recommendations, and say what another answer changes.
+written with the recommendations, and say what another answer changes. *(2026-10-23, user)* All six
+are answered as recommended, before review (§2.2, decisions 7–12), so nothing they block
+changes.
 
 - **OQ-1** — The shapes' detail: (a) the masses and the glass, (b) the masses alone
   (§2.6.7)? And their sizes, as §2.6's tables give them (width × top: car 1.8 × 1.5 m, truck 2.5 ×
-  3.6, bus 2.55 × 3.1, bike 0.44 × 1.65, plain 1.8 × 1.55)? *(design call: the user's, on
-  `sheet-oq1-shapes.png` and `lu-*.png`; blocks gates 7 and 12.)* *Recommendation:* (a),
+  3.6, bus 2.55 × 3.1, bike 0.44 × 1.65, plain 1.8 × 1.55)? ~~*(design call: the user's, on
+  `sheet-oq1-shapes.png` and `lu-*.png`; blocks gates 7 and 12.)*~~ *Recommendation:* (a),
   and the sizes as tabled. (b) drops the glass parts from the tables: gate 5's part counts
-  and gate 7's counts are measured again.
+  and gate 7's counts are measured again. **RESOLVED** *(answered 2026-10-23, user, before
+  review)*: **(a), the masses and the glass, the sizes as tabled,** as recommended. Recorded
+  in §2.2 (decision 7) and §2.6.7; gates 5, 7 and 12 were written with this answer and do
+  not change.
 - **OQ-2** — Where the speed colour goes: (a) the whole body, as today, with the lamps on a
-  dark tail panel; (b) the roof only, the sides and ends a neutral grey (§2.7)? *(design
-  call: the user's, on `sheet-oq2-colour.png`; blocks gate 12.)* *Recommendation:* (a): it
+  dark tail panel; (b) the roof only, the sides and ends a neutral grey (§2.7)? ~~*(design
+  call: the user's, on `sheet-oq2-colour.png`; blocks gate 12.)*~~ *Recommendation:* (a): it
   keeps today's reading of speed at every pitch, and OQ-4 (c) makes the lamps read on it.
   (b) changes one paint in `shapes_mesh` and gate 7's pixels are measured again.
+  **RESOLVED** *(answered 2026-10-23, user, before review)*: **(a), the speed colour on the
+  whole body, as today, the lamps on a dark tail panel,** as recommended. Recorded in §2.2
+  (decision 8) and §2.7; gates 7 and 12 were written with this answer and do not change.
 - **OQ-3** — The brake rule: (a) every row's state, as the FCD says; (b) one-row runs
-  debounced (§2.8.2)? *(design call: the user's, on `runs/clip-dash.mp4` against
-  `runs/clip-debounce.mp4`; blocks gates 6 and 12.)* *Recommendation:* (a). 14.2 % of
+  debounced (§2.8.2)? ~~*(design call: the user's, on `runs/clip-dash.mp4` against
+  `runs/clip-debounce.mp4`; blocks gates 6 and 12.)*~~ *Recommendation:* (a). 14.2 % of
   Midtown's flips are one-row runs, and they are real braking (median −0.43 m/s²). (b)
   changes `vehicles::read`'s states and gate 6's straight computation the same way.
+  **RESOLVED** *(answered 2026-10-23, user, before review, on `runs/clip-oq3.mp4`)*: **(a),
+  every row's state as the FCD says; no debounce,** as recommended. Recorded in §2.2
+  (decision 9) and §2.8.2; gates 6 and 12 were written with this answer and do not change.
 - **OQ-4** — How a brake light looks: (a) lamps, (b) the dashboard's strip, (c) lamps on a
-  dark tail panel (§2.8.3)? *(design call: the user's, on `sheet-oq4-brake.png` and the
+  dark tail panel (§2.8.3)? ~~*(design call: the user's, on `sheet-oq4-brake.png` and the
   clips `runs/clip-lamps.mp4`, `clip-strip.mp4`, `clip-dash.mp4` (c); blocks gates 5, 7
-  and 12.)* *Recommendation:* (c). The finding behind it: a red lamp, or the red strip, on
+  and 12.)*~~ *Recommendation:* (c). The finding behind it: a red lamp, or the red strip, on
   the slowest bin's red body does not show, and that is a queue at a red light.
-- **OQ-5** — Headlights: (a) always lit, warm white; (b) unlit lenses (§2.9)? *(design
-  call: the user's, on `sheet-oq5-head.png`; blocks gates 7 and 12.)* *Recommendation:*
-  (a): the run has no time of day, and a lit lamp marks the front.
-- **OQ-6** — The names: `--no-shapes` and `V` (§2.13)? *(design call: the user's;
-  blocks gate 13 and the scripts' 23 lines.)* *Recommendation:* as drafted; a rename is a
-  find-and-replace in the scope and the gates.
+  **RESOLVED** *(answered 2026-10-23, user, before review, on `sheet-oq4-brake.png` and
+  `runs/clip-oq4.mp4`)*: **(c), lamps on a dark tail panel,** as recommended. Recorded in
+  §2.2 (decision 10) and §2.8.3; gates 5, 7 and 12 were written with this answer and do not
+  change.
+- **OQ-5** — Headlights: (a) always lit, warm white; (b) unlit lenses (§2.9)? ~~*(design
+  call: the user's, on `sheet-oq5-head.png`; blocks gates 7 and 12.)*~~ *Recommendation:*
+  (a): the run has no time of day, and a lit lamp marks the front. **RESOLVED** *(answered
+  2026-10-23, user, before review)*: **(a), headlights always lit, warm white,** as
+  recommended. Recorded in §2.2 (decision 11) and §2.9; gates 7 and 12 were written with
+  this answer and do not change.
+- **OQ-6** — The names: `--no-shapes` and `V` (§2.13)? ~~*(design call: the user's;
+  blocks gate 13 and the scripts' 23 lines.)*~~ *Recommendation:* as drafted; a rename is a
+  find-and-replace in the scope and the gates. **RESOLVED** *(answered 2026-10-23, user,
+  before review)*: **`--no-shapes` and `V`,** as recommended. Recorded in §2.2 (decision
+  12) and §2.13; gate 13 and the 23 lines of §2.14 were written with this answer and do
+  not change.
 
 ## 4. Implementation phases
 
@@ -894,7 +938,8 @@ Drafted 2026-10-23; the design is §2, and the user's decisions are §2.2's 1–
 builds on vis-003 Phase 3 (shipped 2026-10-23, `ca244a0`) at engine `90b39292`. OQ-1 to
 OQ-6 are the user's; the scope and every gate are written with their recommendations (the
 glass, the body in the speed colour, every row's state, the tail panel, lit headlights,
-`--no-shapes` and `V`) and say what another answer changes.
+`--no-shapes` and `V`) and say what another answer changes. *(2026-10-23, user)* All six are answered
+as recommended (§2.2, decisions 7–12), so the scope and the gates stand as drafted.
 
 - **Scope:**
   - **`src/vehicles.rs`** (new; no Bevy types):
@@ -1084,7 +1129,8 @@ glass, the body in the speed colour, every row's state, the tail panel, lit head
 
      The counts are `==`, the probe's through the same Bevy and GPU. They depend on OQ-1's,
      OQ-4's and OQ-5's answers: another answer is measured again before the gate is run,
-     and recorded.
+     and recorded. *(2026-10-23, user)* OQ-1, OQ-4 and OQ-5 are answered as these counts were measured
+     ((a), (c), (a)), so they stand.
   - **The shapes — renders:**
   8. **On, deterministic** (`scripts/gates-vehicles.sh`). Each twice, each pair equal:
      Midtown's and the mix's `--from 300 --to 360 --speedup 1 --buildings …` with
@@ -1166,7 +1212,8 @@ glass, the body in the speed colour, every row's state, the tail panel, lit head
       the user to watch against, not counts, and a miss among them is recorded, not a fail.
 
       Then say whether OQ-1's, OQ-2's, OQ-4's and OQ-5's answers stand as they look, and
-      OQ-3's on the truck close-up.
+      OQ-3's on the truck close-up. *(2026-10-23, user)* OQ-1 to OQ-6 are answered as this gate was
+      written, so it stands as drafted.
   - **The flags, the key and the fixture:**
   13. **Their edges.**
       - **`V`, headless** (`tests/vehicles.rs`, not ignored), written as `tests/links.rs`'s
