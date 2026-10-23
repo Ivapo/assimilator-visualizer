@@ -5,6 +5,7 @@
 use super::slider::Bar;
 use crate::camera::{self, PITCH_MAX, PITCH_MIN, Pose, cos_deg, sin_deg, wrap360};
 pub use crate::keyframes::{At, Keyframe};
+use crate::links::Measure;
 use crate::render::VehicleBox;
 use crate::scene::{self, Camera, Strip};
 
@@ -72,6 +73,8 @@ pub struct Pressed {
     pub l: bool,
     /// Show or hide the HUD (vis-003 §2.20.10), by position.
     pub h: bool,
+    /// Cycle the link colours (vis-003 §2.21.11), by position.
+    pub c: bool,
 }
 
 /// Keys held this frame.
@@ -236,6 +239,10 @@ pub struct ViewState {
     /// Whether the HUD is drawn (vis-003 §2.20.10); `H` flips it. Off at
     /// [`ViewState::new`]; `view` sets it at launch, on unless `--no-hud`.
     pub hud_shown: bool,
+    /// The link colours' measure (vis-003 §2.21.11); `None` while off. `C` cycles it off →
+    /// `relative` → `speed` → `density` → `stopped` → off. `None` at [`ViewState::new`];
+    /// `view` sets it at launch from `--link-colours`.
+    pub link_measure: Option<Measure>,
 }
 
 impl ViewState {
@@ -263,6 +270,7 @@ impl ViewState {
             streets_shown: false,
             signals_shown: false,
             hud_shown: false,
+            link_measure: None,
         }
     }
 
@@ -366,6 +374,9 @@ impl ViewState {
         }
         if input.pressed.h {
             self.hud_shown = !self.hud_shown;
+        }
+        if input.pressed.c {
+            self.link_measure = Measure::next(self.link_measure);
         }
 
         // Orbit: a right press, or a left press with Control held, off the bar and with no

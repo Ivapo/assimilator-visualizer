@@ -144,6 +144,18 @@ enum Cmd {
         /// Start with the HUD hidden; `H` shows it, as it is by default.
         #[arg(long)]
         no_hud: bool,
+        /// Start with the links coloured by this measure (`relative` when given bare,
+        /// `speed`, `density` or `stopped`); `C` cycles them off → each measure → off.
+        /// Default: off.
+        #[arg(long, value_name = "MEASURE", num_args = 0..=1, default_missing_value = "relative",
+              value_parser = PossibleValuesParser::new(Measure::NAMES))]
+        link_colours: Option<String>,
+        /// The link colours' window, seconds, ending at the time shown. Default: 60.
+        #[arg(long, value_name = "SECONDS", allow_negative_numbers = true)]
+        link_window: Option<f64>,
+        /// Colour each lane by its own rows, not each link.
+        #[arg(long)]
+        link_lanes: bool,
         /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
         #[arg(long, hide = true)]
         bench: Option<f64>,
@@ -241,6 +253,9 @@ fn run(cli: Cli) -> Result<()> {
             no_streets,
             no_signals,
             no_hud,
+            link_colours,
+            link_window,
+            link_lanes,
             bench,
         } => view::run(&ViewOptions {
             load: LoadOptions {
@@ -257,6 +272,9 @@ fn run(cli: Cli) -> Result<()> {
             streets: !no_streets,
             signals: !no_signals,
             hud: !no_hud,
+            links: link_colours.map(|m| Measure::from_name(&m).expect("clap's possible values")),
+            link_window,
+            link_lanes,
             width,
             height,
             bench,

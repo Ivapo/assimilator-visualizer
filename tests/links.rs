@@ -18,7 +18,10 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use assimilator_video::clock;
 use assimilator_video::fcd::{Fcd, Row, Snapshot, VehicleRows};
 use assimilator_video::links::{self, Links, Measure, Unit};
+use assimilator_video::render::VehicleBox;
 use assimilator_video::run::{self, LoadOptions, Run};
+use assimilator_video::view::state::Follow;
+use assimilator_video::view::{Fit, ViewInput, ViewState};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -479,4 +482,156 @@ fn gate6_urban_grid_every_frame() {
         ],
     );
     println!("gate 6: urban_grid's whole run: PASS");
+}
+
+// ── Gate 13: `C` ─────────────────────────────────────────────────────────────
+
+const W: f64 = 1280.0;
+const H: f64 = 720.0;
+const DT: f64 = 1.0 / 60.0;
+
+/// vis-001 Phase 3's `plain_state`: `[0, 300]`, centre (0, 0), `k` = 1, 1280×720.
+fn plain_state() -> ViewState {
+    let fit = Fit {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        rect: (-1e4, -1e4, 1e4, 1e4),
+        size: (W, H),
+    };
+    ViewState::new(0.0, 300.0, vec![], fit)
+}
+
+fn at(c: (f64, f64)) -> ViewInput {
+    ViewInput {
+        cursor: Some(c),
+        pointer: Some(c),
+        size: (W, H),
+        dt: DT,
+        ..Default::default()
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+/// `input` with `c` pressed steps the measure, and leaves every other field as a twin
+/// stepped through `input` alone does.
+fn step_c(s: &mut ViewState, input: ViewInput) {
+    let mut twin = s.clone();
+    let line = twin.frame(&input, no_boxes);
+    let before = s.link_measure;
+    let mut with_c = input;
+    with_c.pressed.c = true;
+    assert_eq!(s.frame(&with_c, no_boxes), line, "the keyframe line");
+    assert_eq!(s.link_measure, Measure::next(before), "c steps the measure");
+    twin.link_measure = s.link_measure;
+    assert_eq!(*s, twin, "c changes nothing else");
+}
+
+fn step(s: &mut ViewState, input: ViewInput) {
+    let before = s.link_measure;
+    s.frame(&input, no_boxes);
+    assert_eq!(s.link_measure, before, "only c steps the measure");
+}
+
+#[test]
+fn gate13_c() {
+    let mut s = plain_state();
+    assert_eq!(s.link_measure, None, "off at new");
+    let mut seen = Vec::new();
+    for _ in 0..5 {
+        step_c(&mut s, at((640.0, 360.0)));
+        seen.push(s.link_measure);
+    }
+    println!("gate 13: five frames with c: {seen:?}");
+    assert_eq!(
+        seen,
+        [
+            Some(Measure::Relative),
+            Some(Measure::Speed),
+            Some(Measure::Density),
+            Some(Measure::Stopped),
+            None
+        ]
+    );
+    s.link_measure = Some(Measure::Speed);
+    step_c(&mut s, at((640.0, 360.0)));
+    assert_eq!(s.link_measure, Some(Measure::Density), "from speed");
+
+    // Playing, following, with K pressed in the same frame.
+    s.playing = true;
+    s.follow = Some(Follow {
+        vehicle_id: 7,
+        drawn: false,
+    });
+    let mut k = at((640.0, 360.0));
+    k.pressed.k = true;
+    step_c(&mut s, k);
+    step_c(&mut s, at((640.0, 360.0)));
+    s.playing = false;
+    s.follow = None;
+
+    // A right-button orbit.
+    step(
+        &mut s,
+        ViewInput {
+            right_press: true,
+            ..at((640.0, 360.0))
+        },
+    );
+    assert!(s.orbit.is_some());
+    step_c(&mut s, at((700.0, 330.0)));
+    assert!(s.orbit.is_some(), "the orbit goes on");
+    step(
+        &mut s,
+        ViewInput {
+            right_release: true,
+            ..at((700.0, 330.0))
+        },
+    );
+    assert!(s.orbit.is_none());
+
+    // A left drag.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((400.0, 300.0))
+        },
+    );
+    step_c(&mut s, at((460.0, 340.0)));
+    assert!(s.press.is_some(), "the drag goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((460.0, 340.0))
+        },
+    );
+
+    // A scrub.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((640.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_some());
+    step_c(&mut s, at((300.0, 706.0)));
+    assert!(s.scrub.is_some(), "the scrub goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((300.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_none());
+    println!(
+        "gate 13: c cycles off → relative → speed → density → stopped → off and changes \
+         nothing else, through an orbit, a drag and a scrub: PASS"
+    );
 }
