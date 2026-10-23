@@ -9,7 +9,9 @@
 //! network with a signal, shown or hidden by `L`, the dots rebuilt each frame while shown.
 //! The HUD (vis-003 §2.20.10) is drawn in the top-left corner on every network, shown or
 //! hidden by `H`, its line set for `t` each frame while shown and its size following the
-//! window's.
+//! window's. Link colours (vis-003 §2.21.11) are off at launch unless `--link-colours`
+//! names a measure; `C` cycles the measure, and while one is on the strips are tinted for
+//! `t` each frame, the boxes are light grey and the legend sits under the HUD.
 
 pub mod slider;
 pub mod state;
@@ -26,6 +28,7 @@ use crate::buildings::Buildings;
 use crate::draw::{self, BuildingsCut, HudNodes};
 use crate::hud;
 use crate::inputs;
+use crate::links::{self, Legend, Links, Measure, TintData};
 use crate::run::{self, LoadOptions, Run};
 use crate::see_through;
 use crate::signals::{self, DotsData, Eye, Signals};
@@ -46,6 +49,12 @@ pub struct ViewOptions {
     pub signals: bool,
     /// The HUD shown at launch (vis-003 §2.20.10): true unless `--no-hud`.
     pub hud: bool,
+    /// The link colours' measure at launch (vis-003 §2.21.11): `--link-colours`'s.
+    pub links: Option<Measure>,
+    /// `--link-window`, seconds; `None` when not given (60).
+    pub link_window: Option<f64>,
+    /// `--link-lanes`: one unit per lane.
+    pub link_lanes: bool,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -76,6 +85,22 @@ struct Viewer {
     hud: (HudNodes, u32),
     bar: BarNodes,
     bench: Option<Bench>,
+    /// The link colours, built at launch for `C`.
+    links: ViewLinks,
+}
+
+/// The link colours as drawn, for `C`.
+struct ViewLinks {
+    links: Links,
+    window: f64,
+    /// Whether the window passed its check; when not, `C` draws nothing (§2.21.11).
+    usable: bool,
+    tint: draw::TintEntity,
+    data: TintData,
+    /// The legend's root and what it was spawned for: the measure, the size and whether
+    /// the HUD was shown.
+    legend: Option<(Entity, (Measure, u32, bool))>,
+    font: Handle<Font>,
 }
 
 /// The buildings as drawn, for `B` and `X`.
@@ -149,6 +174,16 @@ pub fn run(o: &ViewOptions) -> Result<()> {
             Err(e) if o.signals => return Err(e),
             Err(_) => None,
         };
+    // Built at launch for `C`; the window is checked when either flag is given, and
+    // otherwise a window it refuses leaves `C` drawing nothing (vis-003 §2.21.11).
+    let links = Links::new(&run.placement, &run.fcd, o.link_lanes);
+    let window = o.link_window.unwrap_or(links::WINDOW_S);
+    let usable = match links::check_window(window, links.interval()) {
+        Ok(()) => true,
+        Err(e) if o.links.is_some() || o.link_window.is_some() => return Err(e),
+        Err(_) => false,
+    };
+    let tint_data = links::tint(&run.placement, &links);
     let fit = Fit::new(&run.strips, o.width, o.height);
     let snaps = run.fcd.snapshots.iter().map(|s| s.time).collect();
     let mut state = ViewState::new(run.from, run.to, snaps, fit);
@@ -156,6 +191,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     state.streets_shown = o.streets;
     state.signals_shown = o.signals;
     state.hud_shown = o.hud;
+    state.link_measure = o.links;
     if o.bench.is_some() {
         state.t = BENCH_T.clamp(state.from, state.to);
         state.playing = true;
@@ -205,6 +241,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     for e in streets.entities() {
         *world.entity_mut(e).get_mut::<Visibility>().unwrap() = shown;
     }
+    let tint = draw::spawn_tint(world);
     let boxes = draw::spawn_boxes(world);
     let dots = timeline.map(|t| (t, draw::spawn_dots(world)));
     let buildings = buildings.map(|b| ViewBuildings {
@@ -231,7 +268,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     let font = world
         .resource_mut::<Assets<Font>>()
         .add(Font::from_bytes(draw::CREDIT_FONT.to_vec()));
-    let hud_nodes = draw::spawn_hud(world, None, font, hud_size);
+    let hud_nodes = draw::spawn_hud(world, None, font.clone(), hud_size);
     // Ticks are drawn over the track and under the handle.
     let bar = BarNodes {
         track: spawn_rect(world, TRACK_COLOR, 0),
@@ -255,6 +292,15 @@ pub fn run(o: &ViewOptions) -> Result<()> {
             elapsed: 0.0,
             frame_ms: Vec::new(),
         }),
+        links: ViewLinks {
+            links,
+            window,
+            usable,
+            tint,
+            data: tint_data,
+            legend: None,
+            font,
+        },
     });
     app.add_systems(Update, (track_pointer, frame).chain());
     app.run();
@@ -320,6 +366,7 @@ fn input(world: &mut World) -> ViewInput {
             m: keys.just_pressed(KeyCode::KeyM),
             l: keys.just_pressed(KeyCode::KeyL),
             h: keys.just_pressed(KeyCode::KeyH),
+            c: keys.just_pressed(KeyCode::KeyC),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -359,8 +406,15 @@ fn frame(world: &mut World) {
         let mut cam = world.entity_mut(v.camera);
         *cam.get_mut::<Transform>().unwrap() = transform;
         *cam.get_mut::<Projection>().unwrap() = projection;
+        // Link colours (vis-003 §2.21.11): on while `C` names a measure and the window
+        // passed its check.
+        let measure = s.link_measure.filter(|_| v.links.usable);
         let boxes = run.boxes_at(s.t);
-        draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D);
+        let colour = match measure {
+            Some(_) => draw::cars_colour,
+            None => draw::speed_colour,
+        };
+        draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D, colour);
         if let Some(b) = v.buildings.as_mut() {
             let want = if s.buildings_shown {
                 Visibility::Inherited
@@ -425,6 +479,15 @@ fn frame(world: &mut World) {
             };
             draw::set_dots(world, entity, &dots, (fx, fy));
         }
+        // The tint for `t`, replaced when a colour changes, and on every frame of
+        // `--bench` while on.
+        let l = &mut v.links;
+        let colours = match measure {
+            Some(m) => l.links.colours_at(s.t, l.window, m),
+            None => vec![None; l.links.units.len()],
+        };
+        let force = v.bench.is_some() && measure.is_some();
+        draw::set_tint(world, &mut l.tint, &l.data, &colours, (fx, fy), force);
         // The HUD (vis-003 §2.20.10): shown or hidden by `H`; while shown, its size from
         // the window's, and its line for `t`, as `render` sets it, on every frame.
         let (nodes, drawn_size) = &mut v.hud;
@@ -445,6 +508,21 @@ fn frame(world: &mut World) {
             }
             let (n, mean) = hud::numbers(&run.fcd, s.t, !boxes.is_empty());
             draw::set_hud_text(world, nodes, &hud::text(s.t, n, mean));
+        }
+        // The legend (vis-003 §2.21.9), at the HUD's size, under it while it is shown and
+        // in its place while hidden: respawned when the measure, the size or `H` changes.
+        let want = measure.map(|m| (m, hud::size(s.size.0, s.size.1), s.hud_shown));
+        let l = &mut v.links;
+        if l.legend.map(|(_, k)| k) != want {
+            if let Some((root, _)) = l.legend.take() {
+                draw::despawn_legend(world, root);
+            }
+            if let Some((m, size, hud_on)) = want {
+                let legend: Legend = links::legend(m);
+                let top = draw::legend_top(size, hud_on);
+                let root = draw::spawn_legend(world, None, l.font.clone(), size, top, &legend);
+                l.legend = Some((root, (m, size, hud_on)));
+            }
         }
         let text = s.readout();
         let mut ent = world.entity_mut(v.readout);

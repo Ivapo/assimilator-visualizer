@@ -9,7 +9,7 @@ covers: >
   perspective paths draw, the keyframe line and the keyframe file with its errors,
   and the flight `render --camera` takes through the keyframes.
 max_lines: 60
-generated: 2026-10-18
+generated: 2026-10-23
 ---
 
 # Camera
@@ -37,6 +37,7 @@ generated: 2026-10-18
 - Perspective boxes: `boxes_mesh`, one mesh and one draw in `vehicle_id` order (ties:
   `rules/render.md`). Speed colour × shade: top 1, sides 0.55, ends 0.4, bottom 0.25; lift 0.001 m.
 - Signals' dots (`rules/signals.md`): flat at 0.03 m orthographic; facing the camera in perspective.
+- Link colours (`rules/links.md`): the tint flat at 0.005 m in both paths; while on, every box `CARS`.
 
 ## Keyframe line (`src/keyframes.rs`)
 - `Keyframe { t, at: Centre(x, y) | Follow(id), height_m, yaw_deg, pitch_deg }`. `format`:
@@ -53,8 +54,7 @@ generated: 2026-10-18
   or a wrong type; no `t`; no `height_m`; both `x`/`y` and `follow`; neither; `x` without
   `y` or `y` without `x`; a non-finite number; `follow` < 0; `height_m` ≤ 0; pitch outside
   [25, 90]. Then `t` must increase: "out of order" and "duplicate `t`" are distinct errors.
-- `check_follows` (after the run loads): a followed vehicle must be in the FCD and drawn
-  at its keyframe's `t`.
+- `check_follows` (after the run loads): a followed vehicle must be in the FCD and drawn at its keyframe's `t`.
 - Not errors: one keyframe (held); keyframes outside `[from, to]`. The window, frame count
   and every other flag's default do not depend on `--camera`.
 

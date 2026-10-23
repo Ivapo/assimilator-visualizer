@@ -19,7 +19,9 @@ stop lines and lane arrows, straight from the engine's `NetworkJson`. vis-003
 (`specs/data_spec.md`) Phase 1 draws the run's signals: a dot at each signalised stop line,
 green, amber or red as the engine had it, replayed with the engine's own signal code. Its
 Phase 2 puts a HUD in the top-left corner of every frame: the sim clock, the vehicles on the
-road and their mean speed, from the run's FCD.
+road and their mean speed, from the run's FCD. Its Phase 3 colours the streets by their
+traffic when asked: each road strip, or each lane, tinted blue to red by a measure of its
+cars over the past minute, with a legend under the HUD.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
@@ -27,6 +29,7 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
                          [--speedup <x>] [--fps <n>] [--width <px>] [--height <px>]
                          [--camera <file.toml>] [--buildings <file.geojson>]
                          [--no-see-through] [--no-streets] [--no-signals] [--no-hud]
+                         [--link-colours [relative|speed|density|stopped]] [--link-window <s>] [--link-lanes]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -77,6 +80,24 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   Light text with a dark rim, in the credit line's font, 30 px tall at 1080 lines; its
   digits are all one width, so the line does not jitter. `--no-hud` draws none, the video
   exactly as before. In `view`, `--no-hud` starts with it hidden and `H` shows it.
+- **Link colours.** `--link-colours` tints each road strip by a measure of the cars on it
+  over the past `--link-window` seconds (60 by default) up to each frame's time, in four
+  steps from blue (best) through light blue and orange to red (worst):
+  - `relative`, the default, is their mean speed as a share of the limit (< 25 %, 25–50 %,
+    50–75 %, ≥ 75 %);
+  - `speed` is their mean speed (< 10, 10–20, 20–30, ≥ 30 km/h);
+  - `density` is the cars per lane-kilometre (< 3, 3–6, 6–12, ≥ 12);
+  - `stopped` is the cars standing on it (under 0.1 m/s), on average (< 0.25, 0.25–0.5,
+    0.5–1, ≥ 1).
+
+  With no car in the window, a street stays grey for `relative` and `speed`, and is blue
+  for the other two. `--link-lanes` colours each lane on its own. While it is on, a legend
+  sits under the HUD and every box is light grey, so the only colours are the measure's.
+  A window shorter than the run's FCD interval is an error (`--link-window 0.5 s is shorter
+  than the run's FCD interval (1.000 s); …`); a window of exactly the interval colours by
+  each frame's own FCD row, "right now". It is off by default: without `--link-colours`
+  the video is exactly as before. In `view`, `C` turns it on and steps through the
+  measures, then off.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
   bottom-right corner of every frame, with or without `--buildings`, crediting its data
   (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
@@ -158,6 +179,7 @@ assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--results <file>] [--fcd <file>] [--from <s>] [--to <s>]
                        [--width <px>] [--height <px>] [--buildings <file.geojson>]
                        [--no-see-through] [--no-streets] [--no-signals] [--no-hud]
+                       [--link-colours [relative|speed|density|stopped]] [--link-window <s>] [--link-lanes]
 ```
 
 `view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
@@ -190,6 +212,7 @@ and framings worth rendering.
 | `M` | hide / show the streets (shown at launch, unless `--no-streets`) |
 | `L` | hide / show the signals (shown at launch, unless `--no-signals`) |
 | `H` | hide / show the HUD (shown at launch, unless `--no-hud`) |
+| `C` | link colours: off → `relative` → `speed` → `density` → `stopped` → off (off at launch, unless `--link-colours`) |
 
 The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
 with a handle at the current time and a tick at each whole minute (thinned on long runs).
@@ -277,6 +300,8 @@ scripts/gates-signals.sh          # vis-003 Phase 1 gates 2, 10, 15 (CLI) and th
 cargo test --release --test signals -- --include-ignored --test-threads=1 --nocapture     # vis-003 Phase 1 gates 5–9 and 15 (`L`)
 scripts/gates-hud.sh              # vis-003 Phase 2 gates 2, 8, 13 (CLI) and the gate 12 renders, against scratch/out/signals-p1/, offline
 cargo test --release --test hud -- --include-ignored --test-threads=1 --nocapture         # vis-003 Phase 2 gates 5–7, 9 and 13 (`H`)
+scripts/gates-links.sh            # vis-003 Phase 3 gates 2, 8, 13 (CLI) and the gate 12 renders, against scratch/out/hud-p2/, offline
+cargo test --release --test links -- --include-ignored --test-threads=1                   # vis-003 Phase 3 gates 5–7, 9 and 13 (`C`)
 ```
 
 Streets, signals and the HUD are on by default, so the renders that `scripts/gates.sh`,

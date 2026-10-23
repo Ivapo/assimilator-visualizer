@@ -15,7 +15,7 @@ covers: >
   front end at 90b39292, the lifts, the fade, the two meshes, the default, `--no-streets`
   and `view`'s `M`.
 max_lines: 40
-generated: 2026-10-09
+generated: 2026-10-23
 ---
 
 # Streets
@@ -40,10 +40,10 @@ generated: 2026-10-09
   `dead_end`'s red bar), any other type straight; `place` puts them at `(x, y, heading)`.
 
 ## The two meshes (`Streets::surface`, `markings`; `draw::spawn_streets`)
-- **Surface:** junctions then noses, height 0, the road's own material. **Markings:** by
-  kind (centre, dash, solid at `LIFT_LINES_M` 0.01; stop, connector, arrow, bar at
-  `LIFT_TOP_M` 0.02), each in build order, under every box's base. Per-vertex colour on
-  one unlit white material, `cull_mode: None`, `NoFrustumCulling`; none if empty.
+- **Surface:** junctions then noses, height 0, the road's own material. **Markings:** by kind (centre,
+  dash, solid at `LIFT_LINES_M` 0.01; stop, connector, arrow, bar at `LIFT_TOP_M` 0.02), each in build
+  order, under every box's base, over the link colours' tint at 0.005 m (`rules/links.md`). Per-vertex
+  colour on one unlit white material, `cull_mode: None`, `NoFrustumCulling`; none if empty.
 - Colours (`COLOURS`): the dark palette of `colors.ts` composited at its opacities over
   `scene::ROAD`, rounded once: lines (174, 176, 180), centre (199, 167, 77), stop (239,
   239, 240), arrow (190, 191, 195), bar (217, 72, 73). Each copy names its line there.

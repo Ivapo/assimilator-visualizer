@@ -12,7 +12,7 @@ covers: >
   and following, the readout, the keyframe line and the hidden `--bench`. The time
   slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.
 max_lines: 60
-generated: 2026-10-20
+generated: 2026-10-23
 ---
 
 # View
@@ -21,7 +21,8 @@ generated: 2026-10-20
 
 ## CLI
 `assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd] [--from] [--to]
-[--width 1280] [--height 720] [--buildings <file>] [--no-see-through] [--no-streets] [--no-signals] [--no-hud]`.
+[--width 1280] [--height 720] [--buildings <file>] [--no-see-through] [--no-streets] [--no-signals] [--no-hud]
+[--link-colours [m]] [--link-window s] [--link-lanes]`.
 - `run::load` runs `render`'s checks after width and height, then `--buildings`'s, before
   any `App` is built; no ffmpeg. An error is one `error: …` line, exit 1, no window.
 - Stdout: only keyframe lines, one per `K`, flushed. Stderr: only the error line or `--bench`'s
@@ -39,6 +40,7 @@ generated: 2026-10-20
   the way cut to stubs unless `--no-see-through`, `X` flips it (`rules/see-through.md`).
 - Signals on a network with one, shown unless `--no-signals`; `L` flips them (`rules/signals.md`).
 - The HUD at the top left, sized to the window, shown unless `--no-hud`; `H` flips it (`rules/hud.md`).
+- Link colours from `--link-colours`, the legend under the HUD; `C` cycles the measures, then off (`rules/links.md`).
 
 ## Clock (`ViewState`, no Bevy types)
 - `t` starts at `from`, paused, at 1×. Playing: `t += s · min(Δ, 0.1 s)` of real time.
@@ -62,13 +64,11 @@ generated: 2026-10-20
   the cursor's ground point, or about the centre while following.
 
 ## Pick and follow
-- A release that never became a drag picks the box nearest the cursor's point at 0.80 m,
-  by distance to its `length × 1.8 m` footprint at its heading, within `8·k` m; ties go to
-  the higher `vehicle_id`. No box in reach changes nothing.
-- Following sets the centre to the vehicle's placed point each frame it is drawn. When it
-  is not drawn the centre holds and the follow stays armed. A drag, `WASD` or `Esc` stops
-  it; an orbit or a key step does not.
-- Frame order: bar press; clock; scrub; `Esc`; `B`; `X`; `M`; `L`; `H`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
+- A release that never became a drag picks the box nearest the cursor's point at 0.80 m, by distance to its
+  `length × 1.8 m` footprint at its heading, within `8·k` m; ties to the higher `vehicle_id`. None in reach: no change.
+- Following sets the centre to the vehicle's placed point each frame it is drawn; when it is not, the centre holds
+  and the follow stays armed. A drag, `WASD` or `Esc` stops it; an orbit or a key step does not.
+- Frame order: bar press; clock; scrub; `Esc` `B` `X` `M` `L` `H` `C`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`

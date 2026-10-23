@@ -13,7 +13,8 @@
 //! Phase 3 cuts the buildings in the camera's way to stubs ([`Job::set_see_through`]).
 //! vis-003 Phase 1 draws the run's signals as dots at the stop lines
 //! ([`Job::set_signals`]), and Phase 2 the HUD in the top-left corner ([`Job::set_hud`],
-//! [`Job::hud_text`], [`Job::hud_box`]).
+//! [`Job::hud_text`], [`Job::hud_box`]). Phase 3 colours each link by a measure over the
+//! past window ([`Job::set_links`], [`Job::link_colours`]).
 
 pub mod buildings;
 pub mod camera;
@@ -25,6 +26,7 @@ pub mod fcd;
 pub mod hud;
 pub mod inputs;
 pub mod keyframes;
+pub mod links;
 pub mod motion;
 pub mod place;
 pub mod render;
@@ -42,6 +44,7 @@ use anyhow::{Result, anyhow, bail};
 use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::keyframes::Flight;
+use crate::links::{Links, Measure};
 
 use crate::fcd::Fcd;
 use crate::motion::{Motion, MotionReport};
@@ -65,6 +68,17 @@ pub struct RenderOptions {
     pub fps: u32,
     pub width: u32,
     pub height: u32,
+}
+
+/// Link colours as `--link-colours`, `--link-window` and `--link-lanes` ask for them
+/// (vis-003 §2.21.11).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LinkOptions {
+    pub measure: Measure,
+    /// The window, seconds.
+    pub window: f64,
+    /// One unit per lane, not per link.
+    pub lanes: bool,
 }
 
 /// The fixed clock of one render.
@@ -105,6 +119,8 @@ pub struct Job {
     signals: Option<Signals>,
     /// Whether the HUD is drawn.
     hud: bool,
+    /// The link colours' rows and options; `None` while they are off.
+    links: Option<(Links, LinkOptions)>,
 }
 
 impl Job {
@@ -228,6 +244,7 @@ impl Job {
             seed: paths.seed,
             signals: None,
             hud: false,
+            links: None,
         }
     }
 
@@ -335,6 +352,33 @@ impl Job {
         self.renderer.set_hud(on)
     }
 
+    /// Link colours (vis-003 §2.21): on builds the units from the job's placement and the
+    /// FCD's rows ([`Links::new`]), checks the window against the run's FCD interval
+    /// ([`links::check_window`], an error before anything is drawn), then tints the strips
+    /// and draws the legend from the next frame, under the HUD if it is on now, with the
+    /// boxes in one colour; off removes them. Every `prepare*` builds a job with them off;
+    /// `render` turns them on with `--link-colours`, after the HUD.
+    pub fn set_links(&mut self, on: Option<LinkOptions>) -> Result<()> {
+        self.links = None;
+        let Some(o) = on else {
+            return self.renderer.set_links(None);
+        };
+        let l = Links::new(&self.placement, &self.fcd, o.lanes);
+        links::check_window(o.window, l.interval())?;
+        let tint = links::tint(&self.placement, &l);
+        self.renderer
+            .set_links(Some((tint, Some(links::legend(o.measure)))))?;
+        self.links = Some((l, o));
+        Ok(())
+    }
+
+    /// The colours the last frame tinted each unit with, in unit order; `None` while link
+    /// colours are off.
+    pub fn link_colours(&self) -> Option<Vec<Option<[u8; 3]>>> {
+        self.links.as_ref()?;
+        self.renderer.link_colours()
+    }
+
     /// The HUD's line as the last frame drew it; `None` while it is off.
     pub fn hud_text(&self) -> Option<String> {
         self.renderer.hud_text()
@@ -398,6 +442,10 @@ impl Job {
             let (w, h) = (cam.width as f64, cam.height as f64);
             let dots = signals::dots(sig, &sig.colours_at(t), eye, w, h);
             self.renderer.set_dots(&dots);
+        }
+        if let Some((l, o)) = &self.links {
+            self.renderer
+                .set_link_colours(&l.colours_at(t, o.window, o.measure));
         }
         let boxes = self.boxes_at(t);
         if self.hud {

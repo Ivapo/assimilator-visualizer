@@ -10,11 +10,12 @@ note: >
   run into a timeline, and checked against the run's FCD. Phase 2 (shipped 2026-10-20)
   draws a HUD in the top-left corner of every frame: the sim clock, the vehicles on the
   road and their mean speed, from the FCD's rows at each frame's time, by default;
-  `--no-hud` gives Phase 1's frames and `view`'s `H` hides and shows it. Phase 3 (reviewed)
-  colours each link by a measure of its FCD rows over the past window ending at the
-  frame's time, off by default: `--link-colours` turns it on, `view`'s `C` cycles it.
+  `--no-hud` gives Phase 1's frames and `view`'s `H` hides and shows it. Phase 3
+  (shipped 2026-10-23) colours each link by a measure of its FCD rows over the past window
+  ending at the frame's time, off by default: `--link-colours` turns it on, `view`'s `C`
+  cycles it.
 status: accepted
-last_updated: 2026-10-20
+last_updated: 2026-10-23
 
 phases:
   - name: "Phase 1 — Signals: the engine's signal states as dots at the stop lines, by default"
@@ -29,7 +30,7 @@ phases:
     by: null
   - name: "Phase 3 — Link colours: each link by a measure over the past window, off by default"
     reviewed: 2026-10-20
-    shipped: null
+    shipped: 2026-10-23
     cut: null
     by: null
 

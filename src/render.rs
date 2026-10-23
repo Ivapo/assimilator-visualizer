@@ -9,7 +9,8 @@
 //! markings, whose colours a perspective renderer fades for each pose. With signals
 //! (vis-003 §2.12), one more mesh: the dots, set before each frame. With the HUD
 //! (vis-003 §2.20), a second UI tree draws its line in the top-left corner, set before
-//! each frame.
+//! each frame. With link colours (vis-003 §2.21), one more mesh, the tint, set before each
+//! frame, a third UI tree, the legend, under the HUD, and the boxes in one colour.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -37,7 +38,8 @@ use crate::buildings::Buildings;
 use crate::camera::Pose;
 use crate::credit;
 use crate::hud;
-use crate::draw::{self, BuildingsCut, CreditNodes, DotsEntity, HudNodes, StreetsDrawn};
+use crate::draw::{self, BuildingsCut, CreditNodes, DotsEntity, HudNodes, StreetsDrawn, TintEntity};
+use crate::links::{Legend, TintData};
 use crate::motion::TrackPos;
 use crate::place::Placed;
 use crate::scene::{self, Camera as SceneCamera, Strip};
@@ -76,7 +78,10 @@ struct Credit {
 enum Boxes {
     Pool {
         pool: Vec<Entity>,
+        /// The material of each speed bin as drawn: `speed`, or the cars' one material in
+        /// every slot while link colours are on (vis-003 §2.21.8).
         materials: Vec<Handle<StandardMaterial>>,
+        speed: Vec<Handle<StandardMaterial>>,
     },
     Mesh(draw::BoxesEntity),
 }
@@ -121,6 +126,13 @@ pub struct Renderer {
     image_camera: Entity,
     /// The HUD's tree and its outline offset; `None` while it is off.
     hud: Option<(HudNodes, u32)>,
+    /// The link colours' tint and its mesh data; `None` while they are off.
+    tint: Option<(TintEntity, TintData)>,
+    /// The legend's root; `None` while it is off.
+    legend: Option<Entity>,
+    /// The boxes' colour by speed: `draw::speed_colour`, or `draw::cars_colour` while
+    /// link colours are on.
+    box_colour: fn(f64) -> [u8; 3],
 }
 
 impl Renderer {
@@ -251,7 +263,8 @@ impl Renderer {
         let boxes = match box_mesh {
             Some(box_mesh) => Boxes::Pool {
                 pool: draw::spawn_pool(world, &box_mesh, &speed_mats[0], pool),
-                materials: speed_mats,
+                materials: speed_mats.clone(),
+                speed: speed_mats,
             },
             None => Boxes::Mesh(draw::spawn_boxes(world)),
         };
@@ -302,6 +315,9 @@ impl Renderer {
             dots: None,
             image_camera,
             hud: None,
+            tint: None,
+            legend: None,
+            box_colour: draw::speed_colour,
         };
         // Let assets and pipelines settle before the first frame that counts.
         r.settle()?;
@@ -505,6 +521,69 @@ impl Renderer {
         Some(self.apps.main.world().get::<Text>(nodes.fill)?.0.clone())
     }
 
+    /// Link colours (vis-003 §2.21): `Some` spawns the tint's entity, hidden until
+    /// [`Renderer::set_link_colours`], and with a legend its tree, its top under the HUD if
+    /// the HUD is on now (§2.21.9), turns the boxes to the cars' one colour, then settles
+    /// again; a second `Some` replaces the first. `None` despawns them and gives the boxes
+    /// their speed colours back. Off from the start, nothing is spawned or made.
+    pub fn set_links(&mut self, links: Option<(TintData, Option<Legend>)>) -> Result<()> {
+        let world = self.apps.main.world_mut();
+        if let Some((e, _)) = self.tint.take() {
+            draw::despawn_tint(world, e);
+        }
+        if let Some(root) = self.legend.take() {
+            draw::despawn_legend(world, root);
+        }
+        let Some((data, legend)) = links else {
+            self.box_colour = draw::speed_colour;
+            if let Boxes::Pool {
+                materials, speed, ..
+            } = &mut self.boxes
+            {
+                *materials = speed.clone();
+            }
+            return Ok(());
+        };
+        self.tint = Some((draw::spawn_tint(world), data));
+        if let Some(legend) = legend {
+            let size = hud::size(self.camera.width as f64, self.camera.height as f64);
+            let font = world
+                .resource_mut::<Assets<Font>>()
+                .add(Font::from_bytes(draw::CREDIT_FONT.to_vec()));
+            let top = draw::legend_top(size, self.hud.is_some());
+            self.legend = Some(draw::spawn_legend(
+                world,
+                Some(self.image_camera),
+                font,
+                size,
+                top,
+                &legend,
+            ));
+        }
+        self.box_colour = draw::cars_colour;
+        if let Boxes::Pool { materials, .. } = &mut self.boxes {
+            let cars = draw::cars_material(&mut world.resource_mut::<Assets<StandardMaterial>>());
+            *materials = vec![cars; materials.len()];
+        }
+        self.settle()
+    }
+
+    /// Tint the units with these colours, in unit order, from the next frame; a unit with
+    /// `None` is today's road. Nothing while link colours are off.
+    pub fn set_link_colours(&mut self, colours: &[Option<[u8; 3]>]) {
+        let Some((e, d)) = self.tint.as_mut() else {
+            return;
+        };
+        let cam = self.camera;
+        draw::set_tint(self.apps.main.world_mut(), e, d, colours, (cam.cx, cam.cy), false);
+    }
+
+    /// The colours the tint is drawn with now, in unit order; `None` while link colours
+    /// are off.
+    pub fn link_colours(&self) -> Option<Vec<Option<[u8; 3]>>> {
+        self.tint.as_ref().map(|(e, _)| e.drawn.clone())
+    }
+
     /// Set the perspective camera to `pose` for the next frames; nothing on the
     /// orthographic path. With see-through on, the buildings are redrawn at `pose`'s
     /// heights when any differs from the last drawn; with streets, the markings are
@@ -552,12 +631,17 @@ impl Renderer {
         let cam = self.camera;
         let world = self.apps.main.world_mut();
         match &self.boxes {
-            Boxes::Pool { pool, materials } => {
-                draw::fill_pool(world, pool, materials, boxes, (cam.cx, cam.cy), self.lift)
-            }
-            Boxes::Mesh(entity) => {
-                draw::set_boxes(world, entity, boxes, (cam.cx, cam.cy), self.lift)
-            }
+            Boxes::Pool {
+                pool, materials, ..
+            } => draw::fill_pool(world, pool, materials, boxes, (cam.cx, cam.cy), self.lift),
+            Boxes::Mesh(entity) => draw::set_boxes(
+                world,
+                entity,
+                boxes,
+                (cam.cx, cam.cy),
+                self.lift,
+                self.box_colour,
+            ),
         }
         *self.slot.lock().unwrap() = None;
         let slot = self.slot.clone();

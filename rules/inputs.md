@@ -5,12 +5,13 @@ sources:
   - src/fcd.rs
   - src/place.rs
   - src/run.rs
+  - src/links.rs
   - Cargo.toml
 covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
   points, and which checks fail before the first frame.
 max_lines: 50
-generated: 2026-10-18
+generated: 2026-10-23
 ---
 
 # Inputs
@@ -44,9 +45,8 @@ generated: 2026-10-18
   up from 0.1 s steps (for example 60.100000000000584).
 
 ## Placement (the engine's code, engine rev pinned in `Cargo.toml`)
-- `NetworkData::from_config(&network)` → `LinkGeometryIndex::from_network_config` →
-  `interpolate(link_id, position, lane)`, giving x, y in metres and a heading in degrees
-  (0 = north, clockwise).
+- `NetworkData::from_config(&network)` → `LinkGeometryIndex::from_network_config` → `interpolate(link_id,
+  position, lane)`, giving x, y in metres and a heading in degrees (0 = north, clockwise).
 - Every `link_id` in the file must be a network link, and every row of the file is
   placed up front (`place_all` and `Motion::build`). An unknown link, or a row the
   engine cannot place, is an error before the first frame.
@@ -60,5 +60,6 @@ generated: 2026-10-18
 FCD file → schema → `to > from` → every link known and row placed → `--camera`'s file
 (`rules/camera.md`) → `--buildings`' file (`rules/buildings.md`) → `render`'s credit inputs,
 then its fit after the settle frames (`rules/credit.md`) → with signals on, the run's mode,
-then its clock (`rules/signals.md`; `view`: before the window). An error is one `error: …`
-line, exit 1, no output file or window.
+then its clock (`rules/signals.md`; `view`: before the window) → with link colours on (`view`: or
+`--link-window` given), the window against the run's FCD interval (`rules/links.md`). An error is one
+`error: …` line, exit 1, no output file or window.
