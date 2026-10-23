@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use arrow_array::{Array, Float64Array, LargeStringArray, StringArray, UInt32Array, UInt64Array};
 use parquet::arrow::ProjectionMask;
@@ -18,10 +18,13 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use assimilator_video::clock;
 use assimilator_video::fcd::{Fcd, Row, Snapshot, VehicleRows};
 use assimilator_video::links::{self, Links, Measure, Unit};
-use assimilator_video::render::VehicleBox;
+use assimilator_video::render::{Renderer, VehicleBox};
 use assimilator_video::run::{self, LoadOptions, Run};
+use assimilator_video::scene;
+use assimilator_video::streets::Streets;
 use assimilator_video::view::state::Follow;
 use assimilator_video::view::{Fit, ViewInput, ViewState};
+use assimilator_video::{Job, LinkOptions, RenderOptions};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -634,4 +637,189 @@ fn gate13_c() {
         "gate 13: c cycles off → relative → speed → density → stopped → off and changes \
          nothing else, through an orbit, a drag and a scrub: PASS"
     );
+}
+
+// ── Gates 7 and 9: through the GPU ───────────────────────────────────────────
+
+fn count_differ(a: &[u8], b: &[u8]) -> usize {
+    a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count()
+}
+
+fn px(f: &[u8], w: u32, x: u32, y: u32) -> [u8; 3] {
+    let k = 4 * (y as usize * w as usize + x as usize);
+    [f[k], f[k + 1], f[k + 2]]
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate7_drawn() {
+    let r = load("urban_grid", None, None);
+    let pl = &r.placement;
+    let streets = Streets::build(pl);
+    let l = Links::new(pl, &r.fcd, false);
+    let colours = l.colours_at(150.0, 60.0, Measure::Relative);
+    let with_value = colours.iter().filter(|c| c.is_some()).count();
+    println!("gate 7: urban_grid at 150 s, relative: {with_value} of {} links with a value", colours.len());
+    assert_eq!((with_value, colours.len() - with_value), (22, 26));
+    // (w, h, the tint changes, of them exactly a palette colour, the legend adds)
+    for (w, h, want_tint, want_exact, want_legend) in [
+        (1280, 720, 16246, 11451, 7116),
+        (1920, 1080, 34903, 28072, 15361),
+        (3840, 2160, 137509, 117697, 57304),
+    ] {
+        let cam = scene::Camera::fit(&r.strips, w, h);
+        let mut rd = Renderer::new(&r.strips, cam, 1, None, None).unwrap();
+        rd.set_streets(Some(&streets)).unwrap();
+        let bare = rd.render(&[]).unwrap();
+        rd.set_links(Some((links::tint(pl, &l), None))).unwrap();
+        rd.set_link_colours(&colours);
+        let tinted = rd.render(&[]).unwrap();
+        rd.set_links(Some((links::tint(pl, &l), Some(links::legend(Measure::Relative)))))
+            .unwrap();
+        rd.set_link_colours(&colours);
+        let both = rd.render(&[]).unwrap();
+        let (mut tint, mut exact, mut on_bg) = (0, 0, 0);
+        for (p, q) in bare.chunks(4).zip(tinted.chunks(4)) {
+            if p != q {
+                tint += 1;
+                if links::PALETTE.iter().any(|c| q[..3] == *c) {
+                    exact += 1;
+                }
+                if p[..3] == scene::BACKGROUND {
+                    on_bg += 1;
+                }
+            }
+        }
+        let with_legend = count_differ(&bare, &both);
+        let legend = with_legend - tint;
+        // Lane 0's midpoint of every link, in both frames.
+        let mut mids = [[0usize; 3]; 2];
+        for (u, c) in l.units.iter().zip(&colours) {
+            let Some(p) = pl.place_lateral(&u.link, u.length / 2.0, pl.lane_offset(&u.link, 0))
+            else {
+                continue;
+            };
+            let (x, y) = cam.world_to_pixel(p.x, p.y);
+            for (k, f) in [&tinted, &both].into_iter().enumerate() {
+                let got = px(f, w, x.floor() as u32, y.floor() as u32);
+                let i = match c {
+                    Some(c) if got == *c => 0,
+                    None if got == scene::ROAD => 1,
+                    _ => 2,
+                };
+                if i == 2 && k == 0 {
+                    println!("gate 7: {} at ({x:.1}, {y:.1}): {got:?}, want {c:?}", u.link);
+                }
+                mids[k][i] += 1;
+            }
+        }
+        println!(
+            "gate 7: {w}x{h}: the tint changes {tint} (exactly a palette colour {exact}, on the \
+             background {on_bg}); with the legend {with_legend}, the legend adds {with_legend} \
+             − {tint} = {legend}; lane-0 midpoints (exactly their colour, exactly the road, \
+             other): tint alone {:?}, with the legend {:?}",
+            mids[0], mids[1]
+        );
+        assert_eq!((tint, exact, legend), (want_tint, want_exact, want_legend), "{w}x{h}");
+        assert_eq!(on_bg, 0, "{w}x{h}: the tint stays on the road");
+        assert_eq!(mids, [[22, 26, 0]; 2], "{w}x{h}: the midpoints");
+    }
+    println!("gate 7: the tint and the legend at 720p, 1080p and 2160p: PASS");
+}
+
+fn opts(dir: &str, from: Option<f64>, to: Option<f64>, speedup: Option<f64>) -> RenderOptions {
+    RenderOptions {
+        project: root().join("scratch").join(dir),
+        scenario: "baseline".into(),
+        seed: 42,
+        results: None,
+        fcd: None,
+        from,
+        to,
+        speedup,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+    }
+}
+
+/// A job set as `render` sets it with `--link-colours` (`src/main.rs`): streets,
+/// see-through, signals, the HUD, then the link colours.
+fn job(o: &RenderOptions, camera: Option<&Path>, buildings: Option<&Path>, lo: LinkOptions) -> Job {
+    let mut j = Job::prepare_with(o, camera, buildings).unwrap();
+    j.set_streets(true).unwrap();
+    j.set_see_through(true);
+    j.set_signals(true).unwrap();
+    j.set_hud(true).unwrap();
+    j.set_links(Some(lo)).unwrap();
+    j
+}
+
+/// Each listed frame rendered alone by a new job equals the same frame rendered in
+/// sequence from frame 0; at each, in sequence and alone, the job's colours are
+/// `Links::colours_at` of a `Links` built for the same options.
+fn gate9(o: &RenderOptions, camera: Option<&Path>, buildings: Option<&Path>, lo: LinkOptions, frames: &[u64]) {
+    let mut seq = job(o, camera, buildings, lo);
+    let want = Links::new(&seq.placement, &seq.fcd, lo.lanes);
+    let last = *frames.iter().max().unwrap();
+    let mut kept = BTreeMap::new();
+    for n in 0..=last {
+        let f = seq.render_frame(n).unwrap();
+        if frames.contains(&n) {
+            let t = seq.clock.time_of(n);
+            assert_eq!(
+                seq.link_colours(),
+                Some(want.colours_at(t, lo.window, lo.measure)),
+                "frame {n} in sequence: the colours"
+            );
+            kept.insert(n, f);
+        }
+    }
+    for &n in frames {
+        let mut fresh = job(o, camera, buildings, lo);
+        let f = fresh.render_frame(n).unwrap();
+        let t = fresh.clock.time_of(n);
+        let colours = fresh.link_colours().unwrap();
+        let tinted = colours.iter().filter(|c| c.is_some()).count();
+        let diff = count_differ(&f, &kept[&n]);
+        println!(
+            "gate 9: {} frame {n} (t {t:.4}, {tinted} units tinted): alone against in \
+             sequence, {diff} pixels differ",
+            o.project.display()
+        );
+        assert_eq!(colours, want.colours_at(t, lo.window, lo.measure), "frame {n} alone: the colours");
+        assert!(f == kept[&n], "frame {n}");
+    }
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate9_urban_grid_alone_and_in_sequence() {
+    let lo = LinkOptions {
+        measure: Measure::Relative,
+        window: links::WINDOW_S,
+        lanes: false,
+    };
+    gate9(&opts("urban_grid", None, None, None), None, None, lo, &[0, 1, 30, 299, 300]);
+    println!("gate 9: urban_grid, 5 of 5 equal: PASS");
+}
+
+#[test]
+#[ignore = "needs scratch/midtown (scripts/fixture.sh midtown); renders through the GPU"]
+fn gate9_city_flight_alone_and_in_sequence() {
+    let camera = root().join("tests/city-flight.toml");
+    let buildings = root().join("scratch/midtown/buildings.geojson");
+    let lo = LinkOptions {
+        measure: Measure::Speed,
+        window: links::WINDOW_S,
+        lanes: true,
+    };
+    gate9(
+        &opts("midtown", Some(300.0), Some(310.0), Some(1.0)),
+        Some(&camera),
+        Some(&buildings),
+        lo,
+        &[0, 29, 30, 299],
+    );
+    println!("gate 9: the city flight, 4 of 4 equal: PASS");
 }
