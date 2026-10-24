@@ -68,10 +68,10 @@ print(f"gate10 {sys.argv[2].rsplit('/', 1)[1]} vs {sys.argv[1].rsplit('/', 1)[1]
 assert len(a) == len(b) and d >= 1
 PY
 }
-case_() { # <frames> <project> <case> [extra args…]: off (--no-signals --no-hud) against Phase 6; on twice, equal, not Phase 6's
+case_() { # <frames> <project> <case> [extra args…]: off (--no-signals --no-hud --no-shapes) against Phase 6; on twice, equal, not Phase 6's
     local n=$1 proj=$2 c=$3
     shift 3
-    render gate2 "$n" "$proj" "off-$c" --no-signals --no-hud "$@"
+    render gate2 "$n" "$proj" "off-$c" --no-signals --no-hud --no-shapes "$@"
     same gate2 "$n" "$P6/look-$c.framemd5" "$OUT/off-$c.framemd5"
     render gate10 "$n" "$proj" "signals-$c" "$@"
     render gate10 "$n" "$proj" "signals-$c-2" "$@"

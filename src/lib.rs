@@ -14,7 +14,9 @@
 //! vis-003 Phase 1 draws the run's signals as dots at the stop lines
 //! ([`Job::set_signals`]), and Phase 2 the HUD in the top-left corner ([`Job::set_hud`],
 //! [`Job::hud_text`], [`Job::hud_box`]). Phase 3 colours each link by a measure over the
-//! past window ([`Job::set_links`], [`Job::link_colours`]).
+//! past window ([`Job::set_links`], [`Job::link_colours`]). vis-004 Phase 1 draws each
+//! vehicle of a keyframed render as a shape for its class, its brake lamps from its rows
+//! ([`Job::set_shapes`], [`Job::looks_at`]).
 
 pub mod buildings;
 pub mod camera;
@@ -35,6 +37,7 @@ pub mod scene;
 pub mod see_through;
 pub mod signals;
 pub mod streets;
+pub mod vehicles;
 pub mod view;
 
 use std::path::{Path, PathBuf};
@@ -53,6 +56,7 @@ use crate::render::{Renderer, VehicleBox};
 use crate::run::LoadOptions;
 use crate::scene::Camera;
 use crate::signals::{Eye, Signals};
+use crate::vehicles::{Fleet, Look};
 
 /// What `render` needs, after CLI parsing (vis-001 §2.4).
 #[derive(Debug, Clone)]
@@ -121,6 +125,10 @@ pub struct Job {
     hud: bool,
     /// The link colours' rows and options; `None` while they are off.
     links: Option<(Links, LinkOptions)>,
+    /// The run's FCD file, which the shapes' table is read from.
+    fcd_path: PathBuf,
+    /// The shapes' table; `None` while they are off.
+    shapes: Option<Fleet>,
 }
 
 impl Job {
@@ -245,6 +253,8 @@ impl Job {
             signals: None,
             hud: false,
             links: None,
+            fcd_path: paths.fcd,
+            shapes: None,
         }
     }
 
@@ -372,6 +382,29 @@ impl Job {
         Ok(())
     }
 
+    /// Vehicle shapes (vis-004 §2.6): on a job with a flight, on reads the FCD's
+    /// `vehicle_class` and `acceleration` ([`vehicles::read`], whose error is the schema
+    /// mismatch of §2.12) and draws each vehicle as its kind's shape from the next frame;
+    /// off drops the table and draws boxes. On the orthographic job it does nothing and
+    /// reads nothing. Every `prepare*` builds a job with it off; `render` turns it on
+    /// unless `--no-shapes` is given.
+    pub fn set_shapes(&mut self, on: bool) -> Result<()> {
+        if self.flight.is_none() {
+            return Ok(());
+        }
+        self.shapes = None;
+        if on {
+            self.shapes = Some(vehicles::read(&self.fcd_path)?);
+        }
+        Ok(())
+    }
+
+    /// Each box's look at `t`, in [`Job::boxes_at`]'s order, as a frame at `t` draws them;
+    /// `None` while shapes are off.
+    pub fn looks_at(&self, t: f64) -> Option<Vec<Look>> {
+        Some(self.shapes.as_ref()?.looks(t, &self.boxes_at(t)))
+    }
+
     /// The colours the last frame tinted each unit with, in unit order; `None` while link
     /// colours are off.
     pub fn link_colours(&self) -> Option<Vec<Option<[u8; 3]>>> {
@@ -452,7 +485,8 @@ impl Job {
             let (n, mean) = hud::numbers(&self.fcd, t, !boxes.is_empty());
             self.renderer.set_hud_text(&hud::text(t, n, mean));
         }
-        self.renderer.render(&boxes)
+        let looks = self.shapes.as_ref().map(|f| f.looks(t, &boxes));
+        self.renderer.render_looks(&boxes, looks.as_deref())
     }
 
     /// The same frame with no vehicles.
