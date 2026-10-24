@@ -21,9 +21,9 @@ generated: 2026-10-23
 **What is true right now.** Corrected freely against the sources above.
 
 ## CLI
-`assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4> [--results] [--fcd] [--from]
-[--to] [--speedup] [--fps 30] [--width 1920] [--height 1080] [--camera <file.toml>] [--buildings <file.geojson>]
-[--no-see-through] [--no-streets] [--no-signals] [--no-hud] [--link-colours [m]] [--link-window s] [--link-lanes]`.
+`assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4> [--results] [--fcd] [--from] [--to]
+[--speedup] [--fps 30] [--width 1920] [--height 1080] [--camera <file.toml>] [--buildings <file.geojson>] [--no-see-through]
+[--no-streets] [--no-signals] [--no-hud] [--link-colours [m]] [--link-window s] [--link-lanes] [--no-shapes]`.
 - Width and height must be even. Stderr: one `{"frame": n, "of": N}` per frame, then `{"done": "<out>"}`.
 - On error, one `error: …` line, exit 1; a clap usage error exits 2, its first line. No logger.
 
@@ -36,19 +36,19 @@ generated: 2026-10-23
   wide, its centreline sampled with `interpolate_with_lateral(link, s, 0.0)` at `s = L·i/n`, `n = ceil(L / 1 m)`,
   edges offset along the right normal `(cos h, −sin h)`. Streets (junctions, median noses, markings) are
   drawn over them unless `--no-streets` (`rules/streets.md`).
-- **Vehicles** in `vehicle_id` order (`rules/motion.md`): unit cuboids orthographic, one shaded mesh in perspective.
+- **Vehicles** in `vehicle_id` order (`rules/motion.md`): unit cuboids orthographic; in perspective one mesh, each
+  vehicle a shape for its class (`rules/vehicles.md`), or with `--no-shapes` a shaded box.
   - Each box is length × 1.8 m × 1.5 m on the placed point, lifted 0.01 m per rank (0.001 m
     in perspective). The higher id wins an overlap: straight down by the lift and the depth
     test; in perspective by the one draw's order, a bit-identical lower box not drawn.
   - Yawed by `90° − heading` about +Y; unlit colour from 5 speed bins (< 2, 5, 9, 13, ∞ m/s).
-- **Colours.** Background `#12161e`, road `#5c6068`, speed colours distinct from both.
-  World to Bevy is `(x − cx, height, −(y − cy))`.
+- **Colours.** Background `#12161e`, road `#5c6068`, speed colours distinct from both; to Bevy `(x − cx, height, −(y − cy))`.
 - **Buildings**, only with `--buildings`: one lit mesh and a sun (`rules/buildings.md`); with
   `--camera` too, those in the way cut to stubs unless `--no-see-through` (`rules/see-through.md`).
 - **Signals** unless `--no-signals`: a dot at each signalised stop line (`rules/signals.md`).
 - **Credit line**, only on a network with `map_origin`: bottom-right UI text (`rules/credit.md`).
 - **HUD** unless `--no-hud`: clock, vehicles and mean speed, top-left UI text (`rules/hud.md`).
-- **Link colours**, only with `--link-colours`: the strips tinted, the boxes grey, a legend (`rules/links.md`).
+- **Link colours**, only with `--link-colours`: the strips tinted, the bodies grey, a legend (`rules/links.md`).
 
 ## Camera
 - Without `--camera`: top-down orthographic, north up, fitted to the strips' bounding box
@@ -63,14 +63,14 @@ generated: 2026-10-23
   window or event loop; pipelines compile synchronously; the loop is pumped by hand.
 - The target is an `Rgba8UnormSrgb` image. The camera uses MSAA ×4, `Tonemapping::None`
   and `DebandDither::Disabled`. Three empty frames at start-up settle assets and pipelines.
-- Per frame: set dots, link colours, boxes and the HUD's line, spawn `Screenshot::image(target)`, then update and
+- Per frame: set dots, link colours, the vehicles and the HUD's line, spawn `Screenshot::image(target)`, then update and
   `poll(Wait)` until the observer has the lossless readback (≤ 200 updates): `W·H·4` bytes, top row first.
 - `Job::prepare_with(o, camera, buildings)` (`prepare`, `prepare_with_camera` delegate): size, fps,
   speedup, `run::load` (`rules/inputs.md`), the keyframe file, the buildings, the credit line
-  (`prepare_without_credit`: none); see-through, streets, signals, the HUD and link colours off
-  (`set_streets`, `set_signals`, `set_hud`, `set_links` spawn them and settle again). Gates: `render_frame(n)`,
-  `render_at(t)`, `render_empty()`, `camera()`/`k()`, `pose_at(t)`, `boxes_at(t)`, `buildings()`,
-  `motion_report()`, `credit*()`, `hud*()`, `link_colours()`.
+  (`prepare_without_credit`: none); see-through, streets, signals, the HUD, link colours and shapes off
+  (`set_streets`, `set_signals`, `set_hud`, `set_links` spawn them and settle again; `set_shapes` reads its table).
+  Gates: `render_frame(n)`, `render_at(t)`, `render_empty()`, `camera()`/`k()`, `pose_at(t)`, `boxes_at(t)`,
+  `looks_at(t)`, `buildings()`, `motion_report()`, `credit*()`, `hud*()`, `link_colours()`.
 
 ## Output
 - `ffmpeg -f rawvideo -pix_fmt rgba -s WxH -r fps -i - -c:v libx264 -pix_fmt yuv420p -f mp4 <out>.partial`,

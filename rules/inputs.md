@@ -6,6 +6,7 @@ sources:
   - src/place.rs
   - src/run.rs
   - src/links.rs
+  - src/vehicles.rs
   - Cargo.toml
 covers: >
   What the renderer reads from a run and from where, how FCD rows become placed
@@ -29,9 +30,9 @@ generated: 2026-10-23
 - FCD: default `fcd/<scenario>_<seed>.parquet` beside `results.db`, or `--fcd`.
   - Columns are selected by name and their types checked: `time` f64, `vehicle_id` u64,
     `link_id` Utf8 (LargeUtf8 also accepted), `lane` u32, `position` f64, `speed` f64.
-  - `vehicle_length` f64 is optional and sets the box length. Without it the length is
-    4.5 m. The engine at the pin writes it (asm-020 Phase 3), and older files lack it.
-    `acceleration` and `vehicle_class` (`Dictionary(Int32, Utf8)`) are not read.
+  - `vehicle_length` f64 is optional and sets the box length; without it (older files) 4.5 m.
+    `acceleration` and `vehicle_class` are read by `vehicles::read` with shapes on, and by
+    `view` at launch either way (`rules/vehicles.md`).
   - A missing column or a wrong type is a "schema mismatch" error; CSV FCD is not supported.
 
 ## Window and snapshots
@@ -51,8 +52,7 @@ generated: 2026-10-23
   placed up front (`place_all` and `Motion::build`). An unknown link, or a row the
   engine cannot place, is an error before the first frame.
 - For motion, `Placement` also wraps the engine's junction movements and turn paths.
-- `link_length` is `NetworkData::link_length`, the junction-trimmed length FCD `position`
-  is measured along.
+- `link_length` is `NetworkData::link_length`, the junction-trimmed length FCD `position` is measured along.
 
 ## Checks before the first frame (order)
 `render`: ffmpeg on `PATH` → even, positive size; positive fps and speedup → `run::load`
@@ -61,5 +61,6 @@ FCD file → schema → `to > from` → every link known and row placed → `--c
 (`rules/camera.md`) → `--buildings`' file (`rules/buildings.md`) → `render`'s credit inputs,
 then its fit after the settle frames (`rules/credit.md`) → with signals on, the run's mode,
 then its clock (`rules/signals.md`; `view`: before the window) → with link colours on (`view`: or
-`--link-window` given), the window against the run's FCD interval (`rules/links.md`). An error is one
-`error: …` line, exit 1, no output file or window.
+`--link-window` given), the window against the run's FCD interval (`rules/links.md`) → with shapes on (`--camera`;
+`view`: unless `--no-shapes`), the table's schema (`rules/vehicles.md`). An error is one `error: …` line, exit 1,
+no output file or window.

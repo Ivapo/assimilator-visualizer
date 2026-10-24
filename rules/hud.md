@@ -22,9 +22,9 @@ generated: 2026-10-23
 
 ## The numbers (`hud::numbers`, no Bevy types)
 - At sim time `t`: the snapshot `Fcd::snapshot_at(t)` shows (the latest with `time ≤ t + 1e-6`, as the
-  boxes and the dots), held between rows. The count is its rows, every vehicle class; the mean is the
+  vehicles and the dots), held between rows. The count is its rows, every vehicle class; the mean is the
   plain mean of their `speed`, stopped vehicles included. Reads only the FCD `run::load` has read.
-- `(0, None)` when no box is drawn at `t` (`drawn` is `!boxes.is_empty()`) or there is no
+- `(0, None)` when no vehicle is drawn at `t` (`drawn` is `!boxes.is_empty()`) or there is no
   snapshot: before the first row, after the last, and a step with no vehicle (no FCD row).
 
 ## The text (`hud::clock`, `hud::text`)

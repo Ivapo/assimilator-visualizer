@@ -745,6 +745,8 @@ constraint.
 - **Vehicle shapes** *(added 2026-10-03, agreed by the user)*: a shape per FCD
   `vehicle_class`, after vis-001's data item. Midtown's 985 vehicles are all `car`
   (counted 2026-10-03).
+  *(2026-10-24)* Taken up by vis-004 (`specs/vehicles_spec.md`, §2.1), whose Phase 1 draws
+  the shapes, brake lamps and headlamps in the 3D views.
 - **Re-frozen traffic** after the engine fix (OQ-4). This is a pin move with a re-gate
   (vis-001 §2.2.2), not a phase.
   *(2026-10-04, user)* A phase after all: vis-001 Phase 7 (§2.13 there), before Streets.
