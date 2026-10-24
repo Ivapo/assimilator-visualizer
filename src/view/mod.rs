@@ -11,7 +11,9 @@
 //! hidden by `H`, its line set for `t` each frame while shown and its size following the
 //! window's. Link colours (vis-003 §2.21.11) are off at launch unless `--link-colours`
 //! names a measure; `C` cycles the measure, and while one is on the strips are tinted for
-//! `t` each frame, the boxes are light grey and the legend sits under the HUD.
+//! `t` each frame, the boxes are light grey and the legend sits under the HUD. Vehicle
+//! shapes (vis-004 §2.13) replace the boxes while shown, flipped by `V`, from the table
+//! read at launch.
 
 pub mod slider;
 pub mod state;
@@ -33,6 +35,7 @@ use crate::run::{self, LoadOptions, Run};
 use crate::see_through;
 use crate::signals::{self, DotsData, Eye, Signals};
 use crate::streets::{self, Streets};
+use crate::vehicles::{self, Fleet};
 pub use state::{Fit, ViewInput, ViewState};
 
 /// What `view` needs, after CLI parsing.
@@ -55,6 +58,8 @@ pub struct ViewOptions {
     pub link_window: Option<f64>,
     /// `--link-lanes`: one unit per lane.
     pub link_lanes: bool,
+    /// Shapes shown at launch (vis-004 §2.13): true unless `--no-shapes`.
+    pub shapes: bool,
     /// The window, logical pixels.
     pub width: u32,
     pub height: u32,
@@ -87,6 +92,9 @@ struct Viewer {
     bench: Option<Bench>,
     /// The link colours, built at launch for `C`.
     links: ViewLinks,
+    /// The shapes' table; `None` when it could not be read under `--no-shapes`. Drawn
+    /// while `shapes_shown`.
+    fleet: Option<Fleet>,
 }
 
 /// The link colours as drawn, for `C`.
@@ -183,6 +191,13 @@ pub fn run(o: &ViewOptions) -> Result<()> {
         Err(e) if o.links.is_some() || o.link_window.is_some() => return Err(e),
         Err(_) => false,
     };
+    // Read under `--no-shapes` too, so that `V` can show the shapes; there, an error
+    // leaves no table and `V` draws boxes (vis-004 §2.13).
+    let fleet = match vehicles::read(&paths.fcd) {
+        Ok(f) => Some(f),
+        Err(e) if o.shapes => return Err(e),
+        Err(_) => None,
+    };
     let tint_data = links::tint(&run.placement, &links);
     let fit = Fit::new(&run.strips, o.width, o.height);
     let snaps = run.fcd.snapshots.iter().map(|s| s.time).collect();
@@ -191,6 +206,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
     state.streets_shown = o.streets;
     state.signals_shown = o.signals;
     state.hud_shown = o.hud;
+    state.shapes_shown = o.shapes;
     state.link_measure = o.links;
     if o.bench.is_some() {
         state.t = BENCH_T.clamp(state.from, state.to);
@@ -301,6 +317,7 @@ pub fn run(o: &ViewOptions) -> Result<()> {
             legend: None,
             font,
         },
+        fleet,
     });
     app.add_systems(Update, (track_pointer, frame).chain());
     app.run();
@@ -367,6 +384,7 @@ fn input(world: &mut World) -> ViewInput {
             l: keys.just_pressed(KeyCode::KeyL),
             h: keys.just_pressed(KeyCode::KeyH),
             c: keys.just_pressed(KeyCode::KeyC),
+            v: keys.just_pressed(KeyCode::KeyV),
         },
         held: state::Held {
             shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
@@ -414,7 +432,28 @@ fn frame(world: &mut World) {
             Some(_) => draw::cars_colour,
             None => draw::speed_colour,
         };
-        draw::set_boxes(world, &v.boxes, &boxes, (fx, fy), draw::RANK_LIFT_3D, colour);
+        match v.fleet.as_ref().filter(|_| s.shapes_shown) {
+            Some(f) => {
+                let looks = f.looks(s.t, &boxes);
+                draw::set_shapes(
+                    world,
+                    &v.boxes,
+                    &boxes,
+                    &looks,
+                    (fx, fy),
+                    draw::RANK_LIFT_3D,
+                    colour,
+                );
+            }
+            None => draw::set_boxes(
+                world,
+                &v.boxes,
+                &boxes,
+                (fx, fy),
+                draw::RANK_LIFT_3D,
+                colour,
+            ),
+        }
         if let Some(b) = v.buildings.as_mut() {
             let want = if s.buildings_shown {
                 Visibility::Inherited

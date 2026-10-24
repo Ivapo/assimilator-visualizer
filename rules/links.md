@@ -40,9 +40,9 @@ generated: 2026-10-23
 
 ## Drawing (`links::tint`, `draw::spawn_tint`, `set_tint`, `spawn_legend`)
 - Each unit's strip on the road strip's samples, across its span (`±total_width/2`, or its
-  lane's), at `LIFT_M` 0.005 m: over the road, under markings, dots and boxes; junctions grey.
+  lane's), at `LIFT_M` 0.005 m: over the road, under markings, dots and vehicles; junctions grey.
   One unlit mesh in unit order (`cull_mode: None`, `NoFrustumCulling`), replaced on a change.
-- While on, every box is `CARS` (235, 235, 235): the pool's materials and the mesh's colour.
+- While on, every body is `CARS` (235, 235, 235): the pool's materials and the mesh's body colour.
 - The legend, one row at (`m`, `m + 1.6·S`), or (`m`, `m`) with the HUD off, at the HUD's
   `S`, fill and outline: the title, then per step a `round(0.75·S)` px swatch with an `o`-px
   black border and its range, ascending; `0.4·S` after a text, `0.25·S` after a swatch.
@@ -50,7 +50,7 @@ generated: 2026-10-23
 ## Switches and errors
 - `render --link-colours [relative|speed|density|stopped]` (bare: `relative`), `--link-window
   <s>` (60) and `--link-lanes`, the last two needing it (exit 2). Off: nothing read or spawned.
-  `Job::set_links` runs after `set_hud`; `render_at` colours after the dots, before the boxes.
+  `Job::set_links` runs after `set_hud`; `render_at` colours after the dots, before the vehicles.
 - Exit 1: `--link-window must be a positive number of seconds (got <W>)`; then, for `W < I −
   1e-6`, `--link-window <W> s is shorter than the run's FCD interval (<I> s); --link-window
   <I> colours by each frame's own FCD row` (`I` to 1 ms).

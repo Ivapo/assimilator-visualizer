@@ -11,7 +11,7 @@
 #   cargo test --release --test view -- --include-ignored --test-threads=1 --nocapture
 # Phase 5 (3D camera): gate 10, the keyframed render, is below; gates 4–9, 11 and 12 are
 #   cargo test --release --test camera -- --include-ignored --test-threads=1 --nocapture
-# vis-002 Phase 5 and vis-003 Phases 1 and 2: the renders compared with a reference pass --no-streets --no-signals --no-hud.
+# vis-002 Phase 5, vis-003 Phases 1 and 2 and vis-004 Phase 1: the renders compared with a reference pass --no-streets --no-signals --no-hud, and with --camera --no-shapes.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -104,11 +104,11 @@ fi
 # Phase 5 gate 10 — a keyframed render (vis-001 §2.11.5): the defaults with
 # --camera tests/flight.toml, twice; the frames of both runs must be equal.
 t0=$(date +%s)
-render camera --camera "$ROOT/tests/flight.toml" --no-streets --no-signals --no-hud || fail "phase5 gate10 render exited $?"
+render camera --camera "$ROOT/tests/flight.toml" --no-streets --no-signals --no-hud --no-shapes || fail "phase5 gate10 render exited $?"
 dt=$(( $(date +%s) - t0 ))
 echo "phase5 gate10: rendered $N_DEFAULT frames with --camera in $dt s"
 check_video camera 1920 1080 30 "$N_DEFAULT"
-render camera2 --camera "$ROOT/tests/flight.toml" --no-streets --no-signals --no-hud || fail "phase5 gate10 second render exited $?"
+render camera2 --camera "$ROOT/tests/flight.toml" --no-streets --no-signals --no-hud --no-shapes || fail "phase5 gate10 second render exited $?"
 rm -f "$OUT/camera.framemd5" "$OUT/camera2.framemd5"
 ffmpeg -y -v error -i "$OUT/camera.mp4" -f framemd5 "$OUT/camera.framemd5"
 ffmpeg -y -v error -i "$OUT/camera2.mp4" -f framemd5 "$OUT/camera2.framemd5"

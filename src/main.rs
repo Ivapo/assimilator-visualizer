@@ -99,6 +99,11 @@ enum Cmd {
         /// Colour each lane by its own rows, not each link.
         #[arg(long, requires = "link_colours")]
         link_lanes: bool,
+        /// Draw every vehicle as a box. Default with `--camera`: each vehicle a shape for
+        /// its class (car, truck, bus, bike, any other a box), brake lamps lit while it
+        /// brakes or stands, headlamps lit.
+        #[arg(long)]
+        no_shapes: bool,
     },
     /// Open a window over one finished run; `K` prints a keyframe line on stdout.
     View {
@@ -156,6 +161,9 @@ enum Cmd {
         /// Colour each lane by its own rows, not each link.
         #[arg(long)]
         link_lanes: bool,
+        /// Start with every vehicle as a box; `V` shows the shapes, as they are by default.
+        #[arg(long)]
+        no_shapes: bool,
         /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
         #[arg(long, hide = true)]
         bench: Option<f64>,
@@ -210,6 +218,7 @@ fn run(cli: Cli) -> Result<()> {
             link_colours,
             link_window,
             link_lanes,
+            no_shapes,
         } => render(
             RenderOptions {
                 project,
@@ -236,6 +245,7 @@ fn run(cli: Cli) -> Result<()> {
                 window: link_window.unwrap_or(links::WINDOW_S),
                 lanes: link_lanes,
             }),
+            !no_shapes,
         ),
         // No ffmpeg: `view` encodes nothing.
         Cmd::View {
@@ -256,6 +266,7 @@ fn run(cli: Cli) -> Result<()> {
             link_colours,
             link_window,
             link_lanes,
+            no_shapes,
             bench,
         } => view::run(&ViewOptions {
             load: LoadOptions {
@@ -275,6 +286,7 @@ fn run(cli: Cli) -> Result<()> {
             links: link_colours.map(|m| Measure::from_name(&m).expect("clap's possible values")),
             link_window,
             link_lanes,
+            shapes: !no_shapes,
             width,
             height,
             bench,
@@ -292,6 +304,7 @@ fn render(
     signals: bool,
     hud: bool,
     links: Option<LinkOptions>,
+    shapes: bool,
 ) -> Result<()> {
     let Some(ffmpeg) = encode::find_ffmpeg() else {
         bail!("ffmpeg missing: no ffmpeg executable on PATH");
@@ -310,6 +323,9 @@ fn render(
     // After the HUD: the legend's place follows it (vis-003 §2.21.9).
     if links.is_some() {
         job.set_links(links)?;
+    }
+    if shapes {
+        job.set_shapes(true)?;
     }
 
     let n_frames = job.clock.frames;

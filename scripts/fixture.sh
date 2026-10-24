@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a test fixture under scratch/ (gitignored): vis-001 Phase 1's urban_grid with no
-# argument, or vis-002's Midtown with `midtown` (below).
+# argument, vis-002's Midtown with `midtown`, or vis-004's class mix with `mix` (below).
 #
 # 1. Reads the engine git URL and rev from Cargo.toml (the one place the pin lives).
 # 2. Builds the engine CLI at that rev with `cargo install` into scratch/engine; cargo
@@ -30,6 +30,15 @@
 # mirror); otherwise S3: the fixture's one use of the network.
 # FORCE=1 redoes steps 1–4 and keeps both caches and both logs: the release they came
 # from may be gone (vis-002 §2.3.3). Every gate after step 6 runs offline.
+#
+# `scripts/fixture.sh mix` (vis-004 §2.5) builds Midtown with a class mix in scratch/mix.
+# After steps 1–2 (the engine):
+# 2. Exports the user's project at e2de274, as `midtown` does.
+# 3. Halves the demand as `midtown` does, and in the same pass every flow's `class: car`
+#    becomes `mix: mixed` (65 flows); project.yaml's `vehicle_mixes: {}` becomes four
+#    classes after `car` (truck, bus, bike, van) and the mix `mixed`.
+# 4. Runs the engine there with FCD on, and checks the FCD's SHA-1 (every time).
+# It fetches no buildings: a render reads scratch/midtown/buildings.geojson.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,8 +47,8 @@ SCRATCH="$ROOT/scratch"
 ENGINE_CHECKOUT="${ENGINE_CHECKOUT:-$ROOT/../assimilator}"
 FIXTURE="${1:-urban_grid}"
 case "$FIXTURE" in
-    urban_grid | midtown) ;;
-    *) echo "fixture: unknown fixture $FIXTURE (urban_grid or midtown)" >&2; exit 1 ;;
+    urban_grid | midtown | mix) ;;
+    *) echo "fixture: unknown fixture $FIXTURE (urban_grid, midtown or mix)" >&2; exit 1 ;;
 esac
 
 url=$(grep -E '^assimilator-(config|core|geometry) *=' Cargo.toml | sed -E 's/.*git *= *"([^"]+)".*/\1/' | sort -u)
@@ -59,6 +68,36 @@ if [ "${FORCE:-0}" = 1 ] || [ ! -x "$SCRATCH/engine/bin/assimilator" ]; then
         cargo install --force --git "$url" --rev "$rev" --locked assimilator-cli --root "$SCRATCH/engine"
 fi
 
+# Midtown's demand at $1 halved (step 3 of `midtown`); with `mix` as $2, every flow's
+# `class: car` becomes `mix: mixed` in the same pass, and there must be 65.
+halve() {
+    python3 - "$1" "${2:-}" <<'PY'
+import re, sys
+path, mode = sys.argv[1], sys.argv[2]
+lines = open(path, newline="").read().split("\n")
+total = flows = 0
+for i, l in enumerate(lines):
+    m = re.fullmatch(r"(\s*rate:\s*)(\d+)", l)
+    if m:
+        r = int(m.group(2))
+        assert r % 2 == 0, f"line {i + 1}: odd rate {r}"
+        h = round(r // 2, -1)  # ties to even: 15 -> 20, 25 -> 20, 115 -> 120, 145 -> 140
+        lines[i] = f"{m.group(1)}{h}"
+        total += h
+    m = re.fullmatch(r"(\s*)class: car", l)
+    if mode == "mix" and m:
+        lines[i] = f"{m.group(1)}mix: mixed"
+        flows += 1
+assert total == 2850, f"the halved rates sum to {total}, not 2850"
+if mode == "mix":
+    assert flows == 65, f"{flows} flows of class car, not 65"
+open(path, "w", newline="").write("\n".join(lines))
+print(f"fixture: demand halved, the rates sum to {total}")
+if mode == "mix":
+    print(f"fixture: {flows} flows on the mix `mixed`")
+PY
+}
+
 midtown() {
     local src="${MIDTOWN_PROJECT:-$HOME/assimilator/projects/midtown-section}"
     local proj="$SCRATCH/midtown"
@@ -69,23 +108,7 @@ midtown() {
         find "$proj" -mindepth 1 -maxdepth 1 ! -name buildings.geojson ! -name fetch.log \
             ! -name buildings-parts.geojson ! -name fetch-parts.log -exec rm -rf {} +
         git -C "$src" archive e2de274 | tar -x -C "$proj"
-        python3 - "$proj/demand.yaml" <<'PY'
-import re, sys
-path = sys.argv[1]
-lines = open(path, newline="").read().split("\n")
-total = 0
-for i, l in enumerate(lines):
-    m = re.fullmatch(r"(\s*rate:\s*)(\d+)", l)
-    if m:
-        r = int(m.group(2))
-        assert r % 2 == 0, f"line {i + 1}: odd rate {r}"
-        h = round(r // 2, -1)  # ties to even: 15 -> 20, 25 -> 20, 115 -> 120, 145 -> 140
-        lines[i] = f"{m.group(1)}{h}"
-        total += h
-assert total == 2850, f"the halved rates sum to {total}, not 2850"
-open(path, "w", newline="").write("\n".join(lines))
-print(f"fixture: demand halved, the rates sum to {total}")
-PY
+        halve "$proj/demand.yaml"
     fi
 
     # 4. The run, FCD on.
@@ -123,8 +146,105 @@ PY
     fi
     echo "fixture: ready in $proj"
 }
+mix() {
+    local src="${MIDTOWN_PROJECT:-$HOME/assimilator/projects/midtown-section}"
+    local proj="$SCRATCH/mix"
+
+    # 2–3. The project at e2de274, the demand halved on the mix, the classes and the mix.
+    if [ "${FORCE:-0}" = 1 ] || [ ! -f "$proj/project.yaml" ]; then
+        rm -rf "$proj" && mkdir -p "$proj"
+        git -C "$src" archive e2de274 | tar -x -C "$proj"
+        halve "$proj/demand.yaml" mix
+        python3 - "$proj/project.yaml" <<'PY'
+import sys
+path = sys.argv[1]
+CLASSES = """\
+- id: truck
+  length:
+    distribution: uniform
+    min: 8.0
+    max: 16.5
+  min_gap: 2.5
+  max_speed: 25.0
+  max_acceleration: 1.3
+  max_deceleration: -4.0
+  car_following_model: idm
+  lane_changing_model: lmrs
+  reaction_time: 1.2
+- id: bus
+  length: 12.0
+  min_gap: 2.5
+  max_speed: 19.44
+  max_acceleration: 1.5
+  max_deceleration: -4.0
+  comfortable_deceleration: 1.2
+  car_following_model: idm
+  lane_changing_model: lmrs
+  reaction_time: 1.0
+- id: bike
+  length: 1.8
+  min_gap: 1.0
+  max_speed: 8.33
+  max_acceleration: 1.5
+  max_deceleration: -3.0
+  car_following_model: idm
+  lane_changing_model: lmrs
+  reaction_time: 0.5
+- id: van
+  length: 5.5
+  min_gap: 2.0
+  max_speed: 33.33
+  max_acceleration: 2.0
+  max_deceleration: -6.0
+  car_following_model: idm
+  lane_changing_model: lmrs
+  reaction_time: 1.0
+"""
+MIX = """\
+vehicle_mixes:
+  mixed:
+  - class: car
+    share: 0.75
+  - class: truck
+    share: 0.1
+  - class: bus
+    share: 0.05
+  - class: bike
+    share: 0.05
+  - class: van
+    share: 0.05
+"""
+text = open(path, newline="").read()
+n = text.count("vehicle_mixes: {}\n")
+assert n == 1, f"vehicle_mixes: {{}} occurs {n} times, not once"
+open(path, "w", newline="").write(text.replace("vehicle_mixes: {}\n", CLASSES + MIX))
+print("fixture: classes truck, bus, bike and van after car, and the mix `mixed`")
+PY
+    fi
+
+    # 4. The run, FCD on; its SHA-1 is checked every time (a pin move re-freezes it).
+    local fcd="$proj/fcd/baseline_42.parquet"
+    if [ "${FORCE:-0}" = 1 ] || [ ! -f "$fcd" ]; then
+        rm -rf "$proj/results.db" "$proj/fcd"
+        local t0=$SECONDS
+        "$SCRATCH/engine/bin/assimilator" run -c "$proj" -s baseline -o "$proj/results.db" \
+            --set simulation.output.fcd.enabled=true > "$proj/run.log" 2>&1 \
+            || { echo "fixture: the engine run failed; see $proj/run.log" >&2; exit 1; }
+        echo "fixture: engine run took $((SECONDS - t0)) s"
+    fi
+    [ -f "$fcd" ] || { echo "fixture: engine run wrote no $fcd" >&2; exit 1; }
+    local want=c8d1d569423befbe9cfce9f9a94a04d75562508a got
+    got=$(shasum "$fcd" | cut -d' ' -f1)
+    [ "$got" = "$want" ] || { echo "fixture: $fcd has SHA-1 $got, not $want" >&2; exit 1; }
+    echo "fixture: FCD SHA-1 $got"
+    echo "fixture: ready in $proj"
+}
 if [ "$FIXTURE" = midtown ]; then
     midtown
+    exit 0
+fi
+if [ "$FIXTURE" = mix ]; then
+    mix
     exit 0
 fi
 

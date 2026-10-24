@@ -12,6 +12,8 @@
 //! drawn as the credit line's, in the top-left corner, in `render` and `view`. Link
 //! colours (vis-003 §2.21) add the tint, one mesh over the road strips replaced when a
 //! colour changes, a legend under the HUD drawn as its line, and the boxes in one colour.
+//! Vehicle shapes (vis-004 §2.6) draw each vehicle's parts, on the perspective path, as
+//! one mesh in the boxes' place.
 
 use std::collections::HashSet;
 
@@ -31,6 +33,7 @@ use crate::render::VehicleBox;
 use crate::scene::{self, Strip};
 use crate::signals::DotsData;
 use crate::streets::{self, MarkingsData, Streets};
+use crate::vehicles::{self, Look, Paint};
 
 /// The rank lift of the perspective path, metres (§2.11.2): 0.01 m per rank would float
 /// a 110th box 1.09 m over the road at a tilt. The orthographic path keeps
@@ -375,6 +378,148 @@ pub fn set_boxes(
     colour: fn(f64) -> [u8; 3],
 ) {
     let want = match boxes_mesh(boxes, (cx, cy), lift, colour) {
+        Some(mesh) => {
+            world
+                .resource_mut::<Assets<Mesh>>()
+                .insert(entity.mesh.id(), mesh)
+                .expect("the boxes' mesh handle is held");
+            Visibility::Visible
+        }
+        None => Visibility::Hidden,
+    };
+    let mut v = world.get_mut::<Visibility>(entity.entity).unwrap();
+    if *v != want {
+        *v = want;
+    }
+}
+
+/// Every vehicle of `boxes` as its kind's shape (vis-004 §2.6, §2.11), one mesh in slice
+/// (`vehicle_id`) order: each part ([`vehicles::parts`]) is the shaded cuboid scaled and
+/// moved into place in the vehicle's frame, then placed as [`box_transform`] places a box,
+/// at rank = slice index; a vehicle's parts follow each other in their table's order. The
+/// body takes `colour` of its speed and the cabin's top too, glass and the dark parts their
+/// own colours, all × the face's shade; lamps are unshaded. `looks[i]` is box `i`'s. A box
+/// whose placed point, heading, length and kind equal a later box's bit for bit is left
+/// out, ranks counted first. `None` when no box is drawn.
+pub fn shapes_mesh(
+    boxes: &[VehicleBox],
+    looks: &[Look],
+    (cx, cy): (f64, f64),
+    lift: f64,
+    colour: fn(f64) -> [u8; 3],
+) -> Option<Mesh> {
+    if boxes.is_empty() {
+        return None;
+    }
+    let mut seen = HashSet::new();
+    let mut drawn = vec![false; boxes.len()];
+    for (i, b) in boxes.iter().enumerate().rev() {
+        let key = (
+            b.at.x.to_bits(),
+            b.at.y.to_bits(),
+            b.at.heading.to_bits(),
+            b.length.to_bits(),
+            looks[i].kind,
+        );
+        drawn[i] = seen.insert(key);
+    }
+    let unit = shaded_box_mesh();
+    let vec3s = |attr| match unit.attribute(attr) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.clone(),
+        _ => unreachable!("the shaded box has positions and normals"),
+    };
+    let (unit_pos, unit_normal) = (
+        vec3s(Mesh::ATTRIBUTE_POSITION),
+        vec3s(Mesh::ATTRIBUTE_NORMAL),
+    );
+    let shades: Vec<f32> = match unit.attribute(Mesh::ATTRIBUTE_COLOR) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x4(v)) => v.iter().map(|c| c[0]).collect(),
+        _ => unreachable!("the shaded box has vertex colours"),
+    };
+    let unit_idx: Vec<u32> = match unit.indices() {
+        Some(Indices::U32(v)) => v.clone(),
+        Some(Indices::U16(v)) => v.iter().map(|&i| i as u32).collect(),
+        None => unreachable!("a Cuboid mesh is indexed"),
+    };
+    let lin = |c: [u8; 3]| srgb(c).to_linear();
+    let (glass, dark) = (lin(vehicles::GLASS), lin(vehicles::DARK));
+    let (brake_on, brake_off, head) = (
+        lin(vehicles::BRAKE_ON),
+        lin(vehicles::BRAKE_OFF),
+        lin(vehicles::HEAD_ON),
+    );
+    let (mut pos, mut normals, mut colours, mut idx) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (i, b) in boxes.iter().enumerate().filter(|&(i, _)| drawn[i]) {
+        let look = looks[i];
+        // As `box_transform`, without its scale and its lift to the box's centre: a part's
+        // own `y` starts at the floor.
+        let veh = Transform {
+            translation: Vec3::new(
+                (b.at.x - cx) as f32,
+                (i as f64 * lift) as f32,
+                -(b.at.y - cy) as f32,
+            ),
+            rotation: Quat::from_rotation_y((90.0 - b.at.heading).to_radians() as f32),
+            scale: Vec3::ONE,
+        };
+        let body = lin(colour(b.speed));
+        for part in vehicles::parts(look.kind, b.length) {
+            let size = Vec3::new(
+                (part.hi[0] - part.lo[0]) as f32,
+                (part.hi[1] - part.lo[1]) as f32,
+                (part.hi[2] - part.lo[2]) as f32,
+            );
+            let centre = Vec3::new(
+                ((part.hi[0] + part.lo[0]) / 2.0) as f32,
+                ((part.hi[1] + part.lo[1]) / 2.0) as f32,
+                ((part.hi[2] + part.lo[2]) / 2.0) as f32,
+            );
+            let base = pos.len() as u32;
+            for ((p, nrm), &s) in unit_pos.iter().zip(&unit_normal).zip(&shades) {
+                pos.push(
+                    veh.transform_point(centre + Vec3::from(*p) * size)
+                        .to_array(),
+                );
+                normals.push((veh.rotation * Vec3::from(*nrm)).to_array());
+                let top = nrm[1] > 0.5;
+                let (c, s) = match part.paint {
+                    Paint::Body => (body, s),
+                    Paint::Cabin if top => (body, s),
+                    Paint::Cabin | Paint::Glass => (glass, s),
+                    Paint::Dark => (dark, s),
+                    Paint::Brake if look.brake => (brake_on, 1.0),
+                    Paint::Brake => (brake_off, 1.0),
+                    Paint::Head => (head, 1.0),
+                };
+                colours.push([c.red * s, c.green * s, c.blue * s, 1.0]);
+            }
+            idx.extend(unit_idx.iter().map(|&k| base + k));
+        }
+    }
+    Some(
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
+        .with_inserted_indices(Indices::U32(idx)),
+    )
+}
+
+/// [`set_boxes`] with each box drawn as its look's shape ([`shapes_mesh`]).
+pub fn set_shapes(
+    world: &mut World,
+    entity: &BoxesEntity,
+    boxes: &[VehicleBox],
+    looks: &[Look],
+    (cx, cy): (f64, f64),
+    lift: f64,
+    colour: fn(f64) -> [u8; 3],
+) {
+    let want = match shapes_mesh(boxes, looks, (cx, cy), lift, colour) {
         Some(mesh) => {
             world
                 .resource_mut::<Assets<Mesh>>()

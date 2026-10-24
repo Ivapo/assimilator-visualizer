@@ -10,7 +10,8 @@
 //! (vis-003 §2.12), one more mesh: the dots, set before each frame. With the HUD
 //! (vis-003 §2.20), a second UI tree draws its line in the top-left corner, set before
 //! each frame. With link colours (vis-003 §2.21), one more mesh, the tint, set before each
-//! frame, a third UI tree, the legend, under the HUD, and the boxes in one colour.
+//! frame, a third UI tree, the legend, under the HUD, and the boxes in one colour. With
+//! looks (vis-004 §2.11), the perspective path draws each vehicle's shape.
 //!
 //! The update loop is pumped by hand. Each frame sets the vehicle boxes, schedules a
 //! screenshot of the target image, and updates until that screenshot has been read back,
@@ -46,6 +47,7 @@ use crate::scene::{self, Camera as SceneCamera, Strip};
 use crate::see_through;
 use crate::signals::DotsData;
 use crate::streets::{self, Streets};
+use crate::vehicles::Look;
 
 /// One box to draw.
 #[derive(Debug, Clone, Copy)]
@@ -621,6 +623,17 @@ impl Renderer {
     /// Render one frame with exactly these boxes (in draw order) and return its RGBA8
     /// (sRGB) pixels, rows top to bottom, `width · height · 4` bytes.
     pub fn render(&mut self, boxes: &[VehicleBox]) -> Result<Vec<u8>> {
+        self.render_looks(boxes, None)
+    }
+
+    /// [`Renderer::render`], each box drawn as its look's shape (vis-004 §2.11) with
+    /// `Some(looks)`, `looks[i]` box `i`'s, on the perspective path; the orthographic pool
+    /// ignores them.
+    pub fn render_looks(
+        &mut self,
+        boxes: &[VehicleBox],
+        looks: Option<&[Look]>,
+    ) -> Result<Vec<u8>> {
         if boxes.len() > self.pool {
             bail!(
                 "internal: {} vehicles in a frame, pool of {}",
@@ -634,14 +647,25 @@ impl Renderer {
             Boxes::Pool {
                 pool, materials, ..
             } => draw::fill_pool(world, pool, materials, boxes, (cam.cx, cam.cy), self.lift),
-            Boxes::Mesh(entity) => draw::set_boxes(
-                world,
-                entity,
-                boxes,
-                (cam.cx, cam.cy),
-                self.lift,
-                self.box_colour,
-            ),
+            Boxes::Mesh(entity) => match looks {
+                Some(looks) => draw::set_shapes(
+                    world,
+                    entity,
+                    boxes,
+                    looks,
+                    (cam.cx, cam.cy),
+                    self.lift,
+                    self.box_colour,
+                ),
+                None => draw::set_boxes(
+                    world,
+                    entity,
+                    boxes,
+                    (cam.cx, cam.cy),
+                    self.lift,
+                    self.box_colour,
+                ),
+            },
         }
         *self.slot.lock().unwrap() = None;
         let slot = self.slot.clone();

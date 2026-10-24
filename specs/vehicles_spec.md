@@ -11,12 +11,12 @@ note: >
   `scripts/fixture.sh mix`. Phase 2, turn signals by the visualizer's own rule, is
   roadmap only.
 status: accepted
-last_updated: 2026-10-23
+last_updated: 2026-10-24
 
 phases:
   - name: "Phase 1 — Shapes: a shape per class, brake lights and headlights, in 3D, by default"
     reviewed: 2026-10-23
-    shipped: null
+    shipped: 2026-10-24
     cut: null
     by: null
 

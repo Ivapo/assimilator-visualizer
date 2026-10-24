@@ -22,7 +22,7 @@ generated: 2026-10-23
 ## CLI
 `assimilator-video view --project <dir> --scenario <name> --seed <n> [--results] [--fcd] [--from] [--to]
 [--width 1280] [--height 720] [--buildings <file>] [--no-see-through] [--no-streets] [--no-signals] [--no-hud]
-[--link-colours [m]] [--link-window s] [--link-lanes]`.
+[--link-colours [m]] [--link-window s] [--link-lanes] [--no-shapes]`.
 - `run::load` runs `render`'s checks after width and height, then `--buildings`'s, before
   any `App` is built; no ffmpeg. An error is one `error: …` line, exit 1, no window.
 - Stdout: only keyframe lines, one per `K`, flushed. Stderr: only the error line or `--bench`'s
@@ -33,8 +33,8 @@ generated: 2026-10-23
   frame times, prints `{"frames", "mean_fps", "median_ms", "p99_ms", "worst_ms"}`, exits 0.
 
 ## Drawing (`src/draw.rs`, shared with `render`)
-- Every mesh is baked about the launch fit's centre `(fx, fy)`; the boxes are one mesh
-  (`draw::set_boxes`, 0.001 m lift). The camera is set every frame at the state's pose (`height_m = H·k`).
+- Every mesh is baked about the launch fit's centre `(fx, fy)`; the camera is set every frame at the state's pose
+  (`height_m = H·k`). Vehicles: one mesh, 0.001 m lift, shapes unless `--no-shapes`, `V` flips them (`rules/vehicles.md`).
 - Streets on every network, shown unless `--no-streets`; `M` flips them (`rules/streets.md`).
   `--buildings`: their mesh and sun, `B` hides and shows them (`rules/buildings.md`); those in
   the way cut to stubs unless `--no-see-through`, `X` flips it (`rules/see-through.md`).
@@ -68,7 +68,7 @@ generated: 2026-10-23
   `length × 1.8 m` footprint at its heading, within `8·k` m; ties to the higher `vehicle_id`. None in reach: no change.
 - Following sets the centre to the vehicle's placed point each frame it is drawn; when it is not, the centre holds
   and the follow stays armed. A drag, `WASD` or `Esc` stops it; an orbit or a key step does not.
-- Frame order: bar press; clock; scrub; `Esc` `B` `X` `M` `L` `H` `C`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
+- Frame order: bar press; clock; scrub; `Esc` `B` `X` `M` `L` `H` `C` `V`; orbit, `Q E R F`; pan, zoom; click; follow; `K`.
 
 ## Readout and keyframe line
 - Readout: `t 64.10 s [9.1–299.1]  ×2  paused  following 103 (not drawn) — Esc to stop`

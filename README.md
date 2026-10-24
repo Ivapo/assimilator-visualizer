@@ -21,7 +21,9 @@ green, amber or red as the engine had it, replayed with the engine's own signal 
 Phase 2 puts a HUD in the top-left corner of every frame: the sim clock, the vehicles on the
 road and their mean speed, from the run's FCD. Its Phase 3 colours the streets by their
 traffic when asked: each road strip, or each lane, tinted blue to red by a measure of its
-cars over the past minute, with a legend under the HUD.
+cars over the past minute, with a legend under the HUD. vis-004 (`specs/vehicles_spec.md`)
+Phase 1 draws each vehicle in the 3D views as a shape for its class, a car, a truck, a bus
+or a bike, with brake lamps that light as it brakes or stands and headlamps always on.
 
 ```
 assimilator-video render --project <dir> --scenario <name> --seed <n> --out <file.mp4>
@@ -30,6 +32,7 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
                          [--camera <file.toml>] [--buildings <file.geojson>]
                          [--no-see-through] [--no-streets] [--no-signals] [--no-hud]
                          [--link-colours [relative|speed|density|stopped]] [--link-window <s>] [--link-lanes]
+                         [--no-shapes]
 ```
 
 - **Defaults.** `results.db` is `<project>/results.db`. FCD is
@@ -98,6 +101,20 @@ assimilator-video render --project <dir> --scenario <name> --seed <n> --out <fil
   each frame's own FCD row, "right now". It is off by default: without `--link-colours`
   the video is exactly as before. In `view`, `C` turns it on and steps through the
   measures, then off.
+- **Vehicles.** With `--camera`, each vehicle is a shape for its FCD `vehicle_class`, as
+  long as its `vehicle_length`: a `car` is a low body with a dark glass cabin; a `truck` a
+  dark chassis, a cab with a windscreen and a taller box behind it; a `bus` a tall body
+  with bands of dark windows; a `bike` a thin dark frame and its rider. Any other class
+  (such as `van`), or a file without the column, gets the plain box. The body is in the
+  speed colour (light grey with `--link-colours`). Every shape but the bike has two brake
+  lamps on a dark panel at its back, bright red while it brakes or stands (its FCD
+  `acceleration` below 0, or its `speed` under 0.01 m/s) and dark red otherwise, and two
+  headlamps at its front, always lit. It is 3D only: the orthographic render draws boxes,
+  with or without the flag. It is on by default; `--no-shapes` draws boxes, the video
+  exactly as before. A `vehicle_class` or `acceleration` column of another type is an
+  error (`schema mismatch: … column "vehicle_class" is Int32, expected Dictionary(Int32,
+  Utf8) or Utf8`); `--no-shapes` renders without reading them. In `view`, `--no-shapes`
+  starts with boxes and `V` flips shapes and boxes.
 - **Credit.** A network with `metadata.map_origin` (an imported one) gets one line in the
   bottom-right corner of every frame, with or without `--buildings`, crediting its data
   (see [Map data](#map-data)). A drawn network such as `urban_grid` gets none. There is no
@@ -180,6 +197,7 @@ assimilator-video view --project <dir> --scenario <name> --seed <n>
                        [--width <px>] [--height <px>] [--buildings <file.geojson>]
                        [--no-see-through] [--no-streets] [--no-signals] [--no-hud]
                        [--link-colours [relative|speed|density|stopped]] [--link-window <s>] [--link-lanes]
+                       [--no-shapes]
 ```
 
 `view` (Phase 3) opens a window over the same run, with the same roads and boxes moving
@@ -213,6 +231,7 @@ and framings worth rendering.
 | `L` | hide / show the signals (shown at launch, unless `--no-signals`) |
 | `H` | hide / show the HUD (shown at launch, unless `--no-hud`) |
 | `C` | link colours: off → `relative` → `speed` → `density` → `stopped` → off (off at launch, unless `--link-colours`) |
+| `V` | vehicles as shapes / boxes (shapes at launch, unless `--no-shapes`) |
 
 The **time slider** (Phase 4) is a thin bar along the bottom spanning the run's window,
 with a handle at the current time and a tick at each whole minute (thinned on long runs).
@@ -302,13 +321,16 @@ scripts/gates-hud.sh              # vis-003 Phase 2 gates 2, 8, 13 (CLI) and the
 cargo test --release --test hud -- --include-ignored --test-threads=1 --nocapture         # vis-003 Phase 2 gates 5–7, 9 and 13 (`H`)
 scripts/gates-links.sh            # vis-003 Phase 3 gates 2, 8, 13 (CLI) and the gate 12 renders, against scratch/out/hud-p2/, offline
 cargo test --release --test links -- --include-ignored --test-threads=1                   # vis-003 Phase 3 gates 5–7, 9 and 13 (`C`)
+scripts/fixture.sh mix            # once: Midtown with a class mix, in scratch/mix (vis-004)
+scripts/gates-vehicles.sh         # vis-004 Phase 1 gates 1, 2, 8, 13 (CLI) and the gate 12 renders, against scratch/out/hud-p2/, offline
+cargo test --release --test vehicles -- --include-ignored --test-threads=1                # vis-004 Phase 1 gates 5–7, 9 and 13 (`V`)
 ```
 
-Streets, signals and the HUD are on by default, so the renders that `scripts/gates.sh`,
-`gates-ties.sh`, `gates-see-through.sh` and `gates-parts.sh` compare with a
-`ref-pin90b39292` file pass `--no-streets --no-signals --no-hud`; the renders compared only
-with each other (`gates-ties.sh`'s gate 9, `gates-city.sh` and `gates-credit.sh`) draw all
-three.
+Streets, signals, the HUD and, with `--camera`, the shapes are on by default, so the renders
+that `scripts/gates.sh`, `gates-ties.sh`, `gates-see-through.sh` and `gates-parts.sh` compare
+with a `ref-pin90b39292` file pass `--no-streets --no-signals --no-hud`, and `--no-shapes`
+with `--camera`; the renders compared only with each other (`gates-ties.sh`'s gate 9,
+`gates-city.sh` and `gates-credit.sh`) draw them all.
 
 `scripts/fixture.sh midtown` fetches two caches: `buildings.geojson` with `--no-parts`,
 which the gates of Phases 1–3 read, and `buildings-parts.geojson` with parts. Both are
@@ -322,6 +344,11 @@ mirror is a copy of `scratch/overture-2026-09-23.1/building.parquet` under
 caches. The engine at the pin gives the same Midtown traffic on every run (vis-001
 Phase 7), so gate 3 of `gates-city.sh` compares the fixture's FCD with a second run kept in
 `scratch/midtown-2850-90b39292`.
+
+`scripts/fixture.sh mix` builds a third fixture in `scratch/mix`: the same Midtown project
+with its demand halved, every flow on a mix of cars (75 %), trucks 8–16.5 m long (10 %),
+buses, bikes and vans (5 % each), run with FCD on; the FCD's SHA-1 is checked on every run.
+It fetches nothing: its renders read `scratch/midtown/buildings.geojson`.
 
 ## Map data
 

@@ -10,7 +10,7 @@
   The credit line of an imported network's render: the rule that builds it from the data, its inputs and checks, how it is drawn and fitted, the font and its licence, and `Job`'s credit accessors.
 - **[hud](hud.md)** — generated 2026-10-23 · 7 sources · 40/40 lines
   The HUD in the top-left corner of every frame: the numbers and their rule, the clock and its format, the text, how it is drawn (font, tabular figures, size, outline, place), `--no-hud`, `view`'s `H` and `Job`'s HUD accessors.
-- **[inputs](inputs.md)** — generated 2026-10-23 · 6 sources · 50/50 lines
+- **[inputs](inputs.md)** — generated 2026-10-23 · 7 sources · 50/50 lines
   What the renderer reads from a run and from where, how FCD rows become placed points, and which checks fail before the first frame.
 - **[links](links.md)** — generated 2026-10-23 · 7 sources · 40/40 lines
   Link colours: the window and the run's FCD interval, the four measures and their units, the steps and their rounding, the palette, the tint and its lift, the cars' one colour, the legend, `--link-colours`, `--link-window`, `--link-lanes`, `view`'s `C` and the two window errors.
@@ -28,5 +28,7 @@
   `view`'s time slider: the bar's geometry, x ↔ t, the ticks, how a press on the bar scrubs and what it takes from the camera and the clock, and how the window draws it.
 - **[streets](streets.md)** — generated 2026-10-23 · 7 sources · 40/40 lines
   Streets: the junction surfaces, the two-way pairs, the median noses, the engine dashboard's markings drawn from `NetworkJson` (centre lines, dashes, solid lines, stop lines cut per lane, connectors, lane arrows), the colours and glyphs copied from its front end at 90b39292, the lifts, the fade, the two meshes, the default, `--no-streets` and `view`'s `M`.
+- **[vehicles](vehicles.md)** — generated 2026-10-23 · 7 sources · 49/50 lines
+  Vehicle shapes in the 3D views: the table read from the FCD and its errors, the kinds and the class names, each kind's parts and their sizes, the stretch, the paints, the brake rule, the headlamps, the identical key, `--no-shapes` and `view`'s `V`.
 - **[view](view.md)** — generated 2026-10-23 · 5 sources · 60/60 lines
   The `assimilator-video view` window over a finished run: its CLI and checks, the wall-clock view clock, the camera (orbit and tilt, pan, zoom, centre bound), picking and following, the readout, the keyframe line and the hidden `--bench`. The time slider is `rules/slider.md`; the pose and the line's format are `rules/camera.md`.

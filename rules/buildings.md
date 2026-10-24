@@ -66,7 +66,7 @@ generated: 2026-10-04
 ## Look (`draw::spawn_buildings`, only with `--buildings`)
 - One lit material, neutral grey sRGB (188, 188, 188), roughness 1, reflectance 0.
 - A `DirectionalLight` of 4,000 lux, no shadows, along `sun_direction(210°, 60°)`, Bevy
-  `(1/4, −√3/2, −√3/4)`; `GlobalAmbientLight` 250. Roads and boxes stay unlit.
+  `(1/4, −√3/2, −√3/4)`; `GlobalAmbientLight` 250. Roads and vehicles stay unlit.
 - Without `--buildings` nothing is spawned. The orthographic eye (`draw::ortho_eye`) is
   `max(500, tallest + 10)` m up with far = eye + 500 m: (500, 1000) without buildings.
 

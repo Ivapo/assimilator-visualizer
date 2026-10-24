@@ -42,7 +42,7 @@ generated: 2026-10-23
 ## The two meshes (`Streets::surface`, `markings`; `draw::spawn_streets`)
 - **Surface:** junctions then noses, height 0, the road's own material. **Markings:** by kind (centre,
   dash, solid at `LIFT_LINES_M` 0.01; stop, connector, arrow, bar at `LIFT_TOP_M` 0.02), each in build
-  order, under every box's base, over the link colours' tint at 0.005 m (`rules/links.md`). Per-vertex
+  order, under every vehicle's base, over the link colours' tint at 0.005 m (`rules/links.md`). Per-vertex
   colour on one unlit white material, `cull_mode: None`, `NoFrustumCulling`; none if empty.
 - Colours (`COLOURS`): the dark palette of `colors.ts` composited at its opacities over
   `scene::ROAD`, rounded once: lines (174, 176, 180), centre (199, 167, 77), stop (239,

@@ -66,11 +66,11 @@ print(f"gate8 {sys.argv[2].rsplit('/', 1)[1]} vs {sys.argv[1].rsplit('/', 1)[1]}
 assert len(a) == len(b) and d == len(b)
 PY
 }
-case_() { # <frames> <project> <case> <link args> [extra args…]: off is Phase 2's; on twice, equal, every frame not Phase 2's
+case_() { # <frames> <project> <case> <link args> [extra args…]: off (--no-shapes) is Phase 2's; on twice, equal, every frame not Phase 2's
     local n=$1 proj=$2 c=$3 on=()
     read -r -a on <<< "$4"
     shift 4
-    render gate2 "$n" "$proj" "off-$c" "$@"
+    render gate2 "$n" "$proj" "off-$c" --no-shapes "$@"
     same gate2 "$n" "$P2/hud-$c.framemd5" "$OUT/off-$c.framemd5"
     render gate8 "$n" "$proj" "links-$c" "$@" "${on[@]}"
     render gate8 "$n" "$proj" "links-$c-2" "$@" "${on[@]}"
