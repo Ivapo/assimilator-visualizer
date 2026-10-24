@@ -75,6 +75,8 @@ pub struct Pressed {
     pub h: bool,
     /// Cycle the link colours (vis-003 §2.21.11), by position.
     pub c: bool,
+    /// Flip shapes and boxes (vis-004 §2.13), by position.
+    pub v: bool,
 }
 
 /// Keys held this frame.
@@ -243,6 +245,9 @@ pub struct ViewState {
     /// `relative` → `speed` → `density` → `stopped` → off. `None` at [`ViewState::new`];
     /// `view` sets it at launch from `--link-colours`.
     pub link_measure: Option<Measure>,
+    /// Whether the vehicles are drawn as shapes (vis-004 §2.13); `V` flips it. Off at
+    /// [`ViewState::new`]; `view` sets it at launch, on unless `--no-shapes`.
+    pub shapes_shown: bool,
 }
 
 impl ViewState {
@@ -271,6 +276,7 @@ impl ViewState {
             signals_shown: false,
             hud_shown: false,
             link_measure: None,
+            shapes_shown: false,
         }
     }
 
@@ -377,6 +383,9 @@ impl ViewState {
         }
         if input.pressed.c {
             self.link_measure = Measure::next(self.link_measure);
+        }
+        if input.pressed.v {
+            self.shapes_shown = !self.shapes_shown;
         }
 
         // Orbit: a right press, or a left press with Control held, off the bar and with no

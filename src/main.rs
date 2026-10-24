@@ -161,6 +161,9 @@ enum Cmd {
         /// Colour each lane by its own rows, not each link.
         #[arg(long)]
         link_lanes: bool,
+        /// Start with every vehicle as a box; `V` shows the shapes, as they are by default.
+        #[arg(long)]
+        no_shapes: bool,
         /// Record `s` seconds of frame times, print them as JSON on stderr and exit.
         #[arg(long, hide = true)]
         bench: Option<f64>,
@@ -263,6 +266,7 @@ fn run(cli: Cli) -> Result<()> {
             link_colours,
             link_window,
             link_lanes,
+            no_shapes,
             bench,
         } => view::run(&ViewOptions {
             load: LoadOptions {
@@ -282,6 +286,7 @@ fn run(cli: Cli) -> Result<()> {
             links: link_colours.map(|m| Measure::from_name(&m).expect("clap's possible values")),
             link_window,
             link_lanes,
+            shapes: !no_shapes,
             width,
             height,
             bench,

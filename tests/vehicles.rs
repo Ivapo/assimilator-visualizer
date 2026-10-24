@@ -25,6 +25,7 @@ use assimilator_video::motion::{Piece, TrackPos};
 use assimilator_video::place::Placed;
 use assimilator_video::render::VehicleBox;
 use assimilator_video::vehicles::{self, Fleet, Kind, Look, Paint, T, Vehicle};
+use assimilator_video::view::state::{Fit, Follow, ViewInput, ViewState};
 use assimilator_video::{Job, RenderOptions};
 
 fn root() -> PathBuf {
@@ -588,4 +589,144 @@ fn gate6_mix_every_frame() {
         ],
     );
     println!("gate 6: the mix 300–360 s: PASS");
+}
+
+// ── Gate 13: `V` ─────────────────────────────────────────────────────────────
+
+const W: f64 = 1280.0;
+const H: f64 = 720.0;
+const DT: f64 = 1.0 / 60.0;
+
+/// vis-001 Phase 3's `plain_state`: `[0, 300]`, centre (0, 0), `k` = 1, 1280×720.
+fn plain_state() -> ViewState {
+    let fit = Fit {
+        cx: 0.0,
+        cy: 0.0,
+        k: 1.0,
+        rect: (-1e4, -1e4, 1e4, 1e4),
+        size: (W, H),
+    };
+    ViewState::new(0.0, 300.0, vec![], fit)
+}
+
+fn at(c: (f64, f64)) -> ViewInput {
+    ViewInput {
+        cursor: Some(c),
+        pointer: Some(c),
+        size: (W, H),
+        dt: DT,
+        ..Default::default()
+    }
+}
+
+fn no_boxes(_: f64) -> Vec<VehicleBox> {
+    vec![]
+}
+
+/// `input` with `v` pressed flips the shapes, and leaves every other field as a twin
+/// stepped through `input` alone does.
+fn step_v(s: &mut ViewState, input: ViewInput) {
+    let mut twin = s.clone();
+    let line = twin.frame(&input, no_boxes);
+    let before = s.shapes_shown;
+    let mut with_v = input;
+    with_v.pressed.v = true;
+    assert_eq!(s.frame(&with_v, no_boxes), line, "the keyframe line");
+    assert_eq!(s.shapes_shown, !before, "v flips the shapes");
+    twin.shapes_shown = s.shapes_shown;
+    assert_eq!(*s, twin, "v changes nothing else");
+}
+
+fn step(s: &mut ViewState, input: ViewInput) {
+    let before = s.shapes_shown;
+    s.frame(&input, no_boxes);
+    assert_eq!(s.shapes_shown, before, "only v flips the shapes");
+}
+
+#[test]
+fn gate13_v() {
+    let mut s = plain_state();
+    assert!(!s.shapes_shown, "off at new");
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        step_v(&mut s, at((640.0, 360.0)));
+        seen.push(s.shapes_shown);
+    }
+    println!("gate 13: four frames with v: {seen:?}");
+    assert_eq!(seen, [true, false, true, false]);
+
+    // Playing, following, with K pressed in the same frame.
+    s.playing = true;
+    s.follow = Some(Follow {
+        vehicle_id: 7,
+        drawn: false,
+    });
+    let mut k = at((640.0, 360.0));
+    k.pressed.k = true;
+    step_v(&mut s, k);
+    step_v(&mut s, at((640.0, 360.0)));
+    s.playing = false;
+    s.follow = None;
+
+    // A right-button orbit.
+    step(
+        &mut s,
+        ViewInput {
+            right_press: true,
+            ..at((640.0, 360.0))
+        },
+    );
+    assert!(s.orbit.is_some());
+    step_v(&mut s, at((700.0, 330.0)));
+    assert!(s.orbit.is_some(), "the orbit goes on");
+    step(
+        &mut s,
+        ViewInput {
+            right_release: true,
+            ..at((700.0, 330.0))
+        },
+    );
+    assert!(s.orbit.is_none());
+
+    // A left drag.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((400.0, 300.0))
+        },
+    );
+    step_v(&mut s, at((460.0, 340.0)));
+    assert!(s.press.is_some(), "the drag goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((460.0, 340.0))
+        },
+    );
+
+    // A scrub.
+    step(
+        &mut s,
+        ViewInput {
+            press: true,
+            ..at((640.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_some());
+    step_v(&mut s, at((300.0, 706.0)));
+    assert!(s.scrub.is_some(), "the scrub goes on");
+    step(
+        &mut s,
+        ViewInput {
+            release: true,
+            ..at((300.0, 706.0))
+        },
+    );
+    assert!(s.scrub.is_none());
+    println!(
+        "gate 13: v flips shapes and boxes and changes nothing else, through an orbit, a drag \
+         and a scrub: PASS"
+    );
 }
