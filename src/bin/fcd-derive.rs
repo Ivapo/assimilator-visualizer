@@ -6,6 +6,7 @@
 //! fcd-derive unknown-link --input <fcd> --output <file>   # first row's link_id → an id absent from the network
 //! fcd-derive subset       --input <fcd> --output <file> --vehicle <id>
 //! fcd-derive drop-columns --input <fcd> --output <file> --column <name>...   # e.g. a pre-asm-020 file
+//! fcd-derive class-int   --input <fcd> --output <file>   # vehicle_class → its Int32 dictionary keys (vis-004 gate 13)
 //! ```
 
 use std::fs::File;
@@ -13,7 +14,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use arrow_array::{ArrayRef, BooleanArray, Float64Array, RecordBatch, StringArray, UInt64Array};
+use arrow_array::types::Int32Type;
+use arrow_array::{
+    ArrayRef, BooleanArray, DictionaryArray, Float64Array, RecordBatch, StringArray, UInt64Array,
+};
 use arrow_schema::{DataType, Field, Schema};
 use arrow_select::filter::filter_record_batch;
 use clap::{Parser, Subcommand};
@@ -60,6 +64,12 @@ enum Mode {
         output: PathBuf,
         #[arg(long = "column", required = true)]
         columns: Vec<String>,
+    },
+    ClassInt {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
     },
 }
 
@@ -155,6 +165,36 @@ fn main() -> Result<()> {
                         b.remove_column(i);
                     }
                     Ok(b)
+                })
+                .collect::<Result<_>>()?;
+            write(&output, &out)
+        }
+        Mode::ClassInt { input, output } => {
+            let batches = read(&input)?;
+            let out: Vec<RecordBatch> = batches
+                .iter()
+                .map(|b| {
+                    let i = b.schema().index_of("vehicle_class").with_context(|| {
+                        format!("{} has no column \"vehicle_class\"", input.display())
+                    })?;
+                    let keys = b
+                        .column(i)
+                        .as_any()
+                        .downcast_ref::<DictionaryArray<Int32Type>>()
+                        .context("vehicle_class is not Dictionary(Int32, Utf8)")?
+                        .keys()
+                        .clone();
+                    let mut fields: Vec<Field> = b
+                        .schema()
+                        .fields()
+                        .iter()
+                        .map(|f| f.as_ref().clone())
+                        .collect();
+                    fields[i] =
+                        Field::new("vehicle_class", DataType::Int32, fields[i].is_nullable());
+                    let mut cols: Vec<ArrayRef> = b.columns().to_vec();
+                    cols[i] = Arc::new(keys);
+                    Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), cols)?)
                 })
                 .collect::<Result<_>>()?;
             write(&output, &out)
