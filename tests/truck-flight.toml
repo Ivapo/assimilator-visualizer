@@ -1,0 +1,5 @@
+# vis-004 gate 12's close-up: the mix fixture's vehicle 184 (a truck), from behind and above.
+keyframes = [
+  { t = 315.000, follow = 184, height_m = 30.00, yaw_deg = 100.00, pitch_deg = 30.00 },
+  { t = 345.000, follow = 184, height_m = 30.00, yaw_deg = 100.00, pitch_deg = 30.00 },
+]

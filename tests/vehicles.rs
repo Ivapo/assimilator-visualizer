@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use arrow_array::types::Int32Type;
@@ -21,9 +21,12 @@ use arrow_array::{
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::{ArrowWriter, ProjectionMask};
 
+use assimilator_video::camera::{self, Pose};
+use assimilator_video::draw;
 use assimilator_video::motion::{Piece, TrackPos};
 use assimilator_video::place::Placed;
-use assimilator_video::render::VehicleBox;
+use assimilator_video::render::{Renderer, VehicleBox};
+use assimilator_video::scene::{self, Strip};
 use assimilator_video::vehicles::{self, Fleet, Kind, Look, Paint, T, Vehicle};
 use assimilator_video::view::state::{Fit, Follow, ViewInput, ViewState};
 use assimilator_video::{Job, RenderOptions};
@@ -729,4 +732,261 @@ fn gate13_v() {
         "gate 13: v flips shapes and boxes and changes nothing else, through an orbit, a drag \
          and a scrub: PASS"
     );
+}
+
+// ── Gates 7 and 9: through the GPU ───────────────────────────────────────────
+
+fn count_differ(a: &[u8], b: &[u8]) -> usize {
+    a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count()
+}
+
+/// `frame` (RGBA, 1920×1080) as a binary PPM at `path`.
+fn ppm(path: &Path, frame: &[u8]) {
+    let mut out = b"P6\n1920 1080\n255\n".to_vec();
+    out.extend(frame.chunks(4).flat_map(|p| [p[0], p[1], p[2]]));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, out).unwrap();
+}
+
+/// The probe's line-up (§2.19): one strip 80 m long and 16 m wide along +x, and two rows
+/// heading 90°, the one at `y` = +4 coasting and the one at −4 braking, each a car 4.5 m,
+/// a truck 12, a truck 8, a bus 12, a bike 1.8 and a plain shape 5.5 from `x` = −30 with
+/// 3 m between, ids 1–12, speeds cycling 1, 4, 7, 11, 20, 7 m/s (the second row one on).
+fn lineup() -> (Vec<Strip>, Vec<VehicleBox>, Vec<Look>) {
+    let mut s = Strip {
+        left: vec![],
+        right: vec![],
+    };
+    for i in 0..=80 {
+        let x = i as f64 - 40.0;
+        s.left.push([x, 8.0]);
+        s.right.push([x, -8.0]);
+    }
+    let kinds = [
+        (Kind::Car, 4.5),
+        (Kind::Truck, 12.0),
+        (Kind::Truck, 8.0),
+        (Kind::Bus, 12.0),
+        (Kind::Bike, 1.8),
+        (Kind::Plain, 5.5),
+    ];
+    let speeds = [1.0, 4.0, 7.0, 11.0, 20.0, 7.0];
+    let (mut boxes, mut looks) = (vec![], vec![]);
+    let mut id = 1;
+    for (row, y, brake) in [(0, 4.0, false), (1, -4.0, true)] {
+        let mut x = -30.0;
+        for (k, &(kind, l)) in kinds.iter().enumerate() {
+            x += l / 2.0;
+            boxes.push(VehicleBox {
+                vehicle_id: id,
+                at: Placed {
+                    x,
+                    y,
+                    heading: 90.0,
+                },
+                length: l,
+                speed: speeds[(k + row) % 6],
+                track: TrackPos {
+                    piece: Piece::Link(0),
+                    along: 0.0,
+                    lateral: 0.0,
+                    odo: 0.0,
+                },
+            });
+            looks.push(Look { kind, brake });
+            x += l / 2.0 + 3.0;
+            id += 1;
+        }
+    }
+    (vec![s], boxes, looks)
+}
+
+/// Every lamp of `paint` in `frame`: the pixel holding the centre of its outer face, and
+/// whether it is exactly its colour.
+fn lamps(
+    frame: &[u8],
+    pose: &Pose,
+    boxes: &[VehicleBox],
+    looks: &[Look],
+    paint: Paint,
+) -> (usize, usize) {
+    let (mut exact, mut n) = (0, 0);
+    for (rank, (b, l)) in boxes.iter().zip(looks).enumerate() {
+        let h = b.at.heading.to_radians();
+        let (f, r) = ((h.sin(), h.cos()), (h.cos(), -h.sin()));
+        for part in vehicles::parts(l.kind, b.length)
+            .into_iter()
+            .filter(|p| p.paint == paint)
+        {
+            let want = match paint {
+                Paint::Brake if l.brake => vehicles::BRAKE_ON,
+                Paint::Brake => vehicles::BRAKE_OFF,
+                _ => vehicles::HEAD_ON,
+            };
+            let lx = if part.lo[0] < 0.0 {
+                part.lo[0]
+            } else {
+                part.hi[0]
+            };
+            let ly = (part.lo[1] + part.hi[1]) / 2.0 + rank as f64 * draw::RANK_LIFT_3D;
+            let lz = (part.lo[2] + part.hi[2]) / 2.0;
+            let w = [
+                b.at.x + lx * f.0 + lz * r.0,
+                b.at.y + lx * f.1 + lz * r.1,
+                ly,
+            ];
+            let (x, y) = camera::project(pose, 1920.0, 1080.0, w);
+            let got = if (0.0..1920.0).contains(&x) && (0.0..1080.0).contains(&y) {
+                let k = 4 * (y.floor() as usize * 1920 + x.floor() as usize);
+                [frame[k], frame[k + 1], frame[k + 2]]
+            } else {
+                [0, 0, 0]
+            };
+            n += 1;
+            if got == want {
+                exact += 1;
+            } else {
+                println!(
+                    "gate 7: vehicle {} {:?} {paint:?} at ({x:.1}, {y:.1}): {got:?}, want {want:?}",
+                    b.vehicle_id, l.kind
+                );
+            }
+        }
+    }
+    (exact, n)
+}
+
+#[test]
+#[ignore = "renders through the GPU"]
+fn gate7_lineup() {
+    let (strips, boxes, looks) = lineup();
+    let cam = scene::Camera::fit(&strips, 1920, 1080);
+    let out = root().join("scratch/out/vehicles");
+    // (pose, the lamps counted, the exact count, the PPM)
+    for (pose, paint, want, name) in [
+        (
+            Pose {
+                cx: 0.0,
+                cy: -2.0,
+                height_m: 58.0,
+                yaw_deg: 45.0,
+                pitch_deg: 35.0,
+            },
+            Paint::Brake,
+            20,
+            "vehicles-lineup-rear.ppm",
+        ),
+        (
+            Pose {
+                cx: 0.0,
+                cy: 2.0,
+                height_m: 58.0,
+                yaw_deg: 225.0,
+                pitch_deg: 35.0,
+            },
+            Paint::Head,
+            19,
+            "vehicles-lineup-front.ppm",
+        ),
+    ] {
+        let mut r = Renderer::new_perspective(&strips, cam, 64, &pose, None, None).unwrap();
+        let shapes = r.render_looks(&boxes, Some(&looks)).unwrap();
+        let (exact, n) = lamps(&shapes, &pose, &boxes, &looks, paint);
+        println!("gate 7: {name}: {exact} of {n} {paint:?} lamp centres exact");
+        assert_eq!((exact, n), (want, 20), "{name}");
+        let plain = r.render(&boxes).unwrap();
+        let d = count_differ(&shapes, &plain);
+        println!("gate 7: {name}: shapes against boxes, {d} pixels differ");
+        assert!(d > 0, "{name}: shapes against boxes");
+        let (e1, e2) = (
+            r.render(&[]).unwrap(),
+            r.render_looks(&[], Some(&[])).unwrap(),
+        );
+        println!(
+            "gate 7: {name}: no vehicle, {} pixels differ",
+            count_differ(&e1, &e2)
+        );
+        assert!(e1 == e2, "{name}: no vehicle");
+        ppm(&out.join(name), &shapes);
+    }
+    println!("gate 7: the line-up's lamps, 20 of 20 brake and 19 of 20 head: PASS");
+}
+
+/// A job set as `render` sets it by default (`src/main.rs`): streets, see-through,
+/// signals, the HUD, then the shapes.
+fn job(o: &RenderOptions, camera: &Path, buildings: Option<&Path>) -> Job {
+    let mut j = Job::prepare_with(o, Some(camera), buildings).unwrap();
+    j.set_streets(true).unwrap();
+    j.set_see_through(true);
+    j.set_signals(true).unwrap();
+    j.set_hud(true).unwrap();
+    j.set_shapes(true).unwrap();
+    j
+}
+
+/// Each listed frame rendered alone by a new job equals the same frame rendered in
+/// sequence from frame 0; at each, in sequence and alone, the job's looks are
+/// `Fleet::looks` of a table read with `vehicles::read`.
+fn gate9(o: &RenderOptions, camera: &Path, buildings: Option<&Path>, frames: &[u64]) {
+    let fleet = vehicles::read(&o.project.join("fcd/baseline_42.parquet")).unwrap();
+    let mut seq = job(o, camera, buildings);
+    let last = *frames.iter().max().unwrap();
+    let mut kept = BTreeMap::new();
+    for n in 0..=last {
+        let f = seq.render_frame(n).unwrap();
+        if frames.contains(&n) {
+            let t = seq.clock.time_of(n);
+            assert_eq!(
+                seq.looks_at(t),
+                Some(fleet.looks(t, &seq.boxes_at(t))),
+                "frame {n} in sequence: the looks"
+            );
+            kept.insert(n, f);
+        }
+    }
+    for &n in frames {
+        let mut fresh = job(o, camera, buildings);
+        let f = fresh.render_frame(n).unwrap();
+        let t = fresh.clock.time_of(n);
+        let looks = fresh.looks_at(t).unwrap();
+        let lit = looks.iter().filter(|l| l.brake).count();
+        let diff = count_differ(&f, &kept[&n]);
+        println!(
+            "gate 9: {} frame {n} (t {t:.4}, {} vehicles, {lit} lit): alone against in \
+             sequence, {diff} pixels differ",
+            o.project.display(),
+            looks.len()
+        );
+        assert_eq!(
+            looks,
+            fleet.looks(t, &fresh.boxes_at(t)),
+            "frame {n} alone: the looks"
+        );
+        assert!(f == kept[&n], "frame {n}");
+    }
+}
+
+#[test]
+#[ignore = "needs scratch/mix (scripts/fixture.sh mix) and scratch/midtown's buildings; renders through the GPU"]
+fn gate9_mix_city_flight_alone_and_in_sequence() {
+    let buildings = root().join("scratch/midtown/buildings.geojson");
+    gate9(
+        &opts("mix", Some(300.0), Some(310.0), Some(1.0)),
+        &root().join("tests/city-flight.toml"),
+        Some(&buildings),
+        &[0, 1, 29, 30, 299],
+    );
+    println!("gate 9: the mix's city flight, 5 of 5 equal: PASS");
+}
+
+#[test]
+#[ignore = "needs scratch/urban_grid (scripts/fixture.sh); renders through the GPU"]
+fn gate9_urban_grid_alone_and_in_sequence() {
+    gate9(
+        &opts("urban_grid", Some(9.1), Some(19.1), Some(1.0)),
+        &root().join("tests/flight.toml"),
+        None,
+        &[0, 1, 30, 299],
+    );
+    println!("gate 9: urban_grid's flight, 4 of 4 equal: PASS");
 }
